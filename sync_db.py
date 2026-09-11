@@ -9,7 +9,7 @@ into the DB, without touching or duplicating anything already there.
 
 Usage:
     python sync_db.py --seasons E2025                            # after a gameweek
-    python sync_db.py --seasons E2020 E2021 E2022 E2023 E2024 E2025  # full (re)load
+    python sync_db.py --seasons E2023 E2024 E2025                # full (re)load
 """
 
 from __future__ import annotations

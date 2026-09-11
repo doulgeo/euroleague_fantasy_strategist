@@ -8,7 +8,7 @@ per season) and always re-run, so a re-run also naturally picks up newly
 played games in an in-progress season.
 
 Usage:
-    python backfill.py --seasons E2020 E2021 E2022 E2023 E2024 E2025 --min-interval 2.5
+    python backfill.py --seasons E2023 E2024 E2025 --min-interval 2.5
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ def main() -> None:
     parser.add_argument(
         "--seasons",
         nargs="+",
-        default=["E2020", "E2021", "E2022", "E2023", "E2024", "E2025"],
+        default=["E2023", "E2024", "E2025"],
     )
     parser.add_argument(
         "--min-interval",

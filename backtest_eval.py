@@ -12,7 +12,7 @@ reduce sampling noise), and score no-swap / engine-recommended /
 best-possible-hindsight for each trial.
 
 Usage:
-    python backtest_eval.py --seasons E2020 E2021 E2022 E2023 E2024 E2025 \
+    python backtest_eval.py --seasons E2023 E2024 E2025 \
         --min-round 6 --trials-per-round 5
 """
 
@@ -176,7 +176,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--competition", default="E")
     parser.add_argument(
-        "--seasons", nargs="+", default=["E2020", "E2021", "E2022", "E2023", "E2024", "E2025"]
+        "--seasons", nargs="+", default=["E2023", "E2024", "E2025"]
     )
     parser.add_argument("--min-round", type=int, default=6, help="Skip cutoff rounds earlier than this (too little history)")
     parser.add_argument("--trials-per-round", type=int, default=5, help="Random roster draws per (season, round)")

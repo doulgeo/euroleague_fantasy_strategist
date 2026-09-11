@@ -66,8 +66,17 @@ back out, and ran `build_projections` on the loaded rows.
 
 ---
 
+## 2026-09-11 — Backfill scope changed to E2023-E2025
+
+Originally kicked off for E2020-E2025 (six seasons); the user decided 2023
+was a sufficient historical cutoff (partial E2020 data left on disk under
+`raw/` from before the change - harmless, just unused now, cache is
+gitignored anyway). Stopped the in-flight six-season backfill and restarted
+scoped to `E2023 E2024 E2025`. Defaults in `backfill.py`, `sync_db.py`, and
+`backtest_eval.py` updated to match.
+
 ## Pending / not yet run
 
-- Full `backtest_eval.py` across all six backfilled seasons (E2020-E2025)
+- Full `backtest_eval.py` across the three backfilled seasons (E2023-E2025)
   once `backfill.py` finishes - this is the actual broader-evaluation result
   the smoke test above was only a preview of.
