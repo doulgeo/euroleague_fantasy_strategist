@@ -23,13 +23,21 @@ Full context for a fresh session, in order of what to read:
   recomputation matches the official value exactly, position taxonomy is
   clean (Guard/Forward/Center), historical depth back to E2000 confirmed.
 - Heuristic recommendation engine (`engine/projections.py`, `roster.py`,
-  `lineup.py`, `transfers.py`) built and backtested against real 2025-26
-  season results, on the **corrected** roster/scoring model (13-player
-  roster, 5G/5F/3C; 10 active per round with 3 excluded; three-tier scoring
-  of starters/sixth-man/half-point-bench — see `docs/game_rules.md`). The
-  day-1/day-2 swap logic is confirmed to never hurt and never exceed the
-  theoretical best-possible ceiling, across 4 different test rounds (see
-  `docs/technical_notes.md` for the numbers).
+  `lineup.py`, `transfers.py`) built and backtested against real season
+  results, on the **corrected** roster/scoring model (13-player roster,
+  5G/5F/3C; 10 active per round with 3 excluded; three-tier scoring of
+  starters/sixth-man/half-point-bench — see `docs/game_rules.md`). The
+  day-1/day-2 swap logic is confirmed to never exceed the theoretical
+  best-possible ceiling, now validated across **118 rounds spanning three
+  full seasons (E2023-E2025), 590 trials, 0 invariant violations** — the
+  engine-recommended lineup beats or ties no-swap in 96% of trials (see
+  `docs/testing_log.md` for the full breakdown, `docs/technical_notes.md`
+  for the original 4-round spot-check this superseded).
+- **Data persistence**: full box-score history for E2023-E2025 backfilled
+  and loaded into `euroleague.db` (SQLite, `engine/db.py`) — 25,286
+  player-game rows. `sync_db.py` is the ongoing incremental refresh command
+  (re-run after each gameweek; cache-aware, idempotent upserts, safe to
+  re-run anytime). `backfill.py` remains for one-time/historical bulk pulls.
 - `poc_run.py` is a working end-to-end CLI: fetch → project → sample a
   roster + active squad → recommend a lineup/sixth-man/captain → suggest
   transfers → backtest against actual results.
@@ -42,7 +50,6 @@ Full context for a fresh session, in order of what to read:
   stated early and never revisited.
 
 **Explicitly NOT done yet (all deferred, not forgotten):**
-- No database — everything runs from on-disk JSON cache + in-memory Python.
 - No real 12-manager ownership/draft tracking (who owns whom, transaction
   history). The POC's "free agents" = pool minus one sampled roster, a
   stand-in.
@@ -79,9 +86,10 @@ over the network), never needs to be committed.
 
 ## Natural next steps (not started, pick one)
 
-- Broader multi-round evaluation of the heuristic (average performance over
-  many rounds, not just spot-checks) before investing in anything fancier.
 - Real ownership/draft tracking: a place to record the 12-manager draft
   results and ongoing transactions, which is a prerequisite for real
   (non-stand-in) transfer suggestions.
 - The deferred UI/architecture questions in `docs/technical_notes.md`.
+- `sync_db.py` is a manual command today ("run this after each gameweek") -
+  automating that trigger (cron/scheduled task) is a small later step, not
+  urgent given trades/rounds are infrequent in this league.

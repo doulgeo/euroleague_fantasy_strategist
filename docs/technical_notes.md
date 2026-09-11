@@ -271,17 +271,27 @@ The invariant `no-swap ≤ recommended ≤ best-possible` held in all four.
 never hurt. The gap to "best-possible hindsight" is narrower here than it
 was under the old (wrong) model in a couple of rounds (e.g. round 20: 59.5
 vs 60.5) — plausible, since half-points-by-default bench scoring reduces
-the total variance a single swap decision can capture, but this has only
-been spot-checked on 4 rounds, same as before. A broader systematic
-evaluation across many rounds remains a natural next step (see CLAUDE.md).
+the total variance a single swap decision can capture, but this was only a
+4-round spot-check.
+
+**Superseded by a much broader run**: after backfilling E2023-E2025 and
+building `backtest_eval.py`, the same evaluation was run across 118 rounds
+(590 trials) spanning three full seasons — see "2026-09-11 — Broader
+multi-season backtest" in `docs/testing_log.md` for the full table. Same
+qualitative read (structural invariant held everywhere, swap logic never
+net-hurts), now on ~30x the sample: recommended beats or ties no-swap in 96%
+of trials, capturing ~42% of the available swap upside on average.
 
 ## Known limitations / stand-ins (all deliberate, not oversights)
 
 - **Free agent pool** = "everyone in the fetched pool not on the sampled
   roster." Real transfer suggestions need actual 12-manager ownership data,
   which doesn't exist yet.
-- **No database** — everything is on-disk JSON cache (`raw/`) + in-memory
-  Python per run. Fine for a POC, not for a real always-on app.
+- **Persistence**: raw API responses cache to disk (`raw/`, gitignored,
+  source of truth for re-normalization); normalized rows also load into
+  `euroleague.db` (SQLite, `engine/db.py`) via `sync_db.py`, the queryable
+  store the rest of the app should read from. Still no ownership/draft
+  tables — see below.
 - **`sample_roster` and `sample_active_squad` are testing tools**, not how
   real rosters/exclusions will be entered — that's a manual-entry UI the
   user wants but hasn't been built.
@@ -302,10 +312,10 @@ actual app shell:
 - **Deployment target**: local-only (just the user) vs. hosted so the other
   11 managers could view rankings too. Not decided; local-only was the
   recommended default but never confirmed.
-- **Historical backfill sequencing**: current-season-first with background
-  backfill later, vs. full historical backfill (back to E2000) up front
-  before building anything else. Leaned toward current-season-first but
-  never confirmed either.
+- **Historical backfill sequencing**: resolved — backfilled E2023-E2025 (not
+  full history back to E2000; projections are within-season only, so older
+  seasons only add backtest sample size, and pre-2023 eras are less
+  representative anyway). See `backfill.py` and the testing log.
 
 None of these block continuing engine work (broader backtesting, real
 ownership tracking design, etc.) — they only matter once actual app/UI

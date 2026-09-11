@@ -75,8 +75,52 @@ gitignored anyway). Stopped the in-flight six-season backfill and restarted
 scoped to `E2023 E2024 E2025`. Defaults in `backfill.py`, `sync_db.py`, and
 `backtest_eval.py` updated to match.
 
-## Pending / not yet run
+## 2026-09-11 — Full backfill (E2023-E2025) and DB load
 
-- Full `backtest_eval.py` across the three backfilled seasons (E2023-E2025)
-  once `backfill.py` finishes - this is the actual broader-evaluation result
-  the smoke test above was only a preview of.
+**What**: backfilled complete box-score data for E2023, E2024, E2025 (all
+played games, not round-windowed), loaded into `euroleague.db` via
+`sync_db.py`.
+
+**How**: `python backfill.py --seasons E2023 E2024 E2025 --min-interval 2.5`
+(ran in background, ~39 min for the ~1000 previously-uncached games), then
+`python sync_db.py --seasons E2023 E2024 E2025`.
+
+**Result**: 25,286 player-game rows total (E2023: 7883, E2024: 7863, E2025:
+9540), 0 v2-source fallbacks to the legacy endpoint across all three
+seasons. No rate-limit (429) issues at 2.5s/request. DB upsert counts match
+the fetched row counts exactly.
+
+## 2026-09-11 — Broader multi-season backtest (`backtest_eval.py`)
+
+**What**: the actual broader-evaluation run the smaller E2025-only smoke
+test (above) was previewing - the full engine pipeline (projections ->
+sample roster/active squad -> lineup -> day-1 swap -> score) run across
+every eligible cutoff round in all three backfilled seasons, 5 random
+roster-sample trials per round.
+
+**How**: `python backtest_eval.py --seasons E2023 E2024 E2025 --min-round 6
+--trials-per-round 5 --seed 1`.
+
+**Result**: 118 rounds evaluated (0 skipped), 590 trials total, no
+structural-invariant violations (no-swap never exceeded best-possible in any
+trial, across all three seasons).
+
+| Season | Rounds | Mean no-swap | Mean recommended | Mean best-possible | Beat / tie / lose vs no-swap | == best-possible | Avg swap-upside captured |
+|---|---|---|---|---|---|---|---|
+| E2023 | 38 | 76.16 | 85.16 | 94.93 | 64% / 32% / 4% | 15% | 47% |
+| E2024 | 38 | 78.26 | 86.17 | 96.61 | 62% / 34% / 4% | 13% | 46% |
+| E2025 | 42 | 80.32 | 86.64 | 98.93 | 52% / 45% / 3% | 12% | 33% |
+| **All combined** | **118** | **78.32** | **86.01** | **96.89** | **59% / 37% / 4%** | **13%** | **42%** |
+
+**Reading**: consistent with the earlier 4-round spot-check in
+`technical_notes.md`, now on ~30x the sample size. The heuristic-driven
+day-1 swap beats or ties no-swap in 96% of trials; the 4% loss rate is the
+documented expected case (decision-time projection was simply wrong that
+round - see `compute_round_score`'s note in `engine/lineup.py` and
+`poc_run.py`'s "Note: recommended underperformed no-swap" case), not a logic
+bug. E2025 shows a lower capture rate (33% vs ~46-47%) - plausible since it's
+the current in-progress season with less prior-round history available at
+early cutoffs within it; not investigated further yet.
+
+This result supersedes the 4-round spot-check as the primary evidence the
+heuristic is worth building on.
