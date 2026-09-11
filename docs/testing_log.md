@@ -222,3 +222,32 @@ trials, gains +9.83 PIR on average per round (95% CI ±0.42), and captures
 about half of the theoretical best-possible swap upside — all confirmed
 stable across three seasons and across a range of projection
 hyperparameters.
+
+---
+
+## 2026-09-11 — `backtest_eval.py` switched to read from `euroleague.db`
+
+**What**: `backtest_eval.py` previously sourced rows via
+`engine.data.fetch_season` (the JSON cache under `raw/`, falling back to the
+live API on a cache miss). Rewired it to read via `engine.db.load_rows`
+against `euroleague.db` instead — the SQLite copy `sync_db.py` already keeps
+in sync — so backtests/testing no longer touch the JSON cache or the network
+at all. `evaluate_season`/`run_full_eval` now take a `sqlite3.Connection`
+instead of an `EuroleagueClient`; the now-meaningless `--competition` CLI
+flag was dropped (season codes like `E2023` already disambiguate).
+
+**How**: ran the full 3-season regular-season backtest
+(`--seasons E2023 E2024 E2025 --min-round 6 --trials-per-round 30`) and
+`--sensitivity` against the DB-backed path, and compared against the
+previously validated headline (91 rounds / 2730 trials, beat-or-tie 96%,
++9.83 PIR mean gain).
+
+**Result**: 91 rounds / 2730 trials evaluated (same as before — same
+underlying rows, just read from a different store), beat 76% / tied 20% =
+96% beat-or-tie, mean gain +9.98 PIR (95% CI ±0.44) — matches the prior
+headline within trial-sampling noise (different `--trials-per-round`, same
+seed). `--sensitivity` across rolling-window sizes 5/10/15/20 also ran
+cleanly. `poc_run.py`, `explore_client.py`, and `backfill.py` were left
+untouched — they intentionally still hit the live API/cache (current-season
+round fetches, one-time bulk backfills), which is a separate concern from
+backtesting against already-backfilled historical data.

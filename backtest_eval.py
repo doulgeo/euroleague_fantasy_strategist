@@ -40,7 +40,9 @@ import random
 import statistics
 from dataclasses import dataclass, field
 
-from engine.data import EuroleagueClient, fetch_season
+import sqlite3
+
+from engine.db import get_connection, load_rows
 from engine.lineup import build_lineup, compute_round_score, swap_after_day1, team_dates_for_round
 from engine.projections import ROLLING_WINDOW, build_projections
 from engine.roster import sample_active_squad, sample_roster
@@ -111,8 +113,7 @@ def run_one_trial(
 
 
 def evaluate_season(
-    client: EuroleagueClient,
-    competition: str,
+    conn: sqlite3.Connection,
     season: str,
     min_round: int,
     trials_per_round: int,
@@ -121,9 +122,9 @@ def evaluate_season(
     min_games: int = 3,
     include_playoffs: bool = False,
 ) -> SeasonSummary:
-    rows = fetch_season(client, competition, season, verbose=False)
+    rows = load_rows(conn, season)
     if not rows:
-        print(f"{season}: no data, skipping season entirely")
+        print(f"{season}: no data in db, skipping season entirely (run sync_db.py first)")
         return SeasonSummary(season=season)
 
     rounds_present = sorted({r["round"] for r in rows if r.get("round") is not None})
@@ -324,7 +325,6 @@ def write_csv(trials: list[Trial], path: str) -> None:
 
 def run_full_eval(
     seasons: list[str],
-    competition: str,
     min_round: int,
     trials_per_round: int,
     seed: int,
@@ -332,20 +332,20 @@ def run_full_eval(
     min_games: int = 3,
     include_playoffs: bool = False,
 ) -> list[Trial]:
-    client = EuroleagueClient()  # all data expected pre-cached; live calls only on cache miss
+    conn = get_connection()
     all_summaries: list[SeasonSummary] = []
     for season in seasons:
         summary = evaluate_season(
-            client, competition, season, min_round, trials_per_round, seed,
+            conn, season, min_round, trials_per_round, seed,
             rolling_window=rolling_window, min_games=min_games, include_playoffs=include_playoffs,
         )
         all_summaries.append(summary)
+    conn.close()
     return [t for s in all_summaries for t in s.trials]
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--competition", default="E")
     parser.add_argument("--seasons", nargs="+", default=["E2023", "E2024", "E2025"])
     parser.add_argument("--min-round", type=int, default=6, help="Skip cutoff rounds earlier than this (too little history)")
     parser.add_argument("--trials-per-round", type=int, default=5, help="Random roster draws per (season, round)")
@@ -366,27 +366,28 @@ def main() -> None:
     if args.sensitivity:
         for window in (5, 10, 15, 20):
             trials = run_full_eval(
-                args.seasons, args.competition, args.min_round, args.trials_per_round, args.seed,
+                args.seasons, args.min_round, args.trials_per_round, args.seed,
                 rolling_window=window,
             )
             summary = SeasonSummary(season=f"rolling_window={window}", trials=trials)
             print_summary(summary)
         return
 
-    client = EuroleagueClient()
+    conn = get_connection()
     all_summaries: list[SeasonSummary] = []
     phase_of: dict[tuple[str, int], str] = {}
     for season in args.seasons:
         summary = evaluate_season(
-            client, args.competition, season, args.min_round, args.trials_per_round, args.seed,
+            conn, season, args.min_round, args.trials_per_round, args.seed,
             include_playoffs=args.include_playoffs,
         )
         print_summary(summary)
         all_summaries.append(summary)
 
-        rows = fetch_season(client, args.competition, season, verbose=False)
+        rows = load_rows(conn, season)
         for round_no, phase in classify_phase(rows).items():
             phase_of[(season, round_no)] = phase
+    conn.close()
 
     all_trials = [t for s in all_summaries for t in s.trials]
     if all_trials:
