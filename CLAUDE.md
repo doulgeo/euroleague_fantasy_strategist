@@ -6,6 +6,24 @@ rank players by fantasy potential, and recommend lineups/transfers for a
 Licensing/ToS concerns are explicitly out of scope per the user — this will
 never be monetized or redistributed.
 
+**Location**: `/mnt/c/Users/pheno/Documents/code/euroleague-fantasy` (Windows
+filesystem, accessed via WSL at that `/mnt/c/...` path — not under the WSL
+home directory, so a filesystem search rooted at `/home` won't find it).
+
+**Repo**: https://github.com/doulgeo/euroleague_fantasy_strategist.git
+(`main` branch). Push access is via SSH (keypair at `~/.ssh/id_ed25519` in
+WSL, public key added to the user's GitHub account already — pushes should
+just work, no credential prompt). Repo-local (not global) git identity is
+configured: `user.name=doulgeo`, `user.email=doulgerisgeo@gmail.com`.
+
+**Working agreement with the user**: commit every finalized/significant
+change as its own commit, right away — don't batch multiple finished
+changes into one commit or wait for a natural stopping point. Keep
+`docs/testing_log.md` updated with validation activity (what was tested,
+how, result) as a running log separate from git history — append, don't
+rewrite past entries (only correct them if a past entry turns out to be
+wrong, and say so explicitly rather than silently editing).
+
 Full context for a fresh session, in order of what to read:
 
 1. **`docs/game_rules.md`** — the actual fantasy game rules (roster, scoring,
@@ -99,3 +117,26 @@ over the network), never needs to be committed.
 - `sync_db.py` is a manual command today ("run this after each gameweek") -
   automating that trigger (cron/scheduled task) is a small later step, not
   urgent given trades/rounds are infrequent in this league.
+
+## Where things were left off (2026-09-11 session)
+
+Nothing is mid-flight or running in the background - safe to pick up
+directly from any of the "Natural next steps" above, or from scratch on
+something new. What happened this session, most recent first:
+
+1. Set up the git repo (see "Repo" above), pushed everything to GitHub.
+2. Ran an elaborate multi-season backtest with confidence intervals, a
+   loss-case breakdown, and a rolling-window sensitivity check - in the
+   process found and fixed a real methodology bug (playoff rounds were
+   skewing results; now excluded by default). See
+   `docs/testing_log.md` → "Elaborate backtest" for the full story and the
+   current validated headline numbers (also summarized above under
+   "Current status").
+3. Backfilled E2023-E2025 and loaded it into `euroleague.db` (SQLite).
+4. Original POC session (roster/scoring model corrections, base engine
+   build) - see `docs/technical_notes.md` for that history.
+
+If picking this up fresh: read this file top to bottom (it's short), then
+skim the two most recent `docs/testing_log.md` entries for the current
+state of validation - no need to re-read the whole log unless you want the
+full history.
