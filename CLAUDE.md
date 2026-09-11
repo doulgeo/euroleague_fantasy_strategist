@@ -28,11 +28,17 @@ Full context for a fresh session, in order of what to read:
   5G/5F/3C; 10 active per round with 3 excluded; three-tier scoring of
   starters/sixth-man/half-point-bench — see `docs/game_rules.md`). The
   day-1/day-2 swap logic is confirmed to never exceed the theoretical
-  best-possible ceiling, now validated across **118 rounds spanning three
-  full seasons (E2023-E2025), 590 trials, 0 invariant violations** — the
-  engine-recommended lineup beats or ties no-swap in 96% of trials (see
-  `docs/testing_log.md` for the full breakdown, `docs/technical_notes.md`
-  for the original 4-round spot-check this superseded).
+  best-possible ceiling. **Current validated headline (regular season only,
+  91 rounds across E2023-E2025, 2730 trials): beats or ties a no-swap
+  baseline in 96% of trials (76% outright beat), +9.83 PIR mean gain per
+  round (95% CI ±0.42), captures ~50% of the theoretical best-possible swap
+  upside — stable across seasons and across a 4x range of the projection's
+  rolling-window hyperparameter.** Playoff rounds are excluded by default
+  from this evaluation — this POC's random league-wide roster sampling
+  doesn't account for team elimination, which made an earlier
+  playoffs-included run look artificially worse late in the season (see
+  `docs/testing_log.md`, "Elaborate backtest" entry, for the full
+  methodology writeup and the raw per-trial numbers).
 - **Data persistence**: full box-score history for E2023-E2025 backfilled
   and loaded into `euroleague.db` (SQLite, `engine/db.py`) — 25,286
   player-game rows. `sync_db.py` is the ongoing incremental refresh command

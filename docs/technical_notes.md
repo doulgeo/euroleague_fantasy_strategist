@@ -274,13 +274,22 @@ vs 60.5) — plausible, since half-points-by-default bench scoring reduces
 the total variance a single swap decision can capture, but this was only a
 4-round spot-check.
 
-**Superseded by a much broader run**: after backfilling E2023-E2025 and
-building `backtest_eval.py`, the same evaluation was run across 118 rounds
-(590 trials) spanning three full seasons — see "2026-09-11 — Broader
-multi-season backtest" in `docs/testing_log.md` for the full table. Same
-qualitative read (structural invariant held everywhere, swap logic never
-net-hurts), now on ~30x the sample: recommended beats or ties no-swap in 96%
-of trials, capturing ~42% of the available swap upside on average.
+**Superseded by two further rounds of evaluation** — see
+`docs/testing_log.md`, entries "Broader multi-season backtest" then
+"Elaborate backtest: phase split, confidence intervals, loss analysis,
+hyperparameter sensitivity" (the current authoritative one). Headline,
+regular-season-only (91 rounds, 2730 trials, three seasons E2023-E2025):
+recommended beats or ties no-swap in 96% of trials (76% outright beat),
++9.83 PIR mean gain per round (95% CI ±0.42), ~50% of available swap upside
+captured on average, stable across a 4x range of the rolling-window
+hyperparameter. **Important methodology note**: an earlier version of this
+evaluation included playoff rounds and looked meaningfully worse late in
+the season (28% beat-rate in the final calendar tercile) — that turned out
+to be a sampling artifact (random league-wide roster draws don't account
+for team elimination in playoffs), not a real engine weakness. Playoff
+rounds are now excluded by default in `backtest_eval.py`
+(`classify_phase()`, detected from actual per-round team counts rather than
+a hardcoded round number, since team count changed between seasons).
 
 ## Known limitations / stand-ins (all deliberate, not oversights)
 

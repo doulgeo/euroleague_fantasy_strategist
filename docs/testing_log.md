@@ -124,3 +124,101 @@ early cutoffs within it; not investigated further yet.
 
 This result supersedes the 4-round spot-check as the primary evidence the
 heuristic is worth building on.
+
+---
+
+## 2026-09-11 — Elaborate backtest: phase split, confidence intervals, loss analysis, hyperparameter sensitivity
+
+**What**: a materially deeper pass than the run above — more trials for
+tighter statistics, 95% confidence intervals (not just point estimates), a
+loss-case breakdown, and a rolling-window hyperparameter sensitivity check.
+Extended `backtest_eval.py` to support all of this (see its own docstring).
+
+**A methodology bug found and fixed along the way**: the initial run
+(30 trials/round, same E2023-E2025 scope as above) included every round in
+each season's `rounds_present`, which turned out to include **playoff
+rounds** (round 35+ in E2023/E2024, round 39+ in E2025 — detected from the
+data itself: EuroLeague went from 18 to 20 teams for E2025, so hardcoding a
+round number would have been wrong). Playoffs have as few as 2 of 18-20
+teams still active. This POC's roster sampling (`sample_roster`) draws
+randomly from the *entire* league pool every round with no concept of team
+elimination — a real manager's roster wouldn't contain players from
+already-eliminated teams by then, but a random sample doesn't know that.
+Result: playoff-round trials were mostly players who simply don't play that
+round, which craters the "beat no-swap" rate for a reason that has nothing
+to do with the engine's actual quality.
+
+This was caught by an early/mid/late calendar-tercile breakdown that showed
+a suspicious cliff (80% → 73% → 28% beat-rate across the season) — dug into
+it before writing the finding up as if it were real, since a cliff that
+sharp is more likely a broken assumption than a genuine trend:
+
+```
+round 34 (E2023): 18 teams playing, 9 games   <- still regular season
+round 35 (E2023):  4 teams playing, 2 games   <- playoffs start
+round 36 (E2023):  2 teams playing, 1 game    <- Final Four
+```
+
+Fixed by adding `classify_phase()` (detects regular-season vs. playoff
+rounds from actual team counts per round, not a hardcoded round number) and
+excluding playoff rounds from the default evaluation (`--include-playoffs`
+opt-in re-includes them, heavily caveated in the output). This is the
+correct **default** behavior going forward, not just a one-off filter for
+this run — a manager's real fantasy roster is fixed well before playoffs
+start, so evaluating with a fresh random league-wide sample per round was
+never a meaningful test of playoff-round performance to begin with, and
+fixing that properly (persistent roster + elimination-aware sampling) is
+out of scope for this POC.
+
+**How** (final, corrected run):
+```
+python backtest_eval.py --seasons E2023 E2024 E2025 --min-round 6 \
+    --trials-per-round 30 --seed 1 --csv backtest_trials.csv
+```
+(`backtest_trials.csv` — 2730 per-trial rows, gitignored — is the raw data
+behind every number below, kept locally for direct inspection if needed.)
+
+**Result — regular season only, 91 rounds, 2730 trials:**
+
+| Season | Rounds evaluated | Mean no-swap | Mean recommended | Mean best-possible | Beat / tie / lose | Mean gain (95% CI) | Swap-upside captured (95% CI) |
+|---|---|---|---|---|---|---|---|
+| E2023 | 29 | 92.88 | 103.69 | 115.46 | 82% / 14% / 4% | +10.81 ± 0.77 | 53% ± 5% |
+| E2024 | 29 | 98.14 | 108.28 | 119.94 | 77% / 18% / 5% | +10.14 ± 0.73 | 54% ± 5% |
+| E2025 | 33 | 92.44 | 101.12 | 114.45 | 69% / 27% / 4% | +8.69 ± 0.68 | 44% ± 4% |
+| **All combined** | **91** | **94.40** | **104.22** | **116.52** | **76% / 20% / 4%** | **+9.83 ± 0.42** | **50% ± 3%** |
+
+No structural-invariant violations across any trial (no-swap never exceeded
+best-possible). This table is the number to cite going forward — it
+supersedes both the earlier 4-round spot-check and the playoff-contaminated
+118-round/590-trial run from the previous log entry above.
+
+**Loss-case analysis** (the 4.2% of trials where recommended < no-swap):
+mean deficit 1.56 PIR, max deficit 6.0 PIR (out of ~90-115 PIR typical round
+scores — a small, bounded downside). Losses are spread across all three
+seasons roughly proportionally to trial count, not concentrated in any one
+season. This matches the documented expected case (a decision-time
+projection turned out wrong for that specific round) rather than indicating
+a logic defect — the separately-checked structural invariant
+(no-swap ≤ best-possible) is what would flag an actual bug, and it held
+everywhere.
+
+**Rolling-window hyperparameter sensitivity** (`--sensitivity`, 15
+trials/round, same regular-season-only scope):
+
+| `rolling_window` | Beat no-swap | Swap-upside captured |
+|---|---|---|
+| 5 | 77% | 50% |
+| 10 (current default) | 75% | 49% |
+| 15 | 75% | 50% |
+| 20 | 75% | 48% |
+
+Stable within a couple of points across a 4x range of window sizes — the
+current default of 10 isn't a fragile or cherry-picked choice; the
+heuristic's usefulness doesn't hinge on this particular hyperparameter.
+
+**Bottom line**: on the honest (regular-season-only) evaluation, the
+engine-recommended lineup beats or ties a no-swap baseline in 96% of
+trials, gains +9.83 PIR on average per round (95% CI ±0.42), and captures
+about half of the theoretical best-possible swap upside — all confirmed
+stable across three seasons and across a range of projection
+hyperparameters.
