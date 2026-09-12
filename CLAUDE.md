@@ -80,10 +80,18 @@ Full context for a fresh session, in order of what to read:
 - No UI of any kind. The user wants one specifically for logging opponents'
   transfers/trades (manual entry, since trades are rare in this league and
   the commissioner enters draft results by hand) — not yet started.
-- No ML model. Heuristic-first was a deliberate choice (transparent, no
-  training data needed, prove it's useful before adding complexity) — see
-  "Why heuristic-first" in `docs/technical_notes.md` if that decision needs
-  revisiting later.
+- No ML model **in production** — this was tried (2026-09-12): Ridge
+  regression and gradient-boosted trees (`engine/ml_projections.py`,
+  `engine/ml_features.py`, `--projection-method {ridge,gbm}` in
+  `backtest_eval.py`), evaluated with the same walk-forward backtest as the
+  heuristic. Neither **demonstrably** beat the heuristic (Ridge +13.48 vs
+  heuristic +13.40 mean PIR gain, within the ±0.5 95% CI; GBM +13.05, a
+  wash-to-slightly-worse despite better standalone prediction accuracy) —
+  see `docs/testing_log.md` → "Regression-model pivot" for the full
+  writeup, including a cross-season-pooling hypothesis that was tested and
+  disconfirmed. Heuristic remains the default; the ML code paths stay
+  available for revisiting with a richer feature set (opponent strength
+  wasn't attempted) or more data.
 - Frontend approach, hosting/deployment target, and full historical backfill
   sequencing were raised as open questions earlier and explicitly deferred
   by the user ("let's see what data we get first") — still open, see
@@ -93,7 +101,13 @@ Full context for a fresh session, in order of what to read:
 
 ```bash
 cd euroleague-fantasy
-pip install -r requirements.txt
+# This WSL machine's system Python has no pip and is PEP-668
+# externally-managed (no sudo) - use a project-local venv, bootstrapped
+# without pip first so the system lock never applies to it:
+python3 -m venv --without-pip .venv
+.venv/bin/python3 <(curl -s https://bootstrap.pypa.io/get-pip.py)
+.venv/bin/pip install -r requirements.txt
+# then run everything via .venv/bin/python3 (e.g. .venv/bin/python3 poc_run.py ...)
 
 # Explore raw data for a handful of recent games (fast, uses cache)
 python explore_client.py --season E2025 --games 10

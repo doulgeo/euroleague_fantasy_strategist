@@ -44,6 +44,8 @@ import sqlite3
 
 from engine.db import get_connection, load_rows
 from engine.lineup import build_lineup, compute_round_score, swap_after_day1, team_dates_for_round
+from engine.ml_features import build_feature_table
+from engine.ml_projections import build_ml_projections, train_model
 from engine.projections import ROLLING_WINDOW, build_projections
 from engine.roster import DRAFT_POOL_SIZE, build_draft_pool, sample_active_squad, sample_roster
 
@@ -161,6 +163,72 @@ def evaluate_season(
             rows, as_of_round=round_no, rolling_window=rolling_window, min_games=min_games
         )
         if len(projections) < 20:  # not enough of a pool this early in the season
+            summary.rounds_skipped += 1
+            continue
+
+        pool = build_draft_pool(projections, pool_size=pool_size) if pool_size > 0 else projections
+
+        got_any = False
+        for t in range(trials_per_round):
+            trial = run_one_trial(season, round_no, pool, rows, team_dates, base_seed + t)
+            if trial is not None:
+                summary.trials.append(trial)
+                got_any = True
+
+        if got_any:
+            summary.rounds_attempted += 1
+        else:
+            summary.rounds_skipped += 1
+
+    return summary
+
+
+def evaluate_season_ml(
+    feature_table: list[dict],
+    all_rows: list[dict],
+    season: str,
+    model_type: str,
+    min_round: int,
+    trials_per_round: int,
+    base_seed: int,
+    rolling_window: int = ROLLING_WINDOW,
+    min_games: int = 3,
+    include_playoffs: bool = False,
+    pool_size: int = DRAFT_POOL_SIZE,
+) -> SeasonSummary:
+    """Same structure/skip-conditions/trial loop as evaluate_season, but
+    trains a fresh regression model per round (cross-season-pooled via
+    train_model) and projects via build_ml_projections instead of calling
+    build_projections directly. Kept as a parallel function rather than a
+    shared strategy-parameter abstraction so the heuristic path above stays
+    provably unmodified.
+    """
+    rows = [r for r in all_rows if r["season_code"] == season]
+    if not rows:
+        print(f"{season}: no data in db, skipping season entirely (run sync_db.py first)")
+        return SeasonSummary(season=season)
+
+    rounds_present = sorted({r["round"] for r in rows if r.get("round") is not None})
+    phase_of_round = classify_phase(rows)
+    summary = SeasonSummary(season=season)
+
+    for round_no in rounds_present:
+        if round_no < min_round:
+            continue
+        if not include_playoffs and phase_of_round.get(round_no) == "playoffs":
+            summary.rounds_skipped += 1
+            continue
+
+        team_dates = team_dates_for_round(rows, round_no)
+        if not team_dates:
+            summary.rounds_skipped += 1
+            continue
+
+        model = train_model(feature_table, as_of_season=season, as_of_round=round_no, model_type=model_type)
+        projections = build_ml_projections(
+            rows, as_of_round=round_no, model=model, rolling_window=rolling_window, min_games=min_games
+        )
+        if len(projections) < 20:
             summary.rounds_skipped += 1
             continue
 
@@ -379,6 +447,13 @@ def main() -> None:
              "engine.roster.build_draft_pool), instead of a uniform random draw from the whole league pool. "
              "Pass 0 to disable and sample from the full league pool (old behavior).",
     )
+    parser.add_argument(
+        "--projection-method", choices=["heuristic", "ridge", "gbm"], default="heuristic",
+        help="heuristic (default) = engine.projections.build_projections, unchanged. ridge/gbm = a regression "
+             "model (see engine.ml_projections) trained per round on all strictly-prior seasons in full plus the "
+             "current season's rounds before the cutoff - cross-season pooling the heuristic can't do. Only "
+             "affects the main run, not --sensitivity (heuristic-only).",
+    )
     args = parser.parse_args()
 
     if args.sensitivity:
@@ -394,17 +469,34 @@ def main() -> None:
     conn = get_connection()
     all_summaries: list[SeasonSummary] = []
     phase_of: dict[tuple[str, int], str] = {}
-    for season in args.seasons:
-        summary = evaluate_season(
-            conn, season, args.min_round, args.trials_per_round, args.seed,
-            include_playoffs=args.include_playoffs, pool_size=args.pool_size,
-        )
-        print_summary(summary)
-        all_summaries.append(summary)
 
-        rows = load_rows(conn, season)
-        for round_no, phase in classify_phase(rows).items():
-            phase_of[(season, round_no)] = phase
+    if args.projection_method == "heuristic":
+        for season in args.seasons:
+            summary = evaluate_season(
+                conn, season, args.min_round, args.trials_per_round, args.seed,
+                include_playoffs=args.include_playoffs, pool_size=args.pool_size,
+            )
+            print_summary(summary)
+            all_summaries.append(summary)
+
+            rows = load_rows(conn, season)
+            for round_no, phase in classify_phase(rows).items():
+                phase_of[(season, round_no)] = phase
+    else:
+        all_rows = load_rows(conn)  # every season, once - needed for cross-season training pool
+        feature_table = build_feature_table(all_rows)
+        for season in args.seasons:
+            summary = evaluate_season_ml(
+                feature_table, all_rows, season, args.projection_method,
+                args.min_round, args.trials_per_round, args.seed,
+                include_playoffs=args.include_playoffs, pool_size=args.pool_size,
+            )
+            print_summary(summary)
+            all_summaries.append(summary)
+
+            rows = [r for r in all_rows if r["season_code"] == season]
+            for round_no, phase in classify_phase(rows).items():
+                phase_of[(season, round_no)] = phase
     conn.close()
 
     all_trials = [t for s in all_summaries for t in s.trials]

@@ -39,13 +39,13 @@ class Projection:
         )
 
 
-def _parse_date(s: str | None) -> datetime | None:
+def parse_date(s: str | None) -> datetime | None:
     if not s:
         return None
     return datetime.fromisoformat(s.replace("Z", "+00:00"))
 
 
-def _recency_weighted_mean(values: list[float]) -> float:
+def recency_weighted_mean(values: list[float]) -> float:
     """Most-recent-last list of values -> weighted mean, more weight on recent.
 
     Linear ramp weights (1, 2, 3, ... n) rather than exponential decay - simple,
@@ -58,7 +58,7 @@ def _recency_weighted_mean(values: list[float]) -> float:
     return sum(v * w for v, w in zip(values, weights)) / total_weight
 
 
-def _stdev(values: list[float]) -> float:
+def stdev(values: list[float]) -> float:
     if len(values) < 2:
         return 0.0
     mean = sum(values) / len(values)
@@ -104,7 +104,7 @@ def build_projections(
     projections: dict[str, Projection] = {}
 
     for player_id, prows in by_player.items():
-        prows_sorted = sorted(prows, key=lambda r: (_parse_date(r["game_date"]) or datetime.min, r["game_code"]))
+        prows_sorted = sorted(prows, key=lambda r: (parse_date(r["game_date"]) or datetime.min, r["game_code"]))
 
         if len(prows_sorted) < min_games:
             continue
@@ -113,9 +113,9 @@ def build_projections(
         pir_values = [float(r["pir_official"]) for r in recent]
         minutes_values = [float(r["minutes_seconds"]) for r in recent]
 
-        projected_pir = _recency_weighted_mean(pir_values)
-        minutes_trend = _recency_weighted_mean(minutes_values)
-        volatility = _stdev(pir_values)
+        projected_pir = recency_weighted_mean(pir_values)
+        minutes_trend = recency_weighted_mean(minutes_values)
+        volatility = stdev(pir_values)
 
         team = prows_sorted[-1]["team"]
         team_results = team_game_results.get(team, [])[-team_win_window:]

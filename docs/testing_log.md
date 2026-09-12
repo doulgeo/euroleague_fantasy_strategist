@@ -324,3 +324,129 @@ under the new sampling.
 `backtest_eval.py`'s default). The `--pool-size 0` numbers above remain
 useful as the "uniform random" baseline if that comparison is ever needed
 again, but the headline number to cite is the pool-100 row.
+
+---
+
+## 2026-09-12 — Regression-model pivot: Ridge and gradient-boosted trees vs. the heuristic
+
+**What**: per `docs/technical_notes.md`'s own stated rule ("prove the
+heuristic works, *then* decide whether a regression/tree model demonstrably
+beats it"), built a real regression pipeline and tested it head-to-head
+against the heuristic, using the exact same evaluation harness. New:
+`engine/ml_features.py` (feature engineering: per-player rolling stats
+extended well beyond the heuristic's PIR/minutes-only scope - shooting
+splits, rebounds split, assists/steals/turnovers/blocks, fouls, plus/minus,
+starter rate, rest days, home/away, team, position - built once as a
+labeled multi-season table), `engine/ml_projections.py` (Ridge and
+`HistGradientBoostingRegressor` pipelines, trained per walk-forward round
+pooling all strictly-prior seasons in full plus the current season's
+rounds before the cutoff - the one structural advantage this pivot has
+that the heuristic's single-season design categorically cannot use),
+`ml_sanity_check.py` (a cheap fixed-split gate before the expensive full
+backtest), and `--projection-method {heuristic,ridge,gbm}` wired into
+`backtest_eval.py` as a pure swap-in (heuristic's own code path
+byte-for-byte unchanged, confirmed by re-running it before and after these
+changes and getting the identical 80%/18%/2%, +13.40 ± 0.52 headline both
+times). Added `numpy`/`scikit-learn` to `requirements.txt` - the project's
+first ML dependency.
+
+**Environment note**: this machine's Python (3.14.4, via apt) has no `pip`
+and is PEP-668 externally-managed, with no sudo available. Worked around by
+bootstrapping a project-local `.venv` (`python3 -m venv --without-pip
+.venv`, then running `get-pip.py` *inside* the venv's own interpreter, which
+sidesteps the system lock entirely) rather than requesting `--break-system-
+packages` or modifying the system Python. `cp314` wheels for both new
+packages exist on PyPI - no interpreter downgrade needed. Anyone picking
+this up fresh: `python3 -m venv --without-pip .venv && .venv/bin/python3
+<(curl -s https://bootstrap.pypa.io/get-pip.py) && .venv/bin/pip install -r
+requirements.txt`, then run everything via `.venv/bin/python3`.
+
+**How**:
+1. `python ml_sanity_check.py` - fixed split (train E2023+E2024, test
+   E2025), MAE/RMSE/R² for Ridge, GBM, and the heuristic over the *same*
+   (player, round) sample (heuristic predictions pulled from
+   `build_projections` at each test row's own round, not computed
+   independently, so the comparison can't silently use mismatched samples).
+2. Full walk-forward backtest, identical settings to the validated
+   heuristic headline, once each:
+   `python backtest_eval.py --seasons E2023 E2024 E2025 --min-round 6
+   --trials-per-round 30 --seed 1 --projection-method {ridge,gbm}`.
+
+**Result 1 - sanity check (E2025 test set, n=7759, heuristic-matched sample):**
+
+| Method | MAE | RMSE | R² |
+|---|---|---|---|
+| Heuristic | 5.820 | 7.519 | 0.181 |
+| Ridge | 5.644 | 7.255 | 0.238 |
+| GBM | 5.696 | 7.317 | 0.225 |
+
+Both models beat the heuristic on raw per-game PIR prediction accuracy.
+GBM's permutation importances put `pir_mean` (the same rolling-PIR signal
+the heuristic already uses) far ahead of everything else, then
+`minutes_mean`, shot volume, and `fouls_drawn_mean` - no exotic feature
+dominates. Ridge's largest-magnitude coefficients were mostly **team**
+dummy variables (`team_BER`, `team_PAM`, `team_ASV`, ±0.5-1.4), i.e. Ridge
+is leaning partly on team identity as a pace/system proxy rather than
+purely on individual form - plausible, not obviously wrong, but flagged
+here rather than silently accepted (an ablation dropping `team` is a
+reasonable follow-up if this pivot is pursued further, not done here).
+
+**Result 2 - full walk-forward backtest, regular season only, 91 rounds,
+2730 trials, pool-size 100 (same scope as the current heuristic headline):**
+
+| Method | Beat / tie / lose | Mean gain (95% CI) | Swap-upside captured | Full run time |
+|---|---|---|---|---|
+| Heuristic | 80% / 18% / 2% | +13.40 ± 0.52 | 46% | (already validated) |
+| Ridge | 81% / 17% / 2% | +13.48 ± 0.51 | 49% | 21.5s |
+| GBM | 81% / 17% / 2% | +13.05 ± 0.50 | 47% | 28.8s |
+
+Per-season mean gain (heuristic in parens):
+
+| Season | Ridge | GBM | Heuristic |
+|---|---|---|---|
+| E2023 | +14.77 ± 0.85 | +14.51 ± 0.91 | +14.58 ± 0.86 |
+| E2024 | +13.73 ± 0.99 | +12.71 ± 0.90 | +13.74 ± 0.95 |
+| E2025 | +12.11 ± 0.80 | +12.07 ± 0.81 | +12.06 ± 0.87 |
+
+Timing confirms the Step-2 estimate from planning: both methods add
+seconds, not minutes, to a full backtest (model retraining is one `.fit()`
+per round, ~91 times, sharing a feature table built once up front).
+
+**Cross-season-pooling hypothesis - disconfirmed**: the plan's rationale for
+expecting ML to help was that it can pool prior seasons' data while the
+heuristic architecturally cannot (E2023 gets zero pooling for either
+method, E2024 gets one prior season, E2025 gets two). If that mechanism
+were doing real work, Ridge/GBM's edge over the heuristic should grow
+E2023→E2024→E2025. It doesn't: the gap is E2023 +0.19/-0.07,
+E2024 -0.01/-1.03, E2025 +0.05/+0.01 (Ridge/GBM respectively) - flat and
+inside noise throughout, not growing. Whatever's happening, it isn't the
+hypothesized pooling advantage.
+
+**Loss-case comparison**: Ridge 1.9% loss rate (mean deficit 1.69, max
+7.5 PIR), GBM 2.2% (mean deficit 1.79, max 11.5 PIR), heuristic (pool-100)
+4.2%/mean 1.56/max 6.0 (rounding note: the pool-100 heuristic loss-rate
+figure is from the prior entry above). Both ML methods' loss *rates* are
+similar to or better than the heuristic; GBM's worst single-round deficit
+(11.5) is noticeably fatter-tailed than Ridge's (7.5) or the heuristic's
+(6.0).
+
+**Bottom line**: neither model **demonstrably** beats the heuristic by the
+project's own stated bar. Ridge is marginally ahead on every headline
+metric (+13.48 vs +13.40 mean gain, 49% vs 46% captured) but the gap is
+well within the reported 95% CIs (±0.5-0.52) - not statistically
+distinguishable from noise at this sample size. GBM is essentially a wash
+on mean gain (+13.05, actually *below* the heuristic) despite having better
+standalone prediction accuracy in the sanity check - a genuinely useful
+finding on its own: predicting individual-game PIR more accurately did not
+translate into better swap/lineup *decisions*, most likely because what
+the swap logic needs is correctly-ordered relative value between bench and
+incumbent at decision time, not low average error across the whole player
+pool. Both models ran fast enough (seconds) that this isn't a resourcing
+verdict - the heuristic's transparent recency-weighted mean is simply
+already capturing most of the exploitable signal in this feature set, at
+this data volume (~20k labeled rows after the min-games gate). Given this,
+**the heuristic remains the default** (`--projection-method heuristic`);
+the regression paths stay available (`ridge`/`gbm`) for anyone who wants to
+revisit this with a materially different feature set (e.g. opponent-
+strength modeling, explicitly deferred from this pass) or more seasons of
+data, but there's no case for switching the default today.
