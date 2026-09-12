@@ -547,3 +547,32 @@ distribution), stacking the heuristic's own prediction in as a training
 *feature* rather than an ensemble-averaging input (letting the model learn
 a correction/residual instead of predicting PIR from scratch), opponent-
 strength features, and more backfilled seasons of training data.
+
+---
+
+## 2026-09-12 — Draft-board tool sanity check
+
+**What**: built `draft_board.py`, a new draft-prep cheat sheet (per-position
+ranked list, tiering by gap detection, and cross-position VORP using
+positional replacement level = 12 managers x that position's roster
+requirement). Requested by the user ahead of the live draft: "a list per
+position that would yield the largest amount of points," explicitly no ML.
+Reuses `engine.projections.build_projections` unchanged - no new
+projection logic, just a new ranking/presentation layer over it.
+
+**How**: ran against `euroleague.db` E2025 (most recent completed season,
+rounds 1-47), `min_games=10`, full history as the projection window
+(`as_of_round=48`). Eyeballed the top of each position list and the
+overall VORP-sorted list for plausibility.
+
+**Result**: sane. Top names match real-world EuroLeague standouts
+(Vezenkov, Hezonja, Larkin, Fournier, Tavares, Lessort, Milutinov all
+appear near the top of their position). Tiering produced plausible
+breaks (e.g. Centers: Wright/Oturu/Diakite as tier 1, a clear drop to
+Milutinov alone in tier 2). No unit tests written - this is a
+presentation layer over already-validated projections, not new
+projection logic, so a plausibility read was judged sufficient.
+
+**Caveat surfaced to the user**: board reflects last season's form only -
+summer transfers, retirements, and players new to EuroLeague this season
+won't be captured or may show up under a stale team code.
