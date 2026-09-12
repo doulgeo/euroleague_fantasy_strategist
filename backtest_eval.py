@@ -45,7 +45,7 @@ import sqlite3
 from engine.db import get_connection, load_rows
 from engine.lineup import build_lineup, compute_round_score, swap_after_day1, team_dates_for_round
 from engine.ml_features import build_feature_table
-from engine.ml_projections import build_ml_projections, train_model
+from engine.ml_projections import build_ensemble_projections, build_ml_projections, train_model
 from engine.projections import ROLLING_WINDOW, build_projections
 from engine.roster import DRAFT_POOL_SIZE, build_draft_pool, sample_active_squad, sample_roster
 
@@ -195,6 +195,7 @@ def evaluate_season_ml(
     min_games: int = 3,
     include_playoffs: bool = False,
     pool_size: int = DRAFT_POOL_SIZE,
+    feature_set: str = "full",
 ) -> SeasonSummary:
     """Same structure/skip-conditions/trial loop as evaluate_season, but
     trains a fresh regression model per round (cross-season-pooled via
@@ -202,6 +203,10 @@ def evaluate_season_ml(
     build_projections directly. Kept as a parallel function rather than a
     shared strategy-parameter abstraction so the heuristic path above stays
     provably unmodified.
+
+    model_type == "ensemble" is a special case: trains both ridge and gbm
+    that round and averages them with the heuristic itself (equal weight,
+    see build_ensemble_projections) instead of using a single trained model.
     """
     rows = [r for r in all_rows if r["season_code"] == season]
     if not rows:
@@ -224,10 +229,23 @@ def evaluate_season_ml(
             summary.rounds_skipped += 1
             continue
 
-        model = train_model(feature_table, as_of_season=season, as_of_round=round_no, model_type=model_type)
-        projections = build_ml_projections(
-            rows, as_of_round=round_no, model=model, rolling_window=rolling_window, min_games=min_games
-        )
+        if model_type == "ensemble":
+            models = {
+                name: train_model(feature_table, as_of_season=season, as_of_round=round_no,
+                                   model_type=name, feature_set=feature_set)
+                for name in ("ridge", "gbm")
+            }
+            projections = build_ensemble_projections(
+                rows, as_of_round=round_no, models=models, feature_set=feature_set,
+                include_heuristic=True, rolling_window=rolling_window, min_games=min_games,
+            )
+        else:
+            model = train_model(feature_table, as_of_season=season, as_of_round=round_no,
+                                 model_type=model_type, feature_set=feature_set)
+            projections = build_ml_projections(
+                rows, as_of_round=round_no, model=model, feature_set=feature_set,
+                rolling_window=rolling_window, min_games=min_games,
+            )
         if len(projections) < 20:
             summary.rounds_skipped += 1
             continue
@@ -448,11 +466,18 @@ def main() -> None:
              "Pass 0 to disable and sample from the full league pool (old behavior).",
     )
     parser.add_argument(
-        "--projection-method", choices=["heuristic", "ridge", "gbm"], default="heuristic",
+        "--projection-method", choices=["heuristic", "ridge", "gbm", "ensemble"], default="heuristic",
         help="heuristic (default) = engine.projections.build_projections, unchanged. ridge/gbm = a regression "
              "model (see engine.ml_projections) trained per round on all strictly-prior seasons in full plus the "
-             "current season's rounds before the cutoff - cross-season pooling the heuristic can't do. Only "
-             "affects the main run, not --sensitivity (heuristic-only).",
+             "current season's rounds before the cutoff - cross-season pooling the heuristic can't do. ensemble = "
+             "equal-weight average of the heuristic + ridge + gbm (see build_ensemble_projections). Only affects "
+             "the main run, not --sensitivity (heuristic-only).",
+    )
+    parser.add_argument(
+        "--feature-set", choices=["full", "minimal"], default="full",
+        help="Which ml_features.FEATURE_SETS to train ridge/gbm/ensemble on. 'minimal' is a small subset close to "
+             "the heuristic's own inputs (rolling PIR, minutes, volatility, team win rate, position) - see "
+             "docs/testing_log.md for the full-vs-minimal comparison. No effect on --projection-method heuristic.",
     )
     args = parser.parse_args()
 
@@ -490,6 +515,7 @@ def main() -> None:
                 feature_table, all_rows, season, args.projection_method,
                 args.min_round, args.trials_per_round, args.seed,
                 include_playoffs=args.include_playoffs, pool_size=args.pool_size,
+                feature_set=args.feature_set,
             )
             print_summary(summary)
             all_summaries.append(summary)

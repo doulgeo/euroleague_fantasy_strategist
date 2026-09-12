@@ -82,16 +82,20 @@ Full context for a fresh session, in order of what to read:
   the commissioner enters draft results by hand) — not yet started.
 - No ML model **in production** — this was tried (2026-09-12): Ridge
   regression and gradient-boosted trees (`engine/ml_projections.py`,
-  `engine/ml_features.py`, `--projection-method {ridge,gbm}` in
-  `backtest_eval.py`), evaluated with the same walk-forward backtest as the
-  heuristic. Neither **demonstrably** beat the heuristic (Ridge +13.48 vs
-  heuristic +13.40 mean PIR gain, within the ±0.5 95% CI; GBM +13.05, a
-  wash-to-slightly-worse despite better standalone prediction accuracy) —
-  see `docs/testing_log.md` → "Regression-model pivot" for the full
+  `engine/ml_features.py`, `--projection-method {ridge,gbm,ensemble}` in
+  `backtest_eval.py`), tuned via a hyperparameter grid search
+  (`ml_grid_search.py`) and also tried as an equal-weight ensemble with the
+  heuristic, evaluated with the same walk-forward backtest as the
+  heuristic. None **demonstrably** beat the heuristic (tuned Ridge +13.51,
+  ensemble +13.45, tuned GBM +13.27, vs. heuristic +13.40 mean PIR gain —
+  all within/near the ±0.5 95% CI) — see `docs/testing_log.md` → "Regression-
+  model pivot" and the grid-search/ensemble follow-up entry for the full
   writeup, including a cross-season-pooling hypothesis that was tested and
-  disconfirmed. Heuristic remains the default; the ML code paths stay
-  available for revisiting with a richer feature set (opponent strength
-  wasn't attempted) or more data.
+  disconfirmed, and a minimal-vs-full feature-set ablation showing the extra
+  box-score detail (beyond what the heuristic itself uses) does measurably
+  help. Heuristic remains the default; the ML code paths stay available for
+  revisiting with a richer feature set (opponent strength wasn't attempted)
+  or more data.
 - Frontend approach, hosting/deployment target, and full historical backfill
   sequencing were raised as open questions earlier and explicitly deferred
   by the user ("let's see what data we get first") — still open, see

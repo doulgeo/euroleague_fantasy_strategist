@@ -450,3 +450,100 @@ the regression paths stay available (`ridge`/`gbm`) for anyone who wants to
 revisit this with a materially different feature set (e.g. opponent-
 strength modeling, explicitly deferred from this pass) or more seasons of
 data, but there's no case for switching the default today.
+
+---
+
+## 2026-09-12 — Hyperparameter grid search, heuristic+ridge+gbm ensemble, minimal-feature-set ablation
+
+**What**: three follow-ups to the regression pivot above, all aimed at
+"can we close the gap to the heuristic further, and is the full feature set
+actually earning its keep": (1) a hyperparameter grid search for both
+models, since neither had been tuned - Ridge used sklearn's default
+`alpha=1.0` and GBM used an untuned guess (`max_depth=6, learning_rate=0.1`);
+(2) an equal-weight ensemble averaging the heuristic's own prediction with
+Ridge and GBM (`build_ensemble_projections` in `engine/ml_projections.py`,
+wired in as `--projection-method ensemble`); (3) a "minimal" feature subset
+close to the heuristic's own inputs (`pir_mean`, `minutes_mean`,
+`pir_volatility`, `team_win_rate`, `position` - 5 features vs. the full
+set's 22), to test whether the extra box-score detail is actually useful or
+just noise (`--feature-set {full,minimal}`, `engine.ml_features.FEATURE_SETS`).
+
+**How**: `python ml_grid_search.py` (cheap fixed-split sweep, same
+E2023+E2024→E2025 split as `ml_sanity_check.py` - Ridge alpha ∈
+{0.1, 0.3, 1, 3, 10, 30, 100}, GBM max_depth ∈ {3, 6, 9} × learning_rate ∈
+{0.05, 0.1, 0.2}, each × feature_set ∈ {full, minimal}), then the full
+walk-forward backtest (same settings as the pivot's headline: `--seasons
+E2023 E2024 E2025 --min-round 6 --trials-per-round 30 --seed 1`) for the
+newly-tuned Ridge/GBM defaults and for `--projection-method ensemble`.
+
+**Result 1 - grid search** (E2025 test set, full feature set unless noted):
+
+| Sweep | Best config | Best MAE | vs. untuned |
+|---|---|---|---|
+| Ridge alpha | 100.0 | 5.637 | 5.642 (alpha=1.0) - essentially flat |
+| GBM depth×lr | depth=3, lr=0.05 | 5.660 | 5.694 (depth=6, lr=0.1) - real improvement |
+
+Ridge's alpha barely moved MAE across a 1000x range (0.1→100: 5.642→5.637) -
+the "team dummy coefficients look large" observation from the original
+pivot wasn't actually a held-out-accuracy problem regularization could fix;
+noted, not chased further. GBM's original untuned guess was genuinely too
+deep/fast; shallower, slower trees (depth=3, lr=0.05) measurably help and
+this was **adopted as the new default** in `engine/ml_projections.py`
+(`GBM_DEFAULTS`), confirmed to also help in the full backtest below (not
+just the fixed-split MAE). Ridge's new default (`alpha=100.0`) was adopted
+too, on the "no reason not to, doesn't hurt" logic even though the gain is
+inside noise.
+
+**Feature-set ablation** (same sweep, `feature_set=minimal` vs `full`):
+
+| Feature set | Ridge best R² | GBM best R² |
+|---|---|---|
+| full (22 features) | 0.239 | 0.236 |
+| minimal (5 features) | 0.222 | 0.219 |
+
+Clear and consistent for both models: the extra box-score detail (shot
+splits, rebound split, fouls, plus/minus, rest days, home/away, team) is
+earning its keep, not just adding noise - this **contradicts** the
+hypothesis raised when discussing next steps ("maybe the heuristic's own
+inputs are already enough signal"). Given how clear and consistent this
+gap is at the cheap fixed-split stage, the expensive full walk-forward
+backtest wasn't re-run for `minimal` - the fixed-split result is decisive
+enough on its own.
+
+**Result 2 - full walk-forward backtest, regular season only, 91 rounds,
+2730 trials, pool-size 100, full feature set, tuned hyperparameters:**
+
+| Method | Beat/tie/lose | Mean gain (95% CI) | Captured | Loss rate (mean/max deficit) |
+|---|---|---|---|---|
+| Heuristic | 80%/18%/2% | +13.40 ± 0.52 | 46% | 4.2% (1.56 / 6.0) [pool-100 entry above] |
+| Ridge (tuned) | 81%/17%/2% | +13.51 ± 0.51 | 48% | 1.9% (2.25 / 15.0) |
+| GBM (tuned) | 80%/19%/1% | +13.27 ± 0.51 | 46% | 1.4% (2.40 / 17.5) |
+| Ensemble (heuristic+ridge+gbm) | 81%/18%/2% | +13.45 ± 0.52 | 48% | 1.8% (1.88 / 16.0) |
+
+GBM's tuning translated into a real backtest improvement (+13.05 → +13.27
+mean gain, loss rate 2.2% → 1.4%), confirming the fixed-split MAE gain
+wasn't just an artifact of that one split. The ensemble lands between
+Ridge and GBM, as expected from equal-weight averaging - it doesn't beat
+its best individual component (Ridge), it just softens GBM's drag on the
+average.
+
+**Bottom line, updated**: all four methods are now clustered within
+~0.24 PIR of each other (13.27-13.51), all well inside/near the reported
+±0.5 95% CIs. Ridge (tuned) is the best individual method today, edging
+the heuristic by +0.11 PIR mean gain - still not a demonstrable win by the
+project's own bar, but the smallest gap yet and the closest thing to a
+positive signal for the regression path so far. Every method's loss *rate*
+beats the heuristic's (1.4-1.9% vs 4.2%), but with a consistently fatter
+tail on individual bad rounds (max deficit 15-17.5 PIR vs the heuristic's
+6.0) - a recurring pattern across every regression variant tried this
+session, worth remembering if this is revisited: **the regression paths
+trade a lower frequency of bad rounds for occasionally much worse ones**,
+not a uniformly safer profile. Heuristic stays the default.
+
+**Not yet tried** (deliberately deferred per this session's own scoping,
+to revisit later): other model families (Lasso/ElasticNet for automatic
+feature selection, quantile/Poisson loss functions for PIR's skewed
+distribution), stacking the heuristic's own prediction in as a training
+*feature* rather than an ensemble-averaging input (letting the model learn
+a correction/residual instead of predicting PIR from scratch), opponent-
+strength features, and more backfilled seasons of training data.

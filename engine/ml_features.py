@@ -55,6 +55,18 @@ NUMERIC_FEATURE_COLUMNS = [
 CATEGORICAL_FEATURE_COLUMNS = ["position", "home_away", "team"]
 FEATURE_COLUMNS = NUMERIC_FEATURE_COLUMNS + CATEGORICAL_FEATURE_COLUMNS
 
+# A deliberately small subset, close to what the heuristic itself uses
+# (rolling PIR, minutes, volatility, team win rate) plus position - for
+# testing whether the extra box-score detail in the full set is earning its
+# keep or just adding noise (see docs/testing_log.md).
+MINIMAL_NUMERIC_FEATURE_COLUMNS = ["pir_mean", "minutes_mean", "pir_volatility", "team_win_rate"]
+MINIMAL_CATEGORICAL_FEATURE_COLUMNS = ["position"]
+
+FEATURE_SETS: dict[str, tuple[list[str], list[str]]] = {
+    "full": (NUMERIC_FEATURE_COLUMNS, CATEGORICAL_FEATURE_COLUMNS),
+    "minimal": (MINIMAL_NUMERIC_FEATURE_COLUMNS, MINIMAL_CATEGORICAL_FEATURE_COLUMNS),
+}
+
 # raw box-score field -> the rolling-mean feature name it feeds
 _STAT_TO_FEATURE = {
     "pir_official": "pir_mean",
