@@ -20,6 +20,8 @@ from engine.projections import Projection
 REQUIRED_COUNTS = {"Guard": 5, "Forward": 5, "Center": 3}
 TOTAL_ROSTER_SIZE = sum(REQUIRED_COUNTS.values())  # 13
 
+DRAFT_POOL_SIZE = 100
+
 ACTIVE_SQUAD_SIZE = 10
 EXCLUDED_COUNT = 3
 
@@ -110,6 +112,59 @@ def _weighted_sample_without_replacement(
         pool.remove(pick)
 
     return chosen
+
+
+def build_draft_pool(
+    projections: dict[str, Projection], pool_size: int = DRAFT_POOL_SIZE
+) -> dict[str, Projection]:
+    """Restrict the sampling universe to players a real manager would plausibly
+    draft, instead of a uniform random slice of the entire league.
+
+    Draft-worthy here means productive (high projected PIR) and heavily used
+    (high minutes trend) - a proxy for "team leader" without needing a
+    separate usage-rate stat. Team win-rate is deliberately NOT part of this
+    ranking: the user's own draft criteria don't include "plays for a winning
+    team", even though win-rate does feed the scoring bonus elsewhere
+    (engine.projections) - drafting and in-round scoring are different
+    questions.
+
+    Ranked within each position separately, in proportion to the 5G/5F/3C
+    roster shape, so a scarce position (3 Centers needed) isn't crowded out
+    of the pool by a more numerous one - a flat top-100-overall cut would
+    likely be Guard-heavy just because there are more high-minute Guards
+    league-wide. Within a position, ranks by a 50/50 composite of min-max
+    normalized projected PIR and minutes trend (equal weight: a high-minutes
+    non-producer and a high-PIR bit-part player are both a bad proxy for
+    "team leader" on their own).
+    """
+    total_slots = sum(REQUIRED_COUNTS.values())
+    pool: dict[str, Projection] = {}
+
+    for position, required in REQUIRED_COUNTS.items():
+        candidates = [p for p in projections.values() if p.position == position]
+        if not candidates:
+            continue
+        target = max(required, round(pool_size * required / total_slots))
+
+        pirs = [p.projected_pir_with_bonus for p in candidates]
+        minutes = [p.minutes_trend_seconds for p in candidates]
+        pir_lo, pir_hi = min(pirs), max(pirs)
+        min_lo, min_hi = min(minutes), max(minutes)
+
+        def norm(v: float, lo: float, hi: float) -> float:
+            return (v - lo) / (hi - lo) if hi > lo else 0.5
+
+        def composite(p: Projection) -> float:
+            return (
+                0.5 * norm(p.projected_pir_with_bonus, pir_lo, pir_hi)
+                + 0.5 * norm(p.minutes_trend_seconds, min_lo, min_hi)
+            )
+
+        ranked = sorted(candidates, key=composite, reverse=True)
+        for p in ranked[:target]:
+            pool[p.player_id] = p
+
+    return pool
 
 
 def sample_roster(pool: dict[str, Projection], rng: random.Random | None = None) -> Roster:

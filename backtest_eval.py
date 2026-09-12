@@ -45,7 +45,7 @@ import sqlite3
 from engine.db import get_connection, load_rows
 from engine.lineup import build_lineup, compute_round_score, swap_after_day1, team_dates_for_round
 from engine.projections import ROLLING_WINDOW, build_projections
-from engine.roster import sample_active_squad, sample_roster
+from engine.roster import DRAFT_POOL_SIZE, build_draft_pool, sample_active_squad, sample_roster
 
 Z_95 = 1.96
 
@@ -74,19 +74,26 @@ def actual_pir_lookup(rows: list[dict], round_no: int) -> dict[str, float]:
 def run_one_trial(
     season: str,
     round_no: int,
-    projections: dict,
+    pool: dict,
     rows: list[dict],
     team_dates: dict[str, str],
     seed: int,
 ) -> Trial | None:
+    """`pool` is the sampling universe for this trial's random roster draw -
+    either the full leakage-safe projections dict (old behavior, uniform
+    random league-wide sample) or a draft-pool subset of it (see
+    engine.roster.build_draft_pool) restricting the draw to plausible,
+    manager-drafted players. Either way, projected values used for the
+    swap/lineup decision itself come from this same dict.
+    """
     rng = random.Random(seed)
     try:
-        roster = sample_roster(projections, rng)
+        roster = sample_roster(pool, rng)
         active_squad = sample_active_squad(roster, rng)
     except (ValueError, RuntimeError):
         return None  # not enough eligible players at this position/cutoff - skip trial
 
-    projected_value = lambda pid: projections[pid].projected_pir_with_bonus  # noqa: E731
+    projected_value = lambda pid: pool[pid].projected_pir_with_bonus  # noqa: E731
 
     try:
         initial = build_lineup(active_squad, team_dates, projected_value)
@@ -121,6 +128,7 @@ def evaluate_season(
     rolling_window: int = ROLLING_WINDOW,
     min_games: int = 3,
     include_playoffs: bool = False,
+    pool_size: int = DRAFT_POOL_SIZE,
 ) -> SeasonSummary:
     rows = load_rows(conn, season)
     if not rows:
@@ -156,9 +164,11 @@ def evaluate_season(
             summary.rounds_skipped += 1
             continue
 
+        pool = build_draft_pool(projections, pool_size=pool_size) if pool_size > 0 else projections
+
         got_any = False
         for t in range(trials_per_round):
-            trial = run_one_trial(season, round_no, projections, rows, team_dates, base_seed + t)
+            trial = run_one_trial(season, round_no, pool, rows, team_dates, base_seed + t)
             if trial is not None:
                 summary.trials.append(trial)
                 got_any = True
@@ -331,6 +341,7 @@ def run_full_eval(
     rolling_window: int = ROLLING_WINDOW,
     min_games: int = 3,
     include_playoffs: bool = False,
+    pool_size: int = DRAFT_POOL_SIZE,
 ) -> list[Trial]:
     conn = get_connection()
     all_summaries: list[SeasonSummary] = []
@@ -338,6 +349,7 @@ def run_full_eval(
         summary = evaluate_season(
             conn, season, min_round, trials_per_round, seed,
             rolling_window=rolling_window, min_games=min_games, include_playoffs=include_playoffs,
+            pool_size=pool_size,
         )
         all_summaries.append(summary)
     conn.close()
@@ -361,13 +373,19 @@ def main() -> None:
         help="Instead of the main run, re-run at a few rolling-window sizes to check hyperparameter sensitivity "
              "(regular season only, same exclusion as the main run)",
     )
+    parser.add_argument(
+        "--pool-size", type=int, default=DRAFT_POOL_SIZE,
+        help="Restrict roster sampling to the top N draft-worthy players (by PIR+minutes composite, see "
+             "engine.roster.build_draft_pool), instead of a uniform random draw from the whole league pool. "
+             "Pass 0 to disable and sample from the full league pool (old behavior).",
+    )
     args = parser.parse_args()
 
     if args.sensitivity:
         for window in (5, 10, 15, 20):
             trials = run_full_eval(
                 args.seasons, args.min_round, args.trials_per_round, args.seed,
-                rolling_window=window,
+                rolling_window=window, pool_size=args.pool_size,
             )
             summary = SeasonSummary(season=f"rolling_window={window}", trials=trials)
             print_summary(summary)
@@ -379,7 +397,7 @@ def main() -> None:
     for season in args.seasons:
         summary = evaluate_season(
             conn, season, args.min_round, args.trials_per_round, args.seed,
-            include_playoffs=args.include_playoffs,
+            include_playoffs=args.include_playoffs, pool_size=args.pool_size,
         )
         print_summary(summary)
         all_summaries.append(summary)

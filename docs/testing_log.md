@@ -251,3 +251,76 @@ cleanly. `poc_run.py`, `explore_client.py`, and `backfill.py` were left
 untouched — they intentionally still hit the live API/cache (current-season
 round fetches, one-time bulk backfills), which is a separate concern from
 backtesting against already-backfilled historical data.
+
+---
+
+## 2026-09-12 — Draft-pool sampling replaces uniform-random league-wide sampling
+
+**What**: the user pointed out that uniform-random sampling from the entire
+league pool (`sample_roster`'s previous only mode) doesn't reflect how they'd
+actually draft — they target productive, high-usage/leader-type players, and
+explicitly do *not* care whether a player's team wins. Added
+`build_draft_pool()` to `engine/roster.py`: ranks players within each
+position (Guard/Forward/Center, proportional to the 5/5/3 roster shape so
+the scarcer Center slot isn't crowded out) by a 50/50 composite of min-max
+normalized projected PIR and minutes trend, takes the top ~100 league-wide
+(default `DRAFT_POOL_SIZE = 100`), and that's the new sampling universe.
+Team win-rate is deliberately excluded from this ranking (it still feeds the
+existing scoring bonus in `engine.projections` — that's a different
+question). Wired into `backtest_eval.py` via `run_one_trial`/`evaluate_season`
+(new `--pool-size` flag, default 100; `--pool-size 0` restores the old
+uniform-random behavior for direct comparison).
+
+**How**:
+1. Sanity-checked pool composition for E2025 as-of-round-20 before trusting
+   it: 99 players (38G/38F/23C), top names by position were Vezenkov,
+   Nunn, Campazzo, Milutinov, etc. — recognizable real fantasy-relevant
+   players, not an artifact of the ranking formula.
+2. Reran the full validated-headline backtest with the new default:
+   `python backtest_eval.py --seasons E2023 E2024 E2025 --min-round 6
+   --trials-per-round 30 --seed 1 --csv backtest_trials_pool100.csv`.
+3. Reran the identical command with `--pool-size 0` as a regression check —
+   confirmed it exactly reproduces the prior DB-backed headline (76%/20%/4%,
+   +9.98 ± 0.44 PIR), i.e. the refactor didn't change old behavior when the
+   draft-pool restriction is disabled.
+4. Reran `--sensitivity` (rolling-window 5/10/15/20, 15 trials/round) under
+   the new default pool to check the hyperparameter-stability finding still
+   holds with the new sampling.
+
+**Result — regular season only, 91 rounds, 2730 trials, pool size 100 (vs.
+prior full-league-pool numbers in parens):**
+
+| Season | Beat / tie / lose | Mean gain (95% CI) | Swap-upside captured |
+|---|---|---|---|
+| E2023 | 89% / 9% / 2% (64%/32%/4%) | +14.58 ± 0.86 (+10.81 ± 0.77) | 51% (53%) |
+| E2024 | 82% / 17% / 2% (62%/34%/4%) | +13.74 ± 0.95 (+10.14 ± 0.73) | 48% (54%) |
+| E2025 | 72% / 26% / 2% (52%/45%/4%) | +12.06 ± 0.87 (+8.69 ± 0.68) | 40% (44%) |
+| **All combined** | **80% / 18% / 2% (76%/20%/4%)** | **+13.40 ± 0.52 (+9.83 ± 0.42)** | **46% (50%)** |
+
+No structural-invariant violations. Beat-or-tie rose from 96% to 98% and the
+outright-loss rate roughly halved (4.0% → 2.0%), and mean PIR gain per round
+rose ~36% (+9.83 → +13.40) — restricting to productive/high-minutes players
+raises the floor (no-swap already scores higher, 94.40 → up to ~119-124 mean
+depending on season) and makes the projection more reliable to act on, since
+these players are the ones with the most stable game-to-game history for the
+rolling-window projection to work from. Swap-upside captured dipped slightly
+(50% → 46%, within/near the old ±3pp CI) — a mild, not dramatic, trade-off.
+
+**Caveat worth flagging**: the loss-case *tail* got fatter even as it got
+rarer — max single-round deficit rose from 6.0 to 15.0 PIR (mean deficit
+1.56 → 2.14). Plausible mechanism: when a top-100 player's projection is
+wrong, the miss itself is likely bigger in absolute PIR terms (these players
+have higher and more volatile per-game ceilings than a random league-wide
+player would), even though such misses now happen less often. Not
+investigated further — noting it here so it isn't silently smoothed over by
+the headline improvement.
+
+Rolling-window sensitivity under the new pool (15 trials/round): 46-47%
+swap-upside captured, 80-81% beat rate, stable across window sizes 5/10/15/20
+— same conclusion as before (default of 10 isn't fragile), just re-verified
+under the new sampling.
+
+**This is now the default evaluation going forward** (`--pool-size 100` is
+`backtest_eval.py`'s default). The `--pool-size 0` numbers above remain
+useful as the "uniform random" baseline if that comparison is ever needed
+again, but the headline number to cite is the pool-100 row.
