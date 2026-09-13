@@ -18,12 +18,13 @@ from engine.data import EuroleagueClient, fetch_season
 from engine.lineup import (
     availability_label,
     build_lineup,
+    choose_active_squad,
     compute_round_score,
     swap_after_day1,
     team_dates_for_round,
 )
 from engine.projections import build_projections
-from engine.roster import sample_active_squad, sample_roster
+from engine.roster import sample_roster
 from engine.transfers import suggest_transfers
 
 
@@ -118,16 +119,18 @@ def main() -> None:
 
     rng = random.Random(args.seed)
     roster = sample_roster(projections, rng)
-    active_squad = sample_active_squad(roster, rng)
     team_dates = team_dates_for_round(rows, args.cutoff_round)
 
     if not team_dates:
         print(f"\nNo games found for round {args.cutoff_round} itself - can't build a lineup for it.")
         return
 
-    print_active_squad(active_squad, team_dates)
-
     projected_value = lambda pid: projections[pid].projected_pir_with_bonus  # noqa: E731
+
+    # Roster is still a random stand-in (no real ownership data yet), but the
+    # exclusion is the real per-round decision: which 3 of the 13 to bench.
+    active_squad = choose_active_squad(roster, team_dates, projected_value)
+    print_active_squad(active_squad, team_dates)
 
     initial = build_lineup(active_squad, team_dates, projected_value)
     print_lineup(f"Initial lineup recommendation (round {args.cutoff_round}, pre-day-1)", initial, team_dates)

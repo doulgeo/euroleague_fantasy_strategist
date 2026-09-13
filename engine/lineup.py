@@ -45,11 +45,12 @@ they're easy to revisit):
 
 from __future__ import annotations
 
+import itertools
 from dataclasses import dataclass
 from typing import Callable
 
 from engine.projections import Projection
-from engine.roster import ActiveSquad
+from engine.roster import ActiveSquad, Roster
 
 VALID_FORMATIONS: list[tuple[int, int, int]] = [(2, 2, 1), (2, 1, 2), (3, 1, 1)]  # (Guard, Forward, Center)
 BENCH_SCORE_MULTIPLIER = 0.5
@@ -209,6 +210,50 @@ def swap_after_day1(lineup: Lineup, team_dates: dict[str, str], value_fn: ValueF
     captain = max(new_starters, key=lambda p: value_fn(p.player_id))
 
     return Lineup(starters=new_starters, sixth_man=new_sixth_man, bench=bench, captain=captain)
+
+
+def choose_active_squad(roster: Roster, team_dates: dict[str, str], value_fn: ValueFn) -> ActiveSquad:
+    """Pick which 3 of the 13 roster players to exclude this round - the one
+    real per-round decision that build_lineup/swap_after_day1 previously
+    assumed was already made for them (engine.roster.sample_active_squad is
+    a random stand-in, POC/backtest-only, not real selection logic).
+
+    Brute-forces every combination of 3 exclusions (C(13,3) = 286 - cheap)
+    rather than a greedy "cut the 3 lowest-projected players" shortcut,
+    because a bench spot has option value a straight exclusion doesn't: a
+    benched player can still be swapped into a full-scoring slot after day
+    1, while an excluded player never can (see game_rules.md). Scoring each
+    candidate by its projected value *after* the same swap_after_day1 logic
+    used for the real recommendation - using projections as the stand-in
+    for "actual" results, since the exclusion is locked in before the round
+    starts and no results exist yet - means this picks the exclusion that
+    sets up the best real decision, not just the best-looking static XI.
+    """
+    best_squad: ActiveSquad | None = None
+    best_score: float | None = None
+
+    for excluded in itertools.combinations(roster.players, 3):
+        excluded_ids = {p.player_id for p in excluded}
+        active = [p for p in roster.players if p.player_id not in excluded_ids]
+
+        try:
+            candidate = ActiveSquad(active=active, excluded=list(excluded))
+        except ValueError:
+            continue  # can't field any valid formation with this exclusion
+
+        initial = build_lineup(candidate, team_dates, value_fn)
+        final = swap_after_day1(initial, team_dates, value_fn)
+        projected_as_actual = {p.player_id: value_fn(p.player_id) for p in active}
+        score = compute_round_score(initial, final, team_dates, projected_as_actual)
+
+        if best_score is None or score > best_score:
+            best_score = score
+            best_squad = candidate
+
+    if best_squad is None:
+        raise RuntimeError("No feasible 3-player exclusion found across this roster - check position counts")
+
+    return best_squad
 
 
 def compute_round_score(

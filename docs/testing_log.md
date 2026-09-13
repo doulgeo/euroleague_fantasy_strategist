@@ -576,3 +576,37 @@ projection logic, so a plausibility read was judged sufficient.
 **Caveat surfaced to the user**: board reflects last season's form only -
 summer transfers, retirements, and players new to EuroLeague this season
 won't be captured or may show up under a stale team code.
+
+---
+
+## 2026-09-13 — Real exclusion-choosing logic (choose_active_squad)
+
+**What**: added `engine.lineup.choose_active_squad`, filling the one real
+per-round gap surfaced when the user asked how starters/formation get
+picked: nothing previously decided *which 3 of 13 roster players to
+exclude* - `engine.roster.sample_active_squad` was only ever a random
+POC/backtest stand-in, not real logic. Wired `poc_run.py` to use the new
+function for its recommendation flow.
+
+**How**: brute-forces all C(13,3)=286 exclusion combinations, skips any
+that fail `ActiveSquad`'s formation-feasibility check, scores the rest by
+projected round value *after* running the same `build_lineup` +
+`swap_after_day1` logic used for the real recommendation (using
+projections as the "actual" stand-in, since exclusion locks in before any
+results exist), and keeps the best. Chosen over a greedy "cut the 3
+lowest-projected" shortcut because a benched player retains day-2 swap
+option value an excluded player doesn't - brute force is cheap enough
+(286 combos) that there's no reason to approximate.
+
+**Result**: ran `poc_run.py --season E2025 --cutoff-round 20 --seed 42`
+end-to-end without errors. Excluded players were sensibly the 3 lowest-
+projected on the sampled roster (1.9, 2.7, 6.3 proj) rather than a random
+draw. Left `backtest_eval.py` (the validated 91-round/2730-trial headline
+numbers) on the old random-exclusion sampler deliberately - swapping it in
+there would change the validated methodology and needs a deliberate rerun/
+re-validation, not a silent side effect of this change.
+
+**Follow-up not yet done**: rerunning the full backtest with
+`choose_active_squad` in place of the random sampler would likely raise
+the validated headline numbers (since it removes a currently-random
+decision) - worth doing if/when the user wants to re-validate.
