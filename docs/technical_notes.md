@@ -196,8 +196,8 @@ docstring at the top of `lineup.py`):
   only *who* fills an already-typed slot can change.
 - Captain reassignment at the swap window is allowed but only affects
   points not yet banked (see `compute_round_score`'s per-stage doubling) —
-  not confirmed against the actual rules, the most defensible interpretation
-  available.
+  **confirmed by the user 2026-09-13** (previously this was an unconfirmed
+  best-guess interpretation).
 
 ### Bug found and fixed #1: swap scoring discarded banked points
 

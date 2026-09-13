@@ -77,9 +77,12 @@ Plus a **team win bonus: +10% of that player's fantasy score for the round**
 if their team won.
 
 **Captain**: doubles (2x) whatever they score, and must be one of the 5
-starters (not the sixth man). Whether captain can be reassigned mid-round at
-the swap window is still not 100% confirmed — see the assumption flagged in
-`technical_notes.md`.
+starters (not the sixth man). **Confirmed by the user (2026-09-13): captain
+can be reassigned mid-round at the day-2 swap window** — e.g. captain plays
+badly Thursday, you name a new captain among your Friday starters. Doubling
+is per-stage: the day-1 captain's already-banked points stay doubled at
+whatever they were; reassigning only affects points not yet banked. See
+`technical_notes.md` for how this maps to `compute_round_score`.
 
 ## The turn-based substitution mechanic
 
