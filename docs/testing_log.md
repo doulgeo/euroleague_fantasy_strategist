@@ -672,3 +672,49 @@ all still reflect the old random-exclusion methodology. Given how large
 this effect was, the ML-vs-heuristic comparison in particular is worth
 redoing at some point under the new methodology before trusting the old
 "no demonstrable win" conclusion still holds.
+
+---
+
+## 2026-09-13 — ML-vs-heuristic comparison rerun under real exclusion logic
+
+**What**: reran the ridge/gbm/ensemble comparison (tuned hyperparameters,
+full feature set, pool-size 100 - same config as the "Hyperparameter grid
+search" entry above) now that `choose_active_squad` is the exclusion
+method for every trial, to check whether the prior "no demonstrable win
+over the heuristic" conclusion still holds against the much stronger new
+baseline (+24.06 PIR vs the old +9.83). Requested by the user, who
+correctly predicted the outcome going in.
+
+**How**: `python backtest_eval.py --seasons E2023 E2024 E2025 --min-round 6
+--trials-per-round 30 --seed 1 --projection-method {ridge,gbm,ensemble}`.
+Same command as the prior ML headline, unchanged except that
+`run_one_trial` now uses real exclusion logic for every method (heuristic
+included) instead of random.
+
+**Result - regular season only, 91 rounds, 2730 trials, real exclusion
+logic:**
+
+| Method | Beat/tie/lose | Mean gain (95% CI) | Upside captured | Loss rate (mean/max deficit) |
+|---|---|---|---|---|
+| Heuristic | 90%/8%/1% | +24.06 ± 0.68 | 73% | 1.2% (1.97 / 6.0) |
+| Ridge (tuned) | 91%/8%/1% | +24.60 ± 0.67 | 76% | 1.0% (3.00 / 14.0) |
+| GBM (tuned) | 91%/8%/1% | +24.39 ± 0.67 | 73% | 1.0% (1.90 / 8.0) |
+| Ensemble | 90%/9%/1% | +24.22 ± 0.67 | 75% | 0.6% (1.66 / 3.0) |
+
+**Bottom line, confirmed**: all four methods are clustered within 0.54 PIR
+of each other (24.06-24.60), inside/near the ±0.67 95% CIs - the same "no
+demonstrable win" conclusion as the original ML pivot, now holding against
+a baseline 2.4x stronger than the one it was first tested against. Ridge
+again edges the heuristic (+0.54 this time, vs +0.11 before) - consistent
+direction across both methodologies, still not a demonstrable win by the
+project's own bar. The fat-tail loss pattern partially persists (Ridge's
+worst individual round: 14.0 PIR deficit vs the heuristic's 6.0) but is
+notably *not* present for the ensemble this time (max deficit only 3.0,
+down from 16.0 under the old methodology, and its lowest loss rate of any
+method at 0.6%) - the ensemble's smoothing effect looks more valuable
+under real exclusion logic than it did before, worth keeping in mind if
+this is revisited again.
+
+**Verdict unchanged**: heuristic remains the default. This closes out the
+open question from the previous session about whether the ML comparison
+needed redoing - it did, and the answer didn't move.

@@ -62,10 +62,11 @@ Full context for a fresh session, in order of what to read:
   swap logic itself: it raised the no-swap *baseline* by +26.5 PIR and the
   best-possible ceiling by +40.0 PIR before the swap does anything, simply
   by not randomly benching good players. See `docs/testing_log.md` → "Full
-  backtest with real exclusion logic" for the full per-season table; the
-  ML-vs-heuristic comparison (below) still reflects the old
-  random-exclusion methodology and is worth redoing under this one before
-  trusting its "no demonstrable win" conclusion still holds. Playoff rounds
+  backtest with real exclusion logic" for the full per-season table. The
+  ML-vs-heuristic comparison (below) was rerun under this same real
+  exclusion logic (2026-09-13) and the "no demonstrable win" conclusion
+  held against the much stronger new baseline too — see "ML-vs-heuristic
+  comparison rerun" in the testing log. Playoff rounds
   are excluded by default from this evaluation — this POC's random
   league-wide roster *sampling* (the 13-man roster itself, not the
   exclusion within it — no real ownership data exists yet) doesn't account
@@ -101,10 +102,14 @@ Full context for a fresh session, in order of what to read:
   `backtest_eval.py`), tuned via a hyperparameter grid search
   (`ml_grid_search.py`) and also tried as an equal-weight ensemble with the
   heuristic, evaluated with the same walk-forward backtest as the
-  heuristic. None **demonstrably** beat the heuristic (tuned Ridge +13.51,
-  ensemble +13.45, tuned GBM +13.27, vs. heuristic +13.40 mean PIR gain —
-  all within/near the ±0.5 95% CI) — see `docs/testing_log.md` → "Regression-
-  model pivot" and the grid-search/ensemble follow-up entry for the full
+  heuristic. None **demonstrably** beat the heuristic then, and this was
+  reconfirmed 2026-09-13 after real exclusion logic (`choose_active_squad`,
+  see below) raised the baseline substantially: tuned Ridge +24.60, GBM
+  +24.39, ensemble +24.22, vs. heuristic +24.06 mean PIR gain — all within/
+  near the ±0.67 95% CI, same conclusion as the original ±0.5-CI comparison
+  (Ridge +13.51 vs heuristic +13.40) it superseded. See
+  `docs/testing_log.md` → "Regression-model pivot", the grid-search/
+  ensemble follow-up, and "ML-vs-heuristic comparison rerun" for the full
   writeup, including a cross-season-pooling hypothesis that was tested and
   disconfirmed, and a minimal-vs-full feature-set ablation showing the extra
   box-score detail (beyond what the heuristic itself uses) does measurably
@@ -162,8 +167,11 @@ something new. What happened this session, most recent first:
    of 13 to exclude each round, replacing a random stand-in), then reran
    the full validated backtest with the new exclusion logic - it turned
    out to matter far more than expected, raising the headline mean gain
-   from +9.83 to +24.06 PIR. See `docs/testing_log.md`'s two most recent
-   entries and "Current status" above for the details.
+   from +9.83 to +24.06 PIR. Reran the ridge/gbm/ensemble ML comparison
+   under the same new logic per the user's request (expecting no change in
+   verdict) - confirmed: still no demonstrable win over the heuristic, now
+   against the stronger baseline. See `docs/testing_log.md`'s three most
+   recent entries and "Current status" above for the details.
 2. Set up the git repo (see "Repo" above), pushed everything to GitHub.
 2. Ran an elaborate multi-season backtest with confidence intervals, a
    loss-case breakdown, and a rolling-window sensitivity check - in the
