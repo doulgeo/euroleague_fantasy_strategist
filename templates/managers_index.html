@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Managers{% endblock %}
+{% block content %}
+  <h1>Managers</h1>
+  <table>
+    <thead><tr><th>Name</th><th>Roster size</th></tr></thead>
+    <tbody>
+      {% for row in rows %}
+        <tr>
+          <td><a href="{{ url_for('manager_roster', manager_id=row.manager.manager_id) }}">{{ row.manager.name }}</a></td>
+          <td>{{ row.roster_size }} / 13</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if not rows %}
+    <p>No managers yet - run <code>python seed_league.py "Name1" "Name2" ...</code> first.</p>
+  {% endif %}
+{% endblock %}

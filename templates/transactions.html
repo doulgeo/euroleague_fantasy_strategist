@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Transactions{% endblock %}
+{% block content %}
+  <h1>Transactions</h1>
+
+  <h2>Log a free-agent add</h2>
+  <form method="post" action="{{ url_for('transactions_add') }}" class="stacked-form">
+    <label>Player ID: <input type="text" name="player_id" required></label>
+    <label>Manager:
+      <select name="manager_id" required>
+        {% for m in managers %}<option value="{{ m.manager_id }}">{{ m.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Round: <input type="number" name="round"></label>
+    <label>Notes: <input type="text" name="notes"></label>
+    <button type="submit">Add</button>
+  </form>
+
+  <h2>Log a drop</h2>
+  <form method="post" action="{{ url_for('transactions_drop') }}" class="stacked-form">
+    <label>Player ID: <input type="text" name="player_id" required></label>
+    <label>Round: <input type="number" name="round"></label>
+    <label>Notes: <input type="text" name="notes"></label>
+    <button type="submit">Drop</button>
+  </form>
+
+  <h2>Log a 1-for-1 trade</h2>
+  <form method="post" action="{{ url_for('transactions_trade') }}" class="stacked-form">
+    <fieldset>
+      <legend>Player A (currently owned by Manager A)</legend>
+      <label>Player A ID: <input type="text" name="player_a_id" required></label>
+      <label>Manager A:
+        <select name="manager_a_id" required>
+          {% for m in managers %}<option value="{{ m.manager_id }}">{{ m.name }}</option>{% endfor %}
+        </select>
+      </label>
+    </fieldset>
+    <fieldset>
+      <legend>Player B (currently owned by Manager B)</legend>
+      <label>Player B ID: <input type="text" name="player_b_id" required></label>
+      <label>Manager B:
+        <select name="manager_b_id" required>
+          {% for m in managers %}<option value="{{ m.manager_id }}">{{ m.name }}</option>{% endfor %}
+        </select>
+      </label>
+    </fieldset>
+    <label>Round: <input type="number" name="round"></label>
+    <label>Notes: <input type="text" name="notes"></label>
+    <button type="submit">Trade</button>
+  </form>
+
+  <h2>History</h2>
+  <table>
+    <thead>
+      <tr><th>When</th><th>Round</th><th>Type</th><th>Player</th><th>From</th><th>To</th><th>Group</th><th>Notes</th></tr>
+    </thead>
+    <tbody>
+      {% for t in history %}
+        <tr>
+          <td>{{ t.created_at[:19] }}</td>
+          <td>{{ t.round or '' }}</td>
+          <td>{{ t.type }}</td>
+          <td>{{ t.player_name }}</td>
+          <td>{{ manager_names.get(t.from_manager_id, '') }}</td>
+          <td>{{ manager_names.get(t.to_manager_id, '') }}</td>
+          <td>{{ t.group_id[:8] if t.group_id else '' }}</td>
+          <td>{{ t.notes or '' }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="8">No transactions logged yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}

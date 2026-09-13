@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Transfer Suggestions{% endblock %}
+{% block content %}
+  <h1>Transfer Suggestions</h1>
+
+  <form method="get" class="filters">
+    <label>Manager:
+      <select name="manager_id" onchange="this.form.submit()">
+        <option value="">Choose a manager...</option>
+        {% for m in managers %}
+          <option value="{{ m.manager_id }}" {% if selected_manager_id == m.manager_id %}selected{% endif %}>{{ m.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </form>
+
+  {% if roster_error %}
+    <p class="flash-error">Roster incomplete: {{ roster_error }}</p>
+  {% elif roster %}
+    <table>
+      <thead><tr><th>Drop</th><th>Position</th><th>Current proj.</th><th>Add</th><th>Available proj.</th><th>Gain</th></tr></thead>
+      <tbody>
+        {% for s in suggestions %}
+          <tr>
+            <td>{{ s.drop.player_name }}</td>
+            <td>{{ s.drop.position }}</td>
+            <td>{{ "%.1f"|format(s.drop.projected_pir_with_bonus) }}</td>
+            <td>{{ s.add.player_name }}</td>
+            <td>{{ "%.1f"|format(s.add.projected_pir_with_bonus) }}</td>
+            <td>{{ "%+.1f"|format(s.projected_gain) }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="6">No upgrade suggestions above the minimum gap.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+{% endblock %}

@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}{{ manager.name }}'s Roster{% endblock %}
+{% block content %}
+  <h1>{{ manager.name }}'s Roster ({{ total }} / 13)</h1>
+  {% if unresolved %}
+    <p class="flash-error">{{ unresolved }} owned player(s) not found in the current projection pool (no recent games logged yet).</p>
+  {% endif %}
+  {% for position in ("Guard", "Forward", "Center") %}
+    <h2>{{ position }}</h2>
+    <table>
+      <thead><tr><th>Player</th><th>Team</th><th>Proj+Bonus</th><th>n</th></tr></thead>
+      <tbody>
+        {% for p in by_position.get(position, []) %}
+          <tr>
+            <td>{{ p.player_name }}</td>
+            <td>{{ p.team }}</td>
+            <td>{{ "%.1f"|format(p.projected_pir_with_bonus) }}</td>
+            <td>{{ p.games_sampled }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="4">None drafted yet</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endfor %}
+{% endblock %}

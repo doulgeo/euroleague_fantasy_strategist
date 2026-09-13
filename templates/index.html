@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - EuroLeague Fantasy{% endblock %}
+{% block content %}
+  <h1>EuroLeague Fantasy - Draft/Ownership Tracker</h1>
+  <p>Draft progress: <strong>{{ owned_count }}</strong> / 156 players owned across <strong>{{ manager_count }}</strong> managers.</p>
+  <ul>
+    <li><a href="{{ url_for('draft') }}">Draft board</a> - rank players, log picks</li>
+    <li><a href="{{ url_for('managers_index') }}">Managers</a> - view rosters</li>
+    <li><a href="{{ url_for('transactions') }}">Transactions</a> - log trades / adds / drops</li>
+    <li><a href="{{ url_for('transfers') }}">Transfers</a> - real-ownership-aware suggestions</li>
+  </ul>
+{% endblock %}

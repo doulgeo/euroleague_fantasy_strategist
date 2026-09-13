@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Draft Board{% endblock %}
+{% block content %}
+  <h1>Draft Board</h1>
+
+  <form method="get" class="filters">
+    <label>Position:
+      <select name="position" onchange="this.form.submit()">
+        <option value="" {% if not position_filter %}selected{% endif %}>All</option>
+        {% for position in ("Guard", "Forward", "Center") %}
+          <option value="{{ position }}" {% if position_filter == position %}selected{% endif %}>{{ position }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      <input type="checkbox" name="hide_drafted" value="1" {% if hide_drafted %}checked{% endif %} onchange="this.form.submit()">
+      Hide drafted
+    </label>
+  </form>
+
+  {% for position, rows in positions.items() %}
+    <h2>{{ position }}s</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>#</th><th>Player</th><th>Team</th><th>Proj+Bonus</th><th>VORP</th><th>n</th><th>Owner</th><th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+          <tr class="{{ 'drafted' if row.owner_id else '' }}">
+            <td>{{ row.rank }}</td>
+            <td>{{ row.player.player_name }}</td>
+            <td>{{ row.player.team }}</td>
+            <td>{{ "%.1f"|format(row.player.projected_pir_with_bonus) }}</td>
+            <td>{{ "%+.1f"|format(row.vorp) }}</td>
+            <td>{{ row.player.games_sampled }}</td>
+            <td>
+              {% if row.owner_id %}
+                {{ manager_names.get(row.owner_id, row.owner_id) }}
+              {% else %}
+                &mdash;
+              {% endif %}
+            </td>
+            <td>
+              {% if not row.owner_id %}
+                <form method="post" action="{{ url_for('draft_pick') }}" class="inline-form">
+                  <input type="hidden" name="player_id" value="{{ row.player.player_id }}">
+                  <input type="hidden" name="position" value="{{ position_filter or '' }}">
+                  <input type="hidden" name="hide_drafted" value="{{ '1' if hide_drafted else '' }}">
+                  <select name="manager_id" required>
+                    <option value="" disabled selected>Manager...</option>
+                    {% for m in managers %}
+                      <option value="{{ m.manager_id }}">{{ m.name }}</option>
+                    {% endfor %}
+                  </select>
+                  <input type="number" name="round" placeholder="round" size="3">
+                  <button type="submit">Draft</button>
+                </form>
+              {% endif %}
+            </td>
+          </tr>
+          {% if row.tier_break_after %}
+            <tr class="tier-break"><td colspan="8">&mdash; tier break &mdash;</td></tr>
+          {% endif %}
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endfor %}
+{% endblock %}
