@@ -88,14 +88,31 @@ Full context for a fresh session, in order of what to read:
   for the full story. Treat any *other* unconfirmed rule as similarly
   provisional until the user has explicitly verified it, especially ones
   stated early and never revisited.
+- **Real 12-manager draft/ownership/transaction tracking**, as of
+  2026-09-13: three new tables in `engine/db.py` (`managers`, `ownership` —
+  materialized current state, `transactions` — append-only log), a new
+  `engine/ownership.py` (record_draft_pick/record_free_agent_add/
+  record_drop/record_trade, plus read helpers), and a local Flask app
+  (`app.py`, server-rendered, no JS framework) with routes for the draft
+  board (annotated with real owners, pick-logging form), manager rosters,
+  transaction history (add/drop/1-for-1-trade forms), and transfer
+  suggestions. `engine.transfers.suggest_transfers` gained an optional
+  `owned_ids` param so it can use real ownership instead of the old "pool
+  minus my own roster" stand-in (backward-compatible: `poc_run.py`'s call
+  site is unchanged and still gets the old behavior). End-to-end validated
+  including the core payoff — a player drafted to any manager stops
+  appearing as a transfer suggestion for anyone else — see
+  `docs/testing_log.md` → "Draft/ownership tracking + Flask app" for the
+  full write-up. Run it with `python app.py`, seed the league first with
+  `python seed_league.py "Name1" "Name2" ...` (12 names).
 
 **Explicitly NOT done yet (all deferred, not forgotten):**
-- No real 12-manager ownership/draft tracking (who owns whom, transaction
-  history). The POC's "free agents" = pool minus one sampled roster, a
-  stand-in.
-- No UI of any kind. The user wants one specifically for logging opponents'
-  transfers/trades (manual entry, since trades are rare in this league and
-  the commissioner enters draft results by hand) — not yet started.
+- The draft-tracking UI above is v1: no draft-credit/budget tracking
+  (confirmed out of scope — credits don't affect in-season scoring), no
+  undo button (fix mistakes via a compensating transaction or a direct
+  `sqlite3` edit), and the trade form is strictly 1-for-1 (confirmed this
+  league never does bigger trades). Revisit only if the user's actual usage
+  says otherwise.
 - No ML model **in production** — this was tried (2026-09-12): Ridge
   regression and gradient-boosted trees (`engine/ml_projections.py`,
   `engine/ml_features.py`, `--projection-method {ridge,gbm,ensemble}` in
@@ -148,10 +165,16 @@ over the network), never needs to be committed.
 
 ## Natural next steps (not started, pick one)
 
-- Real ownership/draft tracking: a place to record the 12-manager draft
-  results and ongoing transactions, which is a prerequisite for real
-  (non-stand-in) transfer suggestions.
-- The deferred UI/architecture questions in `docs/technical_notes.md`.
+- Actually run the real 12-manager draft through `app.py`/`seed_league.py`
+  (replacing the current empty/test-cleared tables) and start logging real
+  trades as they happen — the tool is ready for this now.
+- A lineup-builder route/page (day-1/day-2 swap, captain choice) for a
+  logged-in manager's roster — not built yet; `app.py` currently stops at
+  draft/ownership/transfers, doesn't touch `engine.lineup`.
+- The deferred UI/architecture questions in `docs/technical_notes.md`
+  (hosting/deployment target — local-only was the working assumption for
+  the draft-tracking app above, confirmed by the user for that feature,
+  but full deployment target for the wider project is still open).
 - `sync_db.py` is a manual command today ("run this after each gameweek") -
   automating that trigger (cron/scheduled task) is a small later step, not
   urgent given trades/rounds are infrequent in this league.
@@ -162,7 +185,15 @@ Nothing is mid-flight or running in the background - safe to pick up
 directly from any of the "Natural next steps" above, or from scratch on
 something new. What happened this session, most recent first:
 
-1. Added `draft_board.py` (per-position ranked draft cheat sheet, tiering,
+1. Built real 12-manager draft/ownership/transaction tracking: three new
+   tables (`engine/db.py`), `engine/ownership.py`, the `owned_ids` param on
+   `engine.transfers.suggest_transfers`, and a local Flask app (`app.py` +
+   `templates/` + `static/` + `seed_league.py`) for logging the draft and
+   trades. End-to-end validated (draft picks, duplicate-draft rejection,
+   trades, add/drop, and the real-ownership-gates-suggestions payoff) then
+   test data cleared from the DB so it's ready for the actual draft. See
+   "Current status" above and `docs/testing_log.md`'s most recent entry.
+2. Added `draft_board.py` (per-position ranked draft cheat sheet, tiering,
    VORP) and `engine.lineup.choose_active_squad` (real logic for which 3
    of 13 to exclude each round, replacing a random stand-in), then reran
    the full validated backtest with the new exclusion logic - it turned
@@ -172,16 +203,16 @@ something new. What happened this session, most recent first:
    verdict) - confirmed: still no demonstrable win over the heuristic, now
    against the stronger baseline. See `docs/testing_log.md`'s three most
    recent entries and "Current status" above for the details.
-2. Set up the git repo (see "Repo" above), pushed everything to GitHub.
-2. Ran an elaborate multi-season backtest with confidence intervals, a
+3. Set up the git repo (see "Repo" above), pushed everything to GitHub.
+4. Ran an elaborate multi-season backtest with confidence intervals, a
    loss-case breakdown, and a rolling-window sensitivity check - in the
    process found and fixed a real methodology bug (playoff rounds were
    skewing results; now excluded by default). See
    `docs/testing_log.md` → "Elaborate backtest" for the full story and the
    current validated headline numbers (also summarized above under
    "Current status").
-3. Backfilled E2023-E2025 and loaded it into `euroleague.db` (SQLite).
-4. Original POC session (roster/scoring model corrections, base engine
+5. Backfilled E2023-E2025 and loaded it into `euroleague.db` (SQLite).
+6. Original POC session (roster/scoring model corrections, base engine
    build) - see `docs/technical_notes.md` for that history.
 
 If picking this up fresh: read this file top to bottom (it's short), then
