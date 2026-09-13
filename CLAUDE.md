@@ -46,17 +46,32 @@ Full context for a fresh session, in order of what to read:
   5G/5F/3C; 10 active per round with 3 excluded; three-tier scoring of
   starters/sixth-man/half-point-bench — see `docs/game_rules.md`). The
   day-1/day-2 swap logic is confirmed to never exceed the theoretical
-  best-possible ceiling. **Current validated headline (regular season only,
-  91 rounds across E2023-E2025, 2730 trials): beats or ties a no-swap
-  baseline in 96% of trials (76% outright beat), +9.83 PIR mean gain per
-  round (95% CI ±0.42), captures ~50% of the theoretical best-possible swap
-  upside — stable across seasons and across a 4x range of the projection's
-  rolling-window hyperparameter.** Playoff rounds are excluded by default
-  from this evaluation — this POC's random league-wide roster sampling
-  doesn't account for team elimination, which made an earlier
-  playoffs-included run look artificially worse late in the season (see
-  `docs/testing_log.md`, "Elaborate backtest" entry, for the full
-  methodology writeup and the raw per-trial numbers).
+  best-possible ceiling. As of 2026-09-13, `engine/lineup.py` also has real
+  logic (`choose_active_squad`) for the one per-round decision that used to
+  be random even in the "recommendation": which 3 of the 13 roster players
+  to exclude. Brute-forces all 286 exclusion combos and scores each by
+  projected value after the same swap logic used for the real
+  recommendation, rather than a greedy cut, so it accounts for a benched
+  player's day-2 swap option value. **Current validated headline (regular
+  season only, 91 rounds across E2023-E2025, 2730 trials, real exclusion
+  logic): beats or ties a no-swap baseline in 99% of trials (90% outright
+  beat), +24.06 PIR mean gain per round (95% CI ±0.68), captures ~73% of
+  the theoretical best-possible swap upside.** This supersedes the prior
+  headline (random exclusion: 96% beat-or-tie, +9.83 PIR, ~50% captured) —
+  real exclusion logic alone turned out to be a bigger lever than the
+  swap logic itself: it raised the no-swap *baseline* by +26.5 PIR and the
+  best-possible ceiling by +40.0 PIR before the swap does anything, simply
+  by not randomly benching good players. See `docs/testing_log.md` → "Full
+  backtest with real exclusion logic" for the full per-season table; the
+  ML-vs-heuristic comparison (below) still reflects the old
+  random-exclusion methodology and is worth redoing under this one before
+  trusting its "no demonstrable win" conclusion still holds. Playoff rounds
+  are excluded by default from this evaluation — this POC's random
+  league-wide roster *sampling* (the 13-man roster itself, not the
+  exclusion within it — no real ownership data exists yet) doesn't account
+  for team elimination, which made an earlier playoffs-included run look
+  artificially worse late in the season (see `docs/testing_log.md`,
+  "Elaborate backtest" entry, for that methodology writeup).
 - **Data persistence**: full box-score history for E2023-E2025 backfilled
   and loaded into `euroleague.db` (SQLite, `engine/db.py`) — 25,286
   player-game rows. `sync_db.py` is the ongoing incremental refresh command
@@ -136,13 +151,20 @@ over the network), never needs to be committed.
   automating that trigger (cron/scheduled task) is a small later step, not
   urgent given trades/rounds are infrequent in this league.
 
-## Where things were left off (2026-09-11 session)
+## Where things were left off (2026-09-13 session)
 
 Nothing is mid-flight or running in the background - safe to pick up
 directly from any of the "Natural next steps" above, or from scratch on
 something new. What happened this session, most recent first:
 
-1. Set up the git repo (see "Repo" above), pushed everything to GitHub.
+1. Added `draft_board.py` (per-position ranked draft cheat sheet, tiering,
+   VORP) and `engine.lineup.choose_active_squad` (real logic for which 3
+   of 13 to exclude each round, replacing a random stand-in), then reran
+   the full validated backtest with the new exclusion logic - it turned
+   out to matter far more than expected, raising the headline mean gain
+   from +9.83 to +24.06 PIR. See `docs/testing_log.md`'s two most recent
+   entries and "Current status" above for the details.
+2. Set up the git repo (see "Repo" above), pushed everything to GitHub.
 2. Ran an elaborate multi-season backtest with confidence intervals, a
    loss-case breakdown, and a rolling-window sensitivity check - in the
    process found and fixed a real methodology bug (playoff rounds were

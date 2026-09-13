@@ -610,3 +610,65 @@ re-validation, not a silent side effect of this change.
 `choose_active_squad` in place of the random sampler would likely raise
 the validated headline numbers (since it removes a currently-random
 decision) - worth doing if/when the user wants to re-validate.
+
+---
+
+## 2026-09-13 — Full backtest with real exclusion logic (choose_active_squad)
+
+**What**: reran the full validated backtest (`backtest_eval.py --seasons
+E2023 E2024 E2025 --min-round 6 --trials-per-round 30 --seed 1`), with
+`choose_active_squad` (see prior entry) now used in `run_one_trial` in
+place of the random `sample_active_squad` for every trial's exclusion
+decision. Exclusion uses projections (decision-time, foresight only) for
+both `no-swap` and `recommended`, matching how exclusion is actually
+locked in before a round starts in the real game - the hindsight
+`best-possible` ceiling still uses that same chosen active squad and only
+optimizes the lineup/swap on top of it with perfect result knowledge,
+exactly as before. This isolates one question: does replacing random
+exclusion with real exclusion logic improve outcomes, holding the rest of
+the (already-validated) pipeline fixed?
+
+**How**: identical command/scope to the previous headline run (same
+seasons, same `--min-round 6 --trials-per-round 30 --seed 1`, regular
+season only) so the two are directly comparable. Raw trials in
+`backtest_trials_realexclusion.csv` (gitignored).
+
+**Result — regular season only, 91 rounds, 2730 trials, real exclusion vs.
+old random-exclusion headline:**
+
+| Season | Mean no-swap | Mean recommended | Mean best-possible | Beat/tie/lose | Mean gain (95% CI) | Swap-upside captured |
+|---|---|---|---|---|---|---|
+| E2023 | 116.45 | 143.58 | 152.74 | 97%/2%/1% | +27.14 ± 1.11 | 82% ± 5% |
+| E2024 | 125.95 | 150.14 | 161.85 | 92%/6%/1% | +24.19 ± 1.24 | 74% ± 4% |
+| E2025 | 120.33 | 141.58 | 155.26 | 83%/16%/1% | +21.25 ± 1.13 | 64% ± 4% |
+| **All combined (new)** | **120.88** | **144.94** | **156.56** | **90%/8%/1% (99% beat-or-tie)** | **+24.06 ± 0.68** | **73% ± 2%** |
+| All combined (old, random exclusion) | 94.40 | 104.22 | 116.52 | 76%/20%/4% (96% beat-or-tie) | +9.83 ± 0.42 | 50% ± 3% |
+
+No structural-invariant violations (no-swap never exceeded best-possible).
+Loss case: 32/2730 (1.2%, down from 4.2%), mean deficit 1.97 PIR, max 6.0 -
+same "projection was wrong that round" profile as before, just rarer.
+
+**This is the headline finding of this session, bigger than any single
+swap-logic tweak or the entire ML detour**: real exclusion logic alone
+raised mean no-swap by +26.5 PIR and mean best-possible by +40.0 PIR
+*before the swap logic does anything* - simply not randomly benching your
+best players some fraction of the time is worth far more than the day-1/
+day-2 swap optimization on top of it. The swap's own isolated contribution
+(recommended - no-swap) also grew, from +9.83 to +24.06 - a smarter
+exclusion leaves stronger players on the bench, so there's more genuine
+upside for the swap to capture (upside-captured also rose, 50%→73%).
+
+**This supersedes the previous headline** (91 rounds/2730 trials, +9.83
+PIR, 50% captured, 96% beat-or-tie, logged above under "Elaborate
+backtest") for any use of the pipeline with `choose_active_squad` in
+place, which is now the default in both `poc_run.py` and
+`backtest_eval.py`. The old entry is left as-is per the working
+agreement (append, don't rewrite) - it documents a real prior state
+(random-exclusion methodology), not an error.
+
+**Not rerun this session** (left as future follow-up if revisited): the
+rolling-window sensitivity check and the ridge/gbm/ensemble ML comparisons
+all still reflect the old random-exclusion methodology. Given how large
+this effect was, the ML-vs-heuristic comparison in particular is worth
+redoing at some point under the new methodology before trusting the old
+"no demonstrable win" conclusion still holds.

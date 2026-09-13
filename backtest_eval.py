@@ -43,11 +43,11 @@ from dataclasses import dataclass, field
 import sqlite3
 
 from engine.db import get_connection, load_rows
-from engine.lineup import build_lineup, compute_round_score, swap_after_day1, team_dates_for_round
+from engine.lineup import build_lineup, choose_active_squad, compute_round_score, swap_after_day1, team_dates_for_round
 from engine.ml_features import build_feature_table
 from engine.ml_projections import build_ensemble_projections, build_ml_projections, train_model
 from engine.projections import ROLLING_WINDOW, build_projections
-from engine.roster import DRAFT_POOL_SIZE, build_draft_pool, sample_active_squad, sample_roster
+from engine.roster import DRAFT_POOL_SIZE, build_draft_pool, sample_roster
 
 Z_95 = 1.96
 
@@ -89,13 +89,18 @@ def run_one_trial(
     swap/lineup decision itself come from this same dict.
     """
     rng = random.Random(seed)
+    projected_value = lambda pid: pool[pid].projected_pir_with_bonus  # noqa: E731
+
     try:
         roster = sample_roster(pool, rng)
-        active_squad = sample_active_squad(roster, rng)
+        # Exclusion is a decision-time-only choice in the real game (locked
+        # in before any round results exist), so it uses projections here -
+        # same as the initial lineup - not the hindsight `actual` values
+        # used below for the best-possible ceiling. See
+        # engine.lineup.choose_active_squad's docstring.
+        active_squad = choose_active_squad(roster, team_dates, projected_value)
     except (ValueError, RuntimeError):
         return None  # not enough eligible players at this position/cutoff - skip trial
-
-    projected_value = lambda pid: pool[pid].projected_pir_with_bonus  # noqa: E731
 
     try:
         initial = build_lineup(active_squad, team_dates, projected_value)
