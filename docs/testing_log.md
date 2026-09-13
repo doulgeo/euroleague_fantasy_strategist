@@ -718,3 +718,73 @@ this is revisited again.
 **Verdict unchanged**: heuristic remains the default. This closes out the
 open question from the previous session about whether the ML comparison
 needed redoing - it did, and the answer didn't move.
+
+---
+
+## 2026-09-13 — Draft/ownership tracking + Flask app, end-to-end validation
+
+**What**: validated the new manual draft/ownership/transaction tracking
+(`engine/ownership.py`, three new tables in `engine/db.py`) and the local
+Flask app (`app.py`) that logs the 12-manager draft-mode league and wires
+real ownership into `engine.transfers.suggest_transfers` (previously a
+stand-in: "pool minus my own roster" with no knowledge of the other 11
+managers).
+
+**How**:
+1. Seeded 12 dummy managers (`seed_league.py`) and started the Flask dev
+   server (`python app.py`).
+2. Hit all 5 routes (`/`, `/draft`, `/managers`, `/transactions`,
+   `/transfers`) — all 200.
+3. Drafted 3 players to 3 different managers via `POST /draft/pick`;
+   confirmed via direct SQLite inspection that `ownership` had exactly 3
+   rows and `transactions` logged all 3 as `type='draft'`.
+4. Attempted to draft an already-owned player to a different manager —
+   got a clean inline flash error ("already owned by manager 1"), not a
+   500, confirming the `ownership.player_id` PRIMARY KEY +
+   `IntegrityError`→`ValueError` wrapping works.
+5. Recorded a 1-for-1 trade via `POST /transactions/trade` — confirmed
+   both players' `ownership.manager_id` swapped and both `transactions`
+   rows shared one `group_id`.
+6. Recorded a free-agent add then a drop for the same player — confirmed
+   `ownership` row appeared then was deleted, both logged.
+7. Built one manager a complete, valid 13-player roster (5G/5F/3C) by
+   drafting the top-ranked available player per position; over-drafted to
+   14 (4 Centers) on the first attempt because an already-owned Center
+   wasn't excluded from the pick list up front — caught immediately via
+   `manager_roster_ids` returning 14, fixed by dropping the extra Center.
+   Worth remembering if scripting draft-entry test data again: exclude
+   *all* currently-owned ids, not just the ones a prior step drafted.
+8. Confirmed `/transfers?manager_id=<id>` for that manager's roster
+   returned "no upgrade suggestions" (correct: the roster already held the
+   best available player at every position, so there was nothing to
+   suggest — not a bug).
+9. **Core payoff check**: built a deliberately weak 13-player roster
+   in-process and called `suggest_transfers(roster, pool,
+   owned_ids=all_owned_ids(conn))` directly — got a top suggestion (add
+   HEZONJA, MARIO, +19.3 gain). Drafted that exact player to a *different*
+   manager via the real `POST /draft/pick` route, then re-ran the same
+   `suggest_transfers` call — confirmed that player no longer appeared as
+   an available upgrade anywhere in the results. This is the concrete
+   before/after proving real ownership now gates transfer suggestions,
+   not just "not on my own roster."
+10. Re-ran `python sync_db.py --seasons E2025` with `managers`/`ownership`/
+    `transactions` already populated (12/16/22 rows) — confirmed via
+    direct row counts that all three tables were byte-for-byte untouched
+    afterward (sync only ever writes `player_game_stats`).
+11. Timed `/managers/<id>` requests to sanity-check the mtime-keyed
+    projection cache in `app.py`: ~257ms cold (includes Flask/Jinja
+    startup overhead) vs. ~138-141ms on repeat warm requests; touching
+    `euroleague.db`'s mtime afterward brought the next request back up to
+    ~213ms, confirming the cache both hits and correctly invalidates.
+    (`build_projections` itself is only ~10ms at this data scale, so the
+    absolute savings are modest - the cache logic being correct mattered
+    more here than the speedup.)
+12. Cleared all test/dummy data (12 fake managers, test picks/trades) from
+    `managers`/`ownership`/`transactions` afterward so the local DB is
+    clean for the user's real draft.
+
+**Result**: all checks passed. Schema, `engine/ownership.py`,
+`engine/transfers.py`'s new `owned_ids` parameter, `seed_league.py`, and
+`app.py`'s routes/caching all behave as designed. No regressions:
+`poc_run.py` end-to-end smoke test (unaffected `suggest_transfers` call
+site) still produces identical output to before this change.
