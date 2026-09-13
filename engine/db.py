@@ -47,11 +47,67 @@ _CREATE_ROUND_INDEX_SQL = (
     "ON player_game_stats (season_code, round)"
 )
 
+# --- Manual draft/ownership/transaction tracking (engine.ownership) ---
+#
+# These three tables have nothing to do with the box-score sync above; they
+# hold what the user manually logs about the 12-manager league (who drafted
+# whom, trades, adds/drops). `ownership` is a materialized "who owns this
+# player right now" table kept in sync with `transactions` (the append-only
+# log) on every write in engine.ownership - see that module's docstring.
+
+_CREATE_MANAGERS_SQL = """
+CREATE TABLE IF NOT EXISTS managers (
+    manager_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE
+)
+"""
+
+_CREATE_OWNERSHIP_SQL = """
+CREATE TABLE IF NOT EXISTS ownership (
+    player_id TEXT PRIMARY KEY,
+    manager_id INTEGER NOT NULL REFERENCES managers(manager_id),
+    acquired_at TEXT NOT NULL,
+    acquired_via TEXT NOT NULL
+)
+"""
+
+_CREATE_OWNERSHIP_MANAGER_INDEX_SQL = (
+    "CREATE INDEX IF NOT EXISTS idx_ownership_manager ON ownership (manager_id)"
+)
+
+_CREATE_TRANSACTIONS_SQL = """
+CREATE TABLE IF NOT EXISTS transactions (
+    transaction_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    round INTEGER,
+    type TEXT NOT NULL,
+    player_id TEXT NOT NULL,
+    from_manager_id INTEGER REFERENCES managers(manager_id),
+    to_manager_id INTEGER REFERENCES managers(manager_id),
+    group_id TEXT,
+    notes TEXT
+)
+"""
+
+_CREATE_TRANSACTIONS_PLAYER_INDEX_SQL = (
+    "CREATE INDEX IF NOT EXISTS idx_transactions_player ON transactions (player_id)"
+)
+
+_CREATE_TRANSACTIONS_GROUP_INDEX_SQL = (
+    "CREATE INDEX IF NOT EXISTS idx_transactions_group ON transactions (group_id)"
+)
+
 
 def get_connection(db_path: Path | str = DB_PATH) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path)
     conn.execute(_CREATE_TABLE_SQL)
     conn.execute(_CREATE_ROUND_INDEX_SQL)
+    conn.execute(_CREATE_MANAGERS_SQL)
+    conn.execute(_CREATE_OWNERSHIP_SQL)
+    conn.execute(_CREATE_OWNERSHIP_MANAGER_INDEX_SQL)
+    conn.execute(_CREATE_TRANSACTIONS_SQL)
+    conn.execute(_CREATE_TRANSACTIONS_PLAYER_INDEX_SQL)
+    conn.execute(_CREATE_TRANSACTIONS_GROUP_INDEX_SQL)
     conn.commit()
     return conn
 

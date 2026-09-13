@@ -2,10 +2,10 @@
 Naive transfer suggestions: for each rostered player, is there a clearly
 better same-position player not on the roster?
 
-This is a stand-in for the real feature. It treats "everyone in the fetched
-player pool not on the roster" as available, which is only true in this POC -
-the real app needs actual 12-manager ownership data (who owns whom) before
-this can tell you what's genuinely available to pick up.
+Pass `owned_ids` (e.g. engine.ownership.all_owned_ids(conn)) to treat only
+players nobody in the league owns as genuinely available; omitting it falls
+back to the original POC behavior (everyone in the pool not on this roster),
+which is what poc_run.py still uses since it has no real ownership data.
 """
 
 from __future__ import annotations
@@ -28,19 +28,26 @@ class TransferSuggestion:
 def suggest_transfers(
     roster: Roster,
     pool: dict[str, Projection],
+    owned_ids: set[str] | None = None,
     min_gap: float = MIN_UPGRADE_GAP,
 ) -> list[TransferSuggestion]:
-    rostered_ids = roster.player_ids()
+    excluded_ids = owned_ids if owned_ids is not None else roster.player_ids()
+
+    pool_by_position: dict[str, list[Projection]] = {}
+    for p in pool.values():
+        if p.player_id not in excluded_ids:
+            pool_by_position.setdefault(p.position, []).append(p)
+    for candidates in pool_by_position.values():
+        candidates.sort(key=lambda p: p.projected_pir_with_bonus, reverse=True)
+
     suggestions: list[TransferSuggestion] = []
 
     for player in roster.players:
-        same_position_free_agents = [
-            p for p in pool.values() if p.position == player.position and p.player_id not in rostered_ids
-        ]
-        if not same_position_free_agents:
+        candidates = pool_by_position.get(player.position)
+        if not candidates:
             continue
 
-        best_available = max(same_position_free_agents, key=lambda p: p.projected_pir_with_bonus)
+        best_available = candidates[0]
         gain = best_available.projected_pir_with_bonus - player.projected_pir_with_bonus
 
         if gain >= min_gap:
