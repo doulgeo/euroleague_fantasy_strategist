@@ -185,9 +185,12 @@ def main() -> None:
     new_ids: frozenset[str] = frozenset()
     if roster_rows:
         seen = known_player_ids(conn)
-        projections, new_ids_set = merge_roster(projections, roster_rows, seen)
+        projections, new_ids_set, gone_ids_set = merge_roster(projections, roster_rows, seen)
         new_ids = frozenset(new_ids_set)
-        print(f"Merged {args.roster_season} roster ({len(roster_rows)} players, {len(new_ids)} new to the league)")
+        gone_count = len(gone_ids_set)
+        projections = {pid: p for pid, p in projections.items() if pid not in gone_ids_set}
+        print(f"Merged {args.roster_season} roster ({len(roster_rows)} players, {len(new_ids)} new to the league, "
+              f"{gone_count} no longer on any current roster - excluded from this board)")
     else:
         print(f"No {args.roster_season} roster synced yet - run sync_rosters.py to get current teams and [NEW] markers")
 

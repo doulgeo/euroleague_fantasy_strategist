@@ -8,6 +8,9 @@ tr.drafted { color: #999; }
 tr.tier-break td { background: #eee; font-style: italic; text-align: center; }
 tr.new-player { background: #fff8e1; }
 .new-badge { display: inline-block; background: #f5a623; color: #1a1a1a; font-size: 0.65rem; font-weight: bold; padding: 0.05rem 0.35rem; border-radius: 3px; margin-left: 0.3rem; vertical-align: middle; }
+tr.gone-player { background: #f0f0f0; color: #888; }
+tr.gone-player a { color: #888; }
+.gone-badge { display: inline-block; background: #999; color: #fff; font-size: 0.65rem; font-weight: bold; padding: 0.05rem 0.35rem; border-radius: 3px; margin-left: 0.3rem; vertical-align: middle; }
 th[title] { cursor: help; text-decoration: underline dotted; text-decoration-color: #999; text-underline-offset: 3px; }
 .prose { max-width: 800px; line-height: 1.55; }
 .prose h2 { margin-top: 2rem; margin-bottom: 0.4rem; }
