@@ -21,7 +21,7 @@ th[title] { cursor: help; text-decoration: underline dotted; text-decoration-col
 .prose dt:first-child { margin-top: 0; }
 .prose dd { margin: 0.1rem 0 0; color: #333; }
 .prose table { max-width: 520px; font-size: 0.85rem; }
-.prose .note { background: #fff8e1; border: 1px solid #eecc80; border-radius: 4px; padding: 0.5rem 0.75rem; font-size: 0.9rem; }
+.note { background: #fff8e1; border: 1px solid #eecc80; border-radius: 4px; padding: 0.5rem 0.75rem; font-size: 0.9rem; max-width: 700px; }
 pre { background: #f5f5f5; border: 1px solid #ccc; padding: 0.5rem; max-height: 300px; overflow: auto; font-size: 0.75rem; max-width: 900px; }
 .flashes { list-style: none; padding: 0; }
 .flash-success { color: #1a7a3a; }

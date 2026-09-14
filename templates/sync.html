@@ -69,4 +69,20 @@
   {% if logs.rosters %}
     <details><summary>Roster sync log</summary><pre>{{ logs.rosters }}</pre></details>
   {% endif %}
+
+  <h2>Developer tools</h2>
+  <p class="note">Dev/testing only - <strong>not for the real draft</strong>.
+    This wipes ALL current ownership (every manager's roster, back to free
+    agency) and re-drafts everyone a fresh random 13-player roster, so
+    there's always a realistic full league to develop and test the lineup
+    builder, transfers, etc. against. Logged as normal draft-pick
+    transactions, so the transaction history stays accurate about what
+    happened - only actual roster ownership is reset.</p>
+  <p>
+    <strong>{{ owned_count }}</strong> / {{ manager_count * 13 }} players currently owned across
+    <strong>{{ manager_count }}</strong> manager(s).
+  </p>
+  <form method="post" action="{{ url_for('dev_randomize_draft') }}" class="stacked-form">
+    <button type="submit">Randomize a full draft (resets all rosters)</button>
+  </form>
 {% endblock %}

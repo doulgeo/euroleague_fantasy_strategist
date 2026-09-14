@@ -48,6 +48,7 @@ from engine.lineup import (
 )
 from engine.projections import Projection, build_projections
 from engine.roster import REQUIRED_COUNTS, Roster
+from engine.dev_draft import randomize_draft
 from engine.rosters import merge_roster
 from engine.transfers import suggest_transfers
 
@@ -208,6 +209,8 @@ def sync_page():
         "count": len(load_roster(conn, CURRENT_SEASON)),
         "synced_at": roster_synced_at(conn, CURRENT_SEASON),
     }
+    manager_count = len(ownership.list_managers(conn))
+    owned_count = len(ownership.all_owned_ids(conn))
 
     with _sync_lock:
         state = {k: dict(v) for k, v in _sync_state.items()}
@@ -226,7 +229,31 @@ def sync_page():
         running_any=running_any,
         current_season=CURRENT_SEASON,
         known_seasons=KNOWN_SEASONS,
+        manager_count=manager_count,
+        owned_count=owned_count,
     )
+
+
+@app.route("/dev/randomize-draft", methods=["POST"])
+def dev_randomize_draft():
+    conn = get_db()
+    managers = ownership.list_managers(conn)
+    if not managers:
+        flash("No managers seeded yet - run seed_league.py first.", "error")
+        return redirect(url_for("sync_page"))
+
+    pool, _new_ids, gone_ids = get_pool(conn)
+    draftable_pool = {pid: p for pid, p in pool.items() if pid not in gone_ids}
+    manager_ids = [m["manager_id"] for m in managers]
+
+    try:
+        counts = randomize_draft(conn, draftable_pool, manager_ids)
+    except RuntimeError as e:
+        flash(f"Randomized draft failed: {e}", "error")
+        return redirect(url_for("sync_page"))
+
+    flash(f"Randomized a fresh draft: {sum(counts.values())} picks across {len(counts)} managers.", "success")
+    return redirect(url_for("sync_page"))
 
 
 @app.route("/sync/db", methods=["POST"])
