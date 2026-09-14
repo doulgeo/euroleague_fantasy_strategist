@@ -959,3 +959,91 @@ between two similarly-projected players for a captain/day-2-swap choice -
 a weaker bar the signal might still clear even though it fails here. Not
 tested; would need `engine.lineup` to be wired into the app first (see
 CLAUDE.md "Natural next steps") to have a real decision to break ties on.
+
+---
+
+## 2026-09-14 — Wired the lineup builder into the app (`/lineup`), incl. a new schedule sync
+
+**What**: `engine/lineup.py`'s real logic (`choose_active_squad` ->
+`build_lineup` -> `swap_after_day1`) was previously only exercised through
+`poc_run.py`. Wired it into a new `/lineup` route/page for a chosen manager
+and round, live-recomputed each visit (no persistence of the manager's
+actual choice, matching `/transfers`'s existing pattern). Building this
+surfaced and fixed a real gap: `team_dates_for_round` is built from
+`player_game_stats`, which only ever has *already-played* games
+(`fetch_season` filters to `played` before writing anything to the DB) - so
+there was no way to build a lineup recommendation for a round that hasn't
+happened yet, which is the entire point of a decision-support tool. Fixed
+with a new `schedule` table (every game, played or not - full
+delete-then-reinsert per season, populated by `sync_db.py` alongside its
+existing box-score sync, at no extra network cost since it reuses
+`list_games`'s already-warm disk cache) and a new sibling function,
+`engine.lineup.team_dates_from_schedule`, alongside the existing
+(untouched) `team_dates_for_round`.
+
+**How**:
+1. `engine/db.py` round-trip: `replace_schedule` with fabricated rows,
+   `load_schedule` returns them unchanged; `replace_schedule` again with
+   different rows for the same season confirmed the old ones are gone
+   (delete-then-insert, not upsert).
+2. Live-checked the actual question this all hinges on before writing
+   `normalize_schedule`: does `E2026` even have a published schedule yet?
+   Confirmed directly - 380 games, all 38 rounds, 0 played, every
+   `gameCode` present, round 1 dated 2026-09-25 (11 days out from this
+   session). Also confirmed the exact field shapes used
+   (`date`, `local.club.code`, `road.club.code`) against a real response.
+3. Ran `sync_db.py --seasons E2026` and `--seasons E2025` for real: E2026
+   schedule refreshed at 380 games (0 played, 380 upcoming) from cache; the
+   already-synced E2025 box scores were untouched (upsert, no duplicates)
+   and its schedule populated at 402 games, all played.
+4. **Key consistency check**: for every one of E2025's 47 rounds, compared
+   `team_dates_from_schedule` (new, schedule-sourced) against
+   `team_dates_for_round` (existing, box-score-sourced) - **0 mismatches**.
+   Strongest possible evidence the new function behaves identically to the
+   validated one, not just superficially.
+5. Drafted a real, valid 13-player roster (5G/5F/3C, ranked by E2025
+   season-end projection) to a test manager, then hit
+   `/lineup?manager_id=13&round=1` for real - **round 1 of the actual
+   2026-27 season**, a genuinely upcoming round, not a simulation. Got a
+   200 with all three sections (excluded/day-1/day-2) populated.
+6. Manually traced the output player-by-player against the documented
+   rules rather than just checking it didn't crash:
+   - `JAMES, MIKE` (20.6 projected - higher than several starters) was
+     excluded. Looked suspicious at first; confirmed his team (MCO) simply
+     isn't scheduled to play round 1 at all
+     (`'MCO' in team_dates_from_schedule(...)` → `False`) - `compute_round_score`
+     never counts a player whose `_availability_rank` is 2 ("not playing"),
+     so excluding him vs. burying him on the bench is scoreless either way;
+     the optimizer correctly treated him as a free exclusion rather than
+     protecting his season-long projection. Not a bug - the system
+     reasoning about round-specific playability, not just raw season value.
+   - Day-1 formation was 2 Guard/1 Forward/2 Center (a valid formation);
+     day-2 kept the identical shape, only occupants changed - matches the
+     documented "formation is locked at day-1" assumption.
+   - Every day-1-swapped-out slot was replaced by a same-position bench
+     player with a later game and positive projected value; slots with no
+     eligible same-position later-playing bench candidate correctly stayed
+     put (e.g. `DIAKITE` at Center - the only other Center bench candidate,
+     `OTURU`, had already played day-1 too).
+   - Captain was recomputed over the post-swap 5 starters, matching
+     `compute_round_score`'s per-stage doubling design.
+7. Edge cases, all clean (200, no 500s): no manager selected; an
+   intentionally-incomplete test manager (0/13 drafted) →
+   `roster_error`; a round number outside the synced schedule (999) →
+   `schedule_error` with a working Sync-page link.
+8. No-regression check: re-ran `poc_run.py --season E2025 --cutoff-round
+   20 ...` and `backtest_eval.py --seasons E2025 --min-round 15
+   --trials-per-round 3` - both exercise the untouched
+   `team_dates_for_round`/`build_lineup`/`swap_after_day1`/
+   `choose_active_squad`/`compute_round_score` and produced output
+   consistent with prior runs (no-swap <= recommended <= best-possible
+   held throughout; mean gain in this small 24-round/72-trial subset was
+   +21.31 PIR, in line with the full-season headline of +24.06).
+9. Cleaned up the 13-player test draft from the DB afterward (same reason
+   test data was cleared after the original draft/ownership validation -
+   keep the local DB ready for the real draft).
+
+**Result**: all checks passed, including a genuine architectural gap found
+and fixed (not just "wire existing code into a route" - the schedule table
+was a real missing piece), verified against the real, live, upcoming 2026-27
+season schedule rather than only historical data.

@@ -92,10 +92,20 @@ engine/
                   sample_active_squad (POC-only samplers)
   lineup.py       build_lineup, swap_after_day1, compute_round_score - the
                   three-tier (starter/sixth-man/bench) scoring model and
-                  the day-1/day-2 golden-rule swap logic
+                  the day-1/day-2 golden-rule swap logic. team_dates_for_round
+                  (from played box scores) and team_dates_from_schedule (from
+                  the `schedule` table - the one that works for a round that
+                  hasn't been played yet) both feed it the same shape.
+  team_strength.py  per-team PIR-allowed index - prototyped, backtested,
+                  not wired into projections (no demonstrable predictive
+                  value - see docs/testing_log.md "Team strength index")
   transfers.py    suggest_transfers - naive same-position upgrade finder
 ```
 `explore_client.py` and `poc_run.py` are thin CLIs on top of `engine/`.
+`app.py`'s `/lineup` route (2026-09-14) wires `choose_active_squad` ->
+`build_lineup` -> `swap_after_day1` into the web UI for a chosen manager
+and round, using `team_dates_from_schedule` so it works for an upcoming
+round, not just an already-played one — see "Season schedule" below.
 
 ### Projections (`engine/projections.py`)
 
@@ -140,6 +150,30 @@ Two distinct concepts, easy to conflate:
 invalid draw. **Real rosters and real exclusion choices** will eventually
 come from actual 12-manager draft/ownership data and actual manager
 decisions — neither exists yet (see CLAUDE.md).
+
+### Season schedule (`schedule` table, `engine/db.py` + `engine/data.py`)
+
+Added 2026-09-14, wiring the `/lineup` route. `player_game_stats` only ever
+contains **already-played** games — `fetch_season` filters to
+`g.get("played")` before writing anything to the DB — so it can't answer
+"which teams play which dates in a round that hasn't happened yet," which
+is exactly what a lineup *decision* needs (deciding only matters before the
+round, not after). The full schedule (played and unplayed) is already
+fetched in one cheap call (`list_games`, see above) but was previously
+discarded once `fetch_season` filtered it down.
+
+Fix: `engine.data.normalize_schedule(games, season_code)` keeps every game;
+`engine.db.replace_schedule`/`load_schedule` persist it (full
+delete-then-reinsert per season, like `rosters` — schedules get
+rescheduled, see the round-33 E2025 note above); `sync_db.py` calls
+`client.list_games(...)` again alongside its existing `fetch_season` call
+(same disk cache, no extra network cost) to keep it fresh. `engine.lineup`
+gained a sibling function, `team_dates_from_schedule`, alongside the
+existing `team_dates_for_round` (untouched) — same output shape, but
+sourced from `schedule` instead of played box scores, so it works for a
+future round. Validated to produce **byte-identical** output to
+`team_dates_for_round` across all 47 rounds of E2025 (see
+`docs/testing_log.md`).
 
 ### Lineup, the tiered scoring model, and the day-1/day-2 mechanic (`engine/lineup.py`)
 

@@ -136,6 +136,24 @@ Full context for a fresh session, in order of what to read:
   projected value for new players (still 0.0/unranked, honestly reflecting
   no data rather than a guess) — user is thinking through how to source
   additional context for that.
+- **Lineup builder** (`/lineup`), as of 2026-09-14: wires `engine.lineup`'s
+  real logic (`choose_active_squad` → `build_lineup` → `swap_after_day1`)
+  into the app for a chosen manager and round — the 3-of-13 exclusion,
+  day-1 starting lineup + captain, and the day-2 swap plan. Live,
+  recomputed-every-visit, matching `/transfers`'s no-persistence pattern.
+  Building this surfaced a real gap: there was no local data for a round
+  that hasn't been played yet (`player_game_stats` is played-games-only).
+  Fixed with a new `schedule` table (every game, played or not — full
+  resync per season, populated by `sync_db.py` at no extra network cost)
+  and `engine.lineup.team_dates_from_schedule`, a sibling to the existing
+  (untouched) `team_dates_for_round`, validated to produce byte-identical
+  output across all 47 rounds of E2025. End-to-end tested against the real,
+  live E2026 round 1 (2026-09-25) — including tracing one surprising-looking
+  exclusion (a 20.6-projected player benched) down to the correct reason
+  (his team has no game that round, confirmed against the schedule) rather
+  than assuming it was a bug. See `docs/technical_notes.md` → "Season
+  schedule" and `docs/testing_log.md` → "Wired the lineup builder into the
+  app" for the full write-up.
 
 **Explicitly NOT done yet (all deferred, not forgotten):**
 - The draft-tracking UI above is v1: no draft-credit/budget tracking
@@ -176,9 +194,9 @@ Full context for a fresh session, in order of what to read:
   opponent signal is tried later). See `docs/testing_log.md` → "Team
   strength index" for the full writeup, including one open question it
   doesn't resolve: whether the signal, though too weak for point-prediction
-  accuracy, could still help as a narrow tiebreaker in the (not yet built)
-  lineup builder's captain/swap choices — untested, since that UI doesn't
-  exist yet.
+  accuracy, could still help as a narrow tiebreaker in the lineup builder's
+  captain/swap choices (the lineup builder itself now exists — see below —
+  but this specific tiebreaker idea hasn't been tried against it).
 - Frontend approach, hosting/deployment target, and full historical backfill
   sequencing were raised as open questions earlier and explicitly deferred
   by the user ("let's see what data we get first") — still open, see
@@ -214,9 +232,6 @@ over the network), never needs to be committed.
 - Actually run the real 12-manager draft through `app.py`/`seed_league.py`
   (replacing the current empty/test-cleared tables) and start logging real
   trades as they happen — the tool is ready for this now.
-- A lineup-builder route/page (day-1/day-2 swap, captain choice) for a
-  logged-in manager's roster — not built yet; `app.py` currently stops at
-  draft/ownership/transfers, doesn't touch `engine.lineup`.
 - The deferred UI/architecture questions in `docs/technical_notes.md`
   (hosting/deployment target — local-only was the working assumption for
   the draft-tracking app above, confirmed by the user for that feature,
@@ -230,6 +245,12 @@ over the network), never needs to be committed.
   "Current status" → roster sync entry), wire it into
   `engine/rosters.py::merge_roster`'s placeholder `Projection` instead of
   the current flat 0.0.
+- The lineup builder is live-recomputed only (no persistence of what a
+  manager actually picks) — confirmed as the right v1 scope with the user,
+  revisit only if that turns out to be missed in practice.
+- The team-strength tiebreaker question the "Opponent-strength adjustment"
+  entry above leaves open is now actually testable, since `/lineup` exists
+  — worth trying if opponent-aware lineup decisions come up again.
 
 ## Where things were left off (2026-09-14 session)
 
@@ -240,7 +261,28 @@ safe to pick up directly from any of the "Natural next steps" above, or
 from scratch on something new. What happened this session, most recent
 first:
 
-1. UI polish on the Flask app, per the user's direction: added
+1. Wired the lineup builder into the app (`/lineup`) — see "Current
+   status" above for the full summary. Found and fixed a real
+   architectural gap along the way (no local schedule data for
+   not-yet-played rounds), added a `schedule` table + `sync_db.py`
+   extension + `engine.lineup.team_dates_from_schedule`, and validated all
+   of it against the real, live 2026-27 schedule (confirmed already
+   published: 380 games, round 1 on 2026-09-25) rather than only
+   historical data. Used the `/plan` workflow for this one (two Explore
+   agents to map `engine.lineup`/`engine.roster`/`poc_run.py` and
+   `engine.ownership`/`engine.db`/`app.py` conventions, then a Plan agent
+   for the file-by-file design) given the scope. Test draft data used to
+   validate it was cleaned up afterward.
+2. Brainstormed a team-strength/opponent-adjustment idea at the user's
+   request, then prototyped and backtested it (`engine/team_strength.py`,
+   `team_strength_backtest.py`) — no demonstrable predictive win, not wired
+   into projections; see "Explicitly NOT done yet" above.
+3. Added a `/sync` page: buttons to trigger `sync_db.py`/`sync_rosters.py`
+   from the browser (background subprocess per script, log tail, an
+   auto-refreshing status view, a same-kind-already-running guard) instead
+   of only from the terminal. Live-tested end-to-end via real HTTP triggers
+   of both scripts, watched them complete and the DB update.
+4. UI polish on the Flask app, per the user's direction: added
    `README.md` (public-facing repo overview, now part of the working
    agreement above — keep it current) and a `/how-it-works` page (league
    rules, scoring, projection/VORP/tier/NEW-badge explanations, data-refresh
@@ -253,26 +295,26 @@ first:
    meaningful in other orderings. All routes re-verified 200 after the
    changes; sort/filter behavior spot-checked directly against the live
    E2026-seeded local DB (e.g. team=MAD filter, sort=team asc).
-2. Built current-roster sync (`sync_rosters.py`, v2 `/people` endpoint) and
+5. Built current-roster sync (`sync_rosters.py`, v2 `/people` endpoint) and
    "new to the league" marking (zero-value placeholder + `NEW` badge for
    any rostered player with no local box-score history), so transferred
    players show their real team and brand-new players are visible instead
    of silently absent from the draft board. Live-tested against the real
    E2026 season, including catching and handling two real upstream data
    quirks (duplicate transfer rows, transient dual-active rows) before they
-   hit the DB. See "Current status" above and `docs/testing_log.md`'s most
-   recent entry for the full write-up. New player *values* are explicitly
-   NOT estimated yet — the user is thinking through how to source
-   additional context for that; revisit when they have an approach.
-3. Evaluated a user-supplied research document on EuroLeague data sourcing
+   hit the DB. See "Current status" above and `docs/testing_log.md` for the
+   full write-up. New player *values* are explicitly NOT estimated yet —
+   the user is thinking through how to source additional context for that;
+   revisit when they have an approach.
+6. Evaluated a user-supplied research document on EuroLeague data sourcing
    and PIR-prediction methodology against this project's own validated
    findings — mostly corroborated (same endpoints, same PIR formula, same
    field quirks), one correction (the doc conflated v2's confirmed deep
    historical coverage with the legacy Boxscore endpoint, which this
    project already proved is current-season-only), and the licensing/
    Sportradar section doesn't apply here (see "Licensing" above). The
-   `/people` endpoint it surfaced is what led directly to item 2.
-4. Earlier sessions (2026-09-10 through 2026-09-13): built the heuristic
+   `/people` endpoint it surfaced is what led directly to item 5.
+7. Earlier sessions (2026-09-10 through 2026-09-13): built the heuristic
    engine and corrected the roster/scoring model
    (`docs/technical_notes.md`), backfilled E2023-E2025 into `euroleague.db`,
    ran the elaborate multi-season backtest (current validated headline

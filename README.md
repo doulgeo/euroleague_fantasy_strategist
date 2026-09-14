@@ -20,6 +20,9 @@ for personal use among friends — never monetized or redistributed.
   free-agent adds/drops for all 12 managers; see who owns whom.
 - **Transfer suggestions** — same-position upgrades from the actual
   unowned free-agent pool.
+- **Lineup builder** — for a chosen manager and round (including a round
+  that hasn't been played yet), picks which 3 of 13 to exclude, the day-1
+  starting lineup and captain, and the day-2 swap plan.
 - **Roster sync** — current club rosters pulled directly from EuroLeague's
   data backend, so transfers and new signings are reflected without waiting
   for a player's first box score. Triggerable from the app itself (a
@@ -62,7 +65,7 @@ A standalone pre-draft cheat sheet (no server needed) is also available:
 
 ```
 engine/         Data fetching, projections, roster/lineup/transfer logic
-app.py          Flask web app (draft board, rosters, transactions, transfers)
+app.py          Flask web app (draft board, rosters, transactions, transfers, lineup)
 draft_board.py  Standalone CLI draft cheat sheet
 sync_db.py      Refreshes box-score history (run after each gameweek)
 sync_rosters.py Refreshes current club rosters (run before a draft / after transfer news)
