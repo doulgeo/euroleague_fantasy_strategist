@@ -2,28 +2,7 @@
 {% block title %}Draft Board{% endblock %}
 {% block content %}
   <h1>Draft Board</h1>
-
-  <details class="col-legend">
-    <summary>What do these columns mean?</summary>
-    <dl>
-      <dt>#</dt>
-      <dd>Rank within this position, best projected value first.</dd>
-      <dt>Player</dt>
-      <dd>Player name. A <span class="new-badge">NEW</span> badge means no EuroLeague box-score history in this project's local data (E2023 onward) - a new signing/rookie, or a club new to the league. Their projection is a placeholder (0.0) since there's no data yet to base one on.</dd>
-      <dt>Team</dt>
-      <dd>Current club, from the most recently synced roster (run <code>sync_rosters.py</code> to refresh).</dd>
-      <dt>Proj+Bonus</dt>
-      <dd>Projected PIR (the fantasy scoring stat) for this player's next game: a recency-weighted average of their last 10 games, plus a bonus scaled to their team's recent win rate.</dd>
-      <dt>VORP</dt>
-      <dd>Value over replacement: how much better this player projects than the last player at the same position who'd plausibly still get drafted across all 12 managers. Makes positions comparable - a scarce Center can rank above a slightly-higher-projected Guard once scarcity is factored in.</dd>
-      <dt>n</dt>
-      <dd>Games sampled to build the projection (up to 10, most recent weighted highest). Fewer than 3 games means no real projection can be built yet.</dd>
-      <dt>Owner</dt>
-      <dd>Manager who has already drafted this player, if any - drafted rows are greyed out.</dd>
-      <dt>&mdash; tier break &mdash;</dt>
-      <dd>A divider marking a bigger-than-usual drop-off to the next player at this position - players above the line are roughly interchangeable, so don't reach for one over another within the same tier.</dd>
-    </dl>
-  </details>
+  <p><a href="{{ url_for('how_it_works') }}">How this works</a> - what every column and badge means.</p>
 
   <form method="get" class="filters">
     <label>Position:
@@ -34,18 +13,50 @@
         {% endfor %}
       </select>
     </label>
+    <label>Team:
+      <select name="team" onchange="this.form.submit()">
+        <option value="" {% if not team_filter %}selected{% endif %}>All</option>
+        {% for team in teams %}
+          <option value="{{ team }}" {% if team_filter == team %}selected{% endif %}>{{ team }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Sort by:
+      <select name="sort" onchange="this.form.submit()">
+        {% for key, label in sort_options %}
+          <option value="{{ key }}" {% if sort_key == key %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      <select name="dir" onchange="this.form.submit()">
+        <option value="desc" {% if sort_dir == 'desc' %}selected{% endif %}>High to low</option>
+        <option value="asc" {% if sort_dir == 'asc' %}selected{% endif %}>Low to high</option>
+      </select>
+    </label>
     <label>
       <input type="checkbox" name="hide_drafted" value="1" {% if hide_drafted %}checked{% endif %} onchange="this.form.submit()">
       Hide drafted
     </label>
   </form>
 
+  {% if sort_key != 'value' or sort_dir != 'desc' %}
+    <p><em>Tier breaks are only shown in the default sort (Projected value, high to low) - they're not meaningful in this order.</em></p>
+  {% endif %}
+
   {% for position, rows in positions.items() %}
     <h2>{{ position }}s</h2>
     <table>
       <thead>
         <tr>
-          <th>#</th><th>Player</th><th>Team</th><th>Proj+Bonus</th><th>VORP</th><th>n</th><th>Owner</th><th>Action</th>
+          <th title="Row number in the current sort order.">#</th>
+          <th title="Player name. A NEW badge means no EuroLeague box-score history in local data (E2023+) - see How this works.">Player</th>
+          <th title="Current club, from the most recently synced roster.">Team</th>
+          <th title="Projected PIR for this player's next game: recency-weighted average of their last 10 games, plus a team win-rate bonus.">Proj+Bonus</th>
+          <th title="Value over replacement: projected value minus the last plausibly-drafted player at this position across all 12 managers.">VORP</th>
+          <th title="Games sampled to build the projection (up to 10, most recent weighted highest).">n</th>
+          <th title="Manager who has already drafted this player, if any.">Owner</th>
+          <th title="Log a draft pick for this player.">Action</th>
         </tr>
       </thead>
       <tbody>
@@ -69,6 +80,9 @@
                 <form method="post" action="{{ url_for('draft_pick') }}" class="inline-form">
                   <input type="hidden" name="player_id" value="{{ row.player.player_id }}">
                   <input type="hidden" name="position" value="{{ position_filter or '' }}">
+                  <input type="hidden" name="team" value="{{ team_filter or '' }}">
+                  <input type="hidden" name="sort" value="{{ sort_key }}">
+                  <input type="hidden" name="dir" value="{{ sort_dir }}">
                   <input type="hidden" name="hide_drafted" value="{{ '1' if hide_drafted else '' }}">
                   <select name="manager_id" required>
                     <option value="" disabled selected>Manager...</option>

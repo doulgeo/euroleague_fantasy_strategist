@@ -2,20 +2,7 @@
 {% block title %}{{ manager.name }}'s Roster{% endblock %}
 {% block content %}
   <h1>{{ manager.name }}'s Roster ({{ total }} / 13)</h1>
-
-  <details class="col-legend">
-    <summary>What do these columns mean?</summary>
-    <dl>
-      <dt>Player</dt>
-      <dd>Player name. A <span class="new-badge">NEW</span> badge means no EuroLeague box-score history in this project's local data (E2023 onward) - their projection is a placeholder (0.0) since there's no data yet to base one on.</dd>
-      <dt>Team</dt>
-      <dd>Current club, from the most recently synced roster (run <code>sync_rosters.py</code> to refresh).</dd>
-      <dt>Proj+Bonus</dt>
-      <dd>Projected PIR (the fantasy scoring stat) for this player's next game: a recency-weighted average of their last 10 games, plus a bonus scaled to their team's recent win rate.</dd>
-      <dt>n</dt>
-      <dd>Games sampled to build the projection (up to 10, most recent weighted highest).</dd>
-    </dl>
-  </details>
+  <p><a href="{{ url_for('how_it_works') }}">How this works</a></p>
 
   {% if unresolved %}
     <p class="flash-error">{{ unresolved }} owned player(s) not found in the current projection pool (no recent games logged yet).</p>
@@ -23,7 +10,14 @@
   {% for position in ("Guard", "Forward", "Center") %}
     <h2>{{ position }}</h2>
     <table>
-      <thead><tr><th>Player</th><th>Team</th><th>Proj+Bonus</th><th>n</th></tr></thead>
+      <thead>
+        <tr>
+          <th title="Player name. A NEW badge means no EuroLeague box-score history in local data (E2023+) - see How this works.">Player</th>
+          <th title="Current club, from the most recently synced roster.">Team</th>
+          <th title="Projected PIR for this player's next game: recency-weighted average of their last 10 games, plus a team win-rate bonus.">Proj+Bonus</th>
+          <th title="Games sampled to build the projection (up to 10, most recent weighted highest).">n</th>
+        </tr>
+      </thead>
       <tbody>
         {% for p in by_position.get(position, []) %}
           <tr class="{{ 'new-player' if p.player_id in new_ids else '' }}">

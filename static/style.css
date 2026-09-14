@@ -8,13 +8,17 @@ tr.drafted { color: #999; }
 tr.tier-break td { background: #eee; font-style: italic; text-align: center; }
 tr.new-player { background: #fff8e1; }
 .new-badge { display: inline-block; background: #f5a623; color: #1a1a1a; font-size: 0.65rem; font-weight: bold; padding: 0.05rem 0.35rem; border-radius: 3px; margin-left: 0.3rem; vertical-align: middle; }
-details.col-legend { margin-bottom: 1rem; max-width: 900px; border: 1px solid #ccc; border-radius: 4px; padding: 0.5rem 0.75rem; background: #fafafa; font-size: 0.85rem; }
-details.col-legend summary { cursor: pointer; font-weight: 600; color: #1a5fb4; }
-details.col-legend[open] summary { margin-bottom: 0.5rem; }
-details.col-legend dl { margin: 0; }
-details.col-legend dt { font-weight: 600; margin-top: 0.5rem; }
-details.col-legend dt:first-child { margin-top: 0; }
-details.col-legend dd { margin: 0.1rem 0 0; color: #333; }
+th[title] { cursor: help; text-decoration: underline dotted; text-decoration-color: #999; text-underline-offset: 3px; }
+.prose { max-width: 800px; line-height: 1.55; }
+.prose h2 { margin-top: 2rem; margin-bottom: 0.4rem; }
+.prose h2:first-child { margin-top: 0; }
+.prose p { margin: 0.5rem 0; }
+.prose dl { margin: 0.5rem 0; }
+.prose dt { font-weight: 600; margin-top: 0.6rem; }
+.prose dt:first-child { margin-top: 0; }
+.prose dd { margin: 0.1rem 0 0; color: #333; }
+.prose table { max-width: 520px; font-size: 0.85rem; }
+.prose .note { background: #fff8e1; border: 1px solid #eecc80; border-radius: 4px; padding: 0.5rem 0.75rem; font-size: 0.9rem; }
 .flashes { list-style: none; padding: 0; }
 .flash-success { color: #1a7a3a; }
 .flash-error { color: #a01818; }

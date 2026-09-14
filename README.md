@@ -1,0 +1,73 @@
+# EuroLeague Fantasy Strategist
+
+A personal (non-commercial) tool for a 12-manager private **draft-mode**
+EuroLeague Fantasy league. It tracks real box-score data, projects player
+fantasy value, ranks players for the draft, and helps manage rosters/trades
+for the season.
+
+Not affiliated with, endorsed by, or licensed by Euroleague Basketball. Built
+for personal use among friends — never monetized or redistributed.
+
+## What it does
+
+- **Projections** — a transparent, hand-auditable heuristic (no ML) that
+  projects each player's next-game fantasy score (PIR) from recency-weighted
+  recent form plus a team win-rate bonus.
+- **Draft board** — every player ranked per position, with VORP
+  (scarcity-adjusted value) and tiering (where the drop-off to the next
+  player actually matters).
+- **Draft & ownership tracking** — log real draft picks, trades, and
+  free-agent adds/drops for all 12 managers; see who owns whom.
+- **Transfer suggestions** — same-position upgrades from the actual
+  unowned free-agent pool.
+- **Roster sync** — current club rosters pulled directly from EuroLeague's
+  data backend, so transfers and new signings are reflected without waiting
+  for a player's first box score.
+
+See the in-app **How this works** page (linked in the nav once the app is
+running) for the full mechanics — scoring model, projection method, what
+every column/badge means, and how to keep the data fresh.
+
+## Quick start
+
+```bash
+# One-time setup (WSL/Linux; system Python has no pip, so use a venv)
+python3 -m venv --without-pip .venv
+.venv/bin/python3 <(curl -s https://bootstrap.pypa.io/get-pip.py)
+.venv/bin/pip install -r requirements.txt
+
+# Pull historical box scores into the local database
+.venv/bin/python3 sync_db.py --seasons E2023 E2024 E2025
+
+# Pull current-season club rosters (run before a draft, or after transfer news)
+.venv/bin/python3 sync_rosters.py --season E2026
+
+# Seed the 12 managers, then run the app
+.venv/bin/python3 seed_league.py "Name1" "Name2" ... # all 12 names
+.venv/bin/python3 app.py
+```
+
+Then open `http://127.0.0.1:5000`.
+
+A standalone pre-draft cheat sheet (no server needed) is also available:
+
+```bash
+.venv/bin/python3 draft_board.py --season E2025 --top-n 20
+```
+
+## Project layout
+
+```
+engine/         Data fetching, projections, roster/lineup/transfer logic
+app.py          Flask web app (draft board, rosters, transactions, transfers)
+draft_board.py  Standalone CLI draft cheat sheet
+sync_db.py      Refreshes box-score history (run after each gameweek)
+sync_rosters.py Refreshes current club rosters (run before a draft / after transfer news)
+seed_league.py  One-time setup of the 12 managers
+docs/           Fuller technical notes, game rules, and a validation log
+```
+
+## Status
+
+Actively developed. See `docs/testing_log.md` for a running record of what's
+been validated and how.

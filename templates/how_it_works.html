@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block title %}How This Works{% endblock %}
+{% block content %}
+  <h1>How this works</h1>
+  <div class="prose">
+
+    <p class="note">This is a personal tool for this 12-manager draft-mode
+    league, not an official EuroLeague product. Projections are a
+    transparent heuristic, not a guarantee - use judgment alongside them.</p>
+
+    <h2>The league's rules, in brief</h2>
+    <p>Each manager's roster is exactly <strong>13 players: 5 Guards, 5
+    Forwards, 3 Centers</strong>. Each real EuroLeague player can belong to
+    only one manager league-wide (draft mode).</p>
+    <p>Before each round, a manager picks an <strong>active squad of 10</strong>
+    from their 13 - the other 3 are <strong>excluded</strong> and score zero,
+    no matter what. Within the active 10:</p>
+    <dl>
+      <dt>5 Starters</dt>
+      <dd>Full points. One is <strong>captain</strong> and doubles (2x) their score.</dd>
+      <dt>1 Sixth man</dt>
+      <dd>Full points too, but never captain-eligible.</dd>
+      <dt>4 Bench</dt>
+      <dd>Half points - automatic, whether or not they're ever swapped in.</dd>
+    </dl>
+    <p>The 5 starters must form one of three valid shapes: <strong>2-2-1,
+    2-1-2, or 3-1-1</strong> (Guard-Forward-Center) - always at least 2
+    Guards. A round is played over two days; points from day 1 are banked
+    permanently, and on day 2 you can swap a full-scoring slot for a
+    same-position bench player who still has a game left, promoting them to
+    full points. Team win gives a <strong>+10% bonus</strong> to that
+    player's round score. Full detail (including the day-1/day-2 "golden
+    rule") is in <code>docs/game_rules.md</code> in the repo.</p>
+    <p><strong>Note:</strong> this app doesn't have a lineup-builder page yet
+    (choosing your active 10, starters, captain, and day-2 swaps each round)
+    - it currently covers the draft, ownership, and transfers. That logic
+    exists in <code>engine/lineup.py</code> and is validated by backtesting,
+    but isn't wired into the web UI yet.</p>
+
+    <h2>Scoring: PIR</h2>
+    <p>PIR (Performance Index Rating) is the fantasy currency, not raw
+    points:</p>
+    <table>
+      <tbody>
+        <tr><td>Point scored, rebound, assist, steal, block performed, foul drawn</td><td>+1 each</td></tr>
+        <tr><td>Turnover, block suffered, foul committed, missed shot/free throw</td><td>-1 each</td></tr>
+      </tbody>
+    </table>
+
+    <h2>How projections are calculated</h2>
+    <p>Deliberately simple and auditable - no machine learning. For each
+    player, using only games strictly before the projection date (so it
+    never "cheats" by seeing the future):</p>
+    <dl>
+      <dt>Projected value ("Proj+Bonus")</dt>
+      <dd>A <strong>recency-weighted average</strong> of the player's last
+      10 played games (more recent games count more), plus a bonus scaled
+      to their team's win rate over its last 10 games (+10% of the base
+      projection if the team's been winning consistently).</dd>
+      <dt>Games sampled ("n")</dt>
+      <dd>How many of the last-10 games actually went into that average.
+      Fewer than 3 games and no projection is built at all - too little
+      signal.</dd>
+      <dt>Which season's data</dt>
+      <dd>If the current season already has synced games, only those count.
+      Otherwise it falls back to using all of last season's games. This is a
+      hard switch, not a blend - early in a new season, a returning player
+      with only 1-2 games so far can temporarily show as unprojected until
+      they hit 3 games in the new season.</dd>
+    </dl>
+
+    <h2>The draft board</h2>
+    <dl>
+      <dt>VORP</dt>
+      <dd>Value over replacement: how much better a player projects than the
+      last player at their position who'd plausibly still get drafted across
+      all 12 managers. Makes positions comparable - a scarce Center can rank
+      above a slightly-higher-projected Guard once scarcity is factored in.</dd>
+      <dt>Tiers / "tier break"</dt>
+      <dd>Within a position, a tier break marks an unusually large drop-off
+      to the next player (bigger than that position's average gap). Players
+      within the same tier are roughly interchangeable - if your target gets
+      drafted, don't reach for a specific name, grab anyone else in that
+      tier. Only shown in the default sort (Projected value, high to low) -
+      it's not meaningful once you re-sort by something else.</dd>
+      <dt><span class="new-badge">NEW</span> badge</dt>
+      <dd>This player has no EuroLeague box-score history in this project's
+      local data (E2023 onward) - a new signing, a rookie, or a club new to
+      the league itself. Their projection is a placeholder of 0.0 rather
+      than a guess, since there's genuinely no data yet to base one on.
+      Their team still shown correctly, pulled from the current roster sync
+      rather than box scores.</dd>
+      <dt>Filter and sort</dt>
+      <dd>Filter by position and/or team, and sort by any column (value,
+      VORP, games sampled, name, or team), ascending or descending.</dd>
+    </dl>
+
+    <h2>Draft, ownership, and transactions</h2>
+    <p>Someone (the commissioner) manually logs what actually happens in the
+    real league: draft picks, trades, free-agent adds, and drops. A player
+    can only be owned by one manager at a time - drafting or trading for an
+    already-owned player is rejected. A trade is logged as a linked pair (a
+    shared "group" ID ties the two legs together in the transaction
+    history). Transfer windows sit between rounds in this league, not
+    continuously open.</p>
+
+    <h2>Transfer suggestions</h2>
+    <p>For a manager's full 13-player roster, this looks for same-position
+    upgrades: any unowned free agent projecting meaningfully higher than a
+    rostered player at the same position. It's naive by design - it doesn't
+    account for a manager's active-squad exclusion choices or bye weeks, just
+    raw projected value at the same position.</p>
+
+    <h2>Keeping the data fresh</h2>
+    <p>This app only ever reads the local database - it never calls the live
+    EuroLeague API itself, so pages load fast and never hit a rate limit.
+    Someone with terminal access needs to run these periodically:</p>
+    <dl>
+      <dt><code>sync_db.py</code></dt>
+      <dd>Pulls newly played box scores (run after each gameweek).</dd>
+      <dt><code>sync_rosters.py</code></dt>
+      <dd>Refreshes current club rosters (run before a draft, or whenever
+      transfer news breaks - not tied to gameweeks).</dd>
+    </dl>
+    <p>If the draft board looks stale (wrong teams, missing new signings, or
+    projections not reflecting recent games), that's the fix.</p>
+
+  </div>
+{% endblock %}

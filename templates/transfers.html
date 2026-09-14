@@ -2,6 +2,7 @@
 {% block title %}Transfer Suggestions{% endblock %}
 {% block content %}
   <h1>Transfer Suggestions</h1>
+  <p><a href="{{ url_for('how_it_works') }}">How this works</a></p>
 
   <form method="get" class="filters">
     <label>Manager:
@@ -17,25 +18,17 @@
   {% if roster_error %}
     <p class="flash-error">Roster incomplete: {{ roster_error }}</p>
   {% elif roster %}
-    <details class="col-legend">
-      <summary>What do these columns mean?</summary>
-      <dl>
-        <dt>Drop</dt>
-        <dd>A player on this manager's roster who's being suggested as the weaker side of a same-position upgrade.</dd>
-        <dt>Position</dt>
-        <dd>Shared position for the swap - suggestions only ever compare players at the same position (Guard/Forward/Center).</dd>
-        <dt>Current proj.</dt>
-        <dd>The rostered player's projected PIR (fantasy scoring stat) for their next game.</dd>
-        <dt>Add</dt>
-        <dd>A free agent (not owned by any manager) at the same position, projected higher.</dd>
-        <dt>Available proj.</dt>
-        <dd>That free agent's projected PIR for their next game.</dd>
-        <dt>Gain</dt>
-        <dd>Available proj. minus Current proj. - the projected point gain from making this swap. Only shown above a minimum threshold, so small/noisy gains aren't suggested.</dd>
-      </dl>
-    </details>
     <table>
-      <thead><tr><th>Drop</th><th>Position</th><th>Current proj.</th><th>Add</th><th>Available proj.</th><th>Gain</th></tr></thead>
+      <thead>
+        <tr>
+          <th title="A player on this manager's roster suggested as the weaker side of a same-position upgrade.">Drop</th>
+          <th title="Shared position for the swap - only same-position players are compared.">Position</th>
+          <th title="The rostered player's projected PIR for their next game.">Current proj.</th>
+          <th title="A free agent (unowned) at the same position, projected higher.">Add</th>
+          <th title="That free agent's projected PIR for their next game.">Available proj.</th>
+          <th title="Available proj. minus Current proj. - only shown above a minimum threshold.">Gain</th>
+        </tr>
+      </thead>
       <tbody>
         {% for s in suggestions %}
           <tr>

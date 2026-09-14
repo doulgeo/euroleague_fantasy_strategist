@@ -2,17 +2,11 @@
 {% block title %}Dashboard - EuroLeague Fantasy{% endblock %}
 {% block content %}
   <h1>EuroLeague Fantasy - Draft/Ownership Tracker</h1>
-  <p>Draft progress: <strong>{{ owned_count }}</strong> / 156 players owned across <strong>{{ manager_count }}</strong> managers.</p>
-
-  <details class="col-legend">
-    <summary>What does this mean?</summary>
-    <dl>
-      <dt>Players owned</dt>
-      <dd>How many players have been drafted or picked up as free agents so far, out of 156 total roster slots (13 players &times; 12 managers).</dd>
-      <dt>Managers</dt>
-      <dd>How many managers have been seeded into the league so far (run <code>seed_league.py</code> to add the full 12).</dd>
-    </dl>
-  </details>
+  <p>Draft progress:
+    <strong title="Players drafted or picked up as free agents so far, out of 156 total roster slots (13 players x 12 managers).">{{ owned_count }}</strong> / 156 players owned across
+    <strong title="Managers seeded into the league so far (run seed_league.py to add the full 12).">{{ manager_count }}</strong> managers.
+  </p>
+  <p><a href="{{ url_for('how_it_works') }}">How this works</a> - what the tool does, how projections are calculated, and what every term means.</p>
   <ul>
     <li><a href="{{ url_for('draft') }}">Draft board</a> - rank players, log picks</li>
     <li><a href="{{ url_for('managers_index') }}">Managers</a> - view rosters</li>

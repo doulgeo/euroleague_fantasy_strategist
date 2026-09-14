@@ -99,6 +99,28 @@ def index():
     return render_template("index.html", owned_count=owned_count, manager_count=manager_count)
 
 
+SORT_OPTIONS = [
+    ("value", "Projected value"),
+    ("vorp", "VORP"),
+    ("n", "Games sampled"),
+    ("player_name", "Player name"),
+    ("team", "Team"),
+]
+
+_SORT_KEY_FNS = {
+    "value": lambda p, replacement: p.projected_pir_with_bonus,
+    "vorp": lambda p, replacement: p.projected_pir_with_bonus - replacement[p.position],
+    "n": lambda p, replacement: p.games_sampled,
+    "player_name": lambda p, replacement: p.player_name,
+    "team": lambda p, replacement: p.team or "",
+}
+
+
+@app.route("/how-it-works")
+def how_it_works():
+    return render_template("how_it_works.html")
+
+
 @app.route("/draft")
 def draft():
     conn = get_db()
@@ -110,15 +132,33 @@ def draft():
 
     hide_drafted = request.args.get("hide_drafted") == "1"
     position_filter = request.args.get("position")
+    team_filter = request.args.get("team") or None
+    sort_key = request.args.get("sort", "value")
+    if sort_key not in _SORT_KEY_FNS:
+        sort_key = "value"
+    sort_dir = request.args.get("dir", "desc")
+    if sort_dir not in ("asc", "desc"):
+        sort_dir = "desc"
+
+    teams = sorted({p.team for p in pool.values() if p.team})
+    key_fn = _SORT_KEY_FNS[sort_key]
+    is_default_sort = sort_key == "value" and sort_dir == "desc"
 
     positions_out = {}
     for position in ("Guard", "Forward", "Center"):
         if position_filter and position_filter != position:
             continue
-        ranked = board.get(position, [])
-        breaks = tier_breaks(ranked)
+        ranked = board.get(position, [])  # already value-sorted desc
+        if team_filter:
+            ranked = [p for p in ranked if p.team == team_filter]
+
+        breaks = tier_breaks(ranked)  # meaningful only in this natural value order
+        tier_break_ids = {ranked[i].player_id for i in breaks}
+
+        display_list = sorted(ranked, key=lambda p: key_fn(p, replacement), reverse=(sort_dir == "desc"))
+
         rows_out = []
-        for i, p in enumerate(ranked):
+        for i, p in enumerate(display_list):
             owner_id = ownership.current_owner(conn, p.player_id) if p.player_id in owned_ids else None
             if hide_drafted and owner_id is not None:
                 continue
@@ -127,7 +167,7 @@ def draft():
                 "player": p,
                 "vorp": p.projected_pir_with_bonus - replacement[position],
                 "owner_id": owner_id,
-                "tier_break_after": i in breaks,
+                "tier_break_after": is_default_sort and p.player_id in tier_break_ids,
                 "is_new": p.player_id in new_ids,
             })
         positions_out[position] = rows_out
@@ -140,6 +180,11 @@ def draft():
         manager_names=manager_names,
         hide_drafted=hide_drafted,
         position_filter=position_filter,
+        team_filter=team_filter,
+        teams=teams,
+        sort_key=sort_key,
+        sort_dir=sort_dir,
+        sort_options=SORT_OPTIONS,
     )
 
 
@@ -160,6 +205,12 @@ def draft_pick():
     redirect_args = {}
     if request.form.get("position"):
         redirect_args["position"] = request.form["position"]
+    if request.form.get("team"):
+        redirect_args["team"] = request.form["team"]
+    if request.form.get("sort"):
+        redirect_args["sort"] = request.form["sort"]
+    if request.form.get("dir"):
+        redirect_args["dir"] = request.form["dir"]
     if request.form.get("hide_drafted"):
         redirect_args["hide_drafted"] = request.form["hide_drafted"]
     return redirect(url_for("draft", **redirect_args))
