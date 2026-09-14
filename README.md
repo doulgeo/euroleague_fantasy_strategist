@@ -22,7 +22,8 @@ for personal use among friends — never monetized or redistributed.
   unowned free-agent pool.
 - **Roster sync** — current club rosters pulled directly from EuroLeague's
   data backend, so transfers and new signings are reflected without waiting
-  for a player's first box score.
+  for a player's first box score. Triggerable from the app itself (a
+  **Sync** page) as well as from the terminal.
 
 See the in-app **How this works** page (linked in the nav once the app is
 running) for the full mechanics — scoring model, projection method, what
@@ -36,18 +37,20 @@ python3 -m venv --without-pip .venv
 .venv/bin/python3 <(curl -s https://bootstrap.pypa.io/get-pip.py)
 .venv/bin/pip install -r requirements.txt
 
-# Pull historical box scores into the local database
-.venv/bin/python3 sync_db.py --seasons E2023 E2024 E2025
-
-# Pull current-season club rosters (run before a draft, or after transfer news)
-.venv/bin/python3 sync_rosters.py --season E2026
-
 # Seed the 12 managers, then run the app
 .venv/bin/python3 seed_league.py "Name1" "Name2" ... # all 12 names
 .venv/bin/python3 app.py
 ```
 
-Then open `http://127.0.0.1:5000`.
+Then open `http://127.0.0.1:5000` and use the **Sync** page to pull box
+scores and current rosters (or run `sync_db.py`/`sync_rosters.py` directly
+from the terminal — same effect, useful for a first full historical load
+since that's a longer-running fetch):
+
+```bash
+.venv/bin/python3 sync_db.py --seasons E2023 E2024 E2025 E2026
+.venv/bin/python3 sync_rosters.py --season E2026
+```
 
 A standalone pre-draft cheat sheet (no server needed) is also available:
 
