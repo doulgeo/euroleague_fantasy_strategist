@@ -16,13 +16,27 @@ Usage:
 
 from __future__ import annotations
 
+import subprocess
+import sys
 import sqlite3
+import threading
+from datetime import datetime, timezone
+from pathlib import Path
 
 from flask import Flask, abort, flash, g, redirect, render_template, request, url_for
 
 from draft_board import build_draft_board, replacement_values, tier_breaks
 from engine import ownership
-from engine.db import DB_PATH, get_connection, known_player_ids, load_roster, load_rows
+from engine.db import (
+    DB_PATH,
+    get_connection,
+    known_player_ids,
+    latest_game_date,
+    load_roster,
+    load_rows,
+    roster_synced_at,
+    row_count,
+)
 from engine.projections import Projection, build_projections
 from engine.roster import REQUIRED_COUNTS, Roster
 from engine.rosters import merge_roster
@@ -31,11 +45,61 @@ from engine.transfers import suggest_transfers
 # Edit these once per year as seasons roll over.
 CURRENT_SEASON = "E2026"
 PRIOR_SEASON = "E2025"
+KNOWN_SEASONS = ["E2023", "E2024", "E2025", "E2026"]
+
+BASE_DIR = Path(__file__).parent
+LOGS_DIR = BASE_DIR / "logs"
 
 app = Flask(__name__)
 app.secret_key = "euroleague-fantasy-local-dev"  # local single-user tool, not internet-facing
 
 _projection_cache: dict[tuple, tuple[int, dict[str, Projection]]] = {}
+
+# --- Background data sync (sync_db.py / sync_rosters.py triggered from the UI) ---
+#
+# Both scripts are the only code that talks to the live EuroLeague API (see
+# module docstring above) and can take a while (cold box-score fetches are
+# paced at ~6.5s/game). Routes must never block on that, so a sync runs as a
+# real subprocess (reusing the scripts unchanged, not duplicating their
+# logic) in a background thread; this in-memory dict is this server
+# process's view of sync state - it resets on restart, which is fine for a
+# local single-user tool (the DB itself, and `rosters.synced_at`, are the
+# durable record of what actually happened).
+
+_sync_lock = threading.Lock()
+_sync_state: dict[str, dict] = {
+    "db": {"running": False, "log_path": None, "started_at": None, "finished_at": None, "returncode": None, "seasons": []},
+    "rosters": {"running": False, "log_path": None, "started_at": None, "finished_at": None, "returncode": None, "seasons": []},
+}
+
+
+def _run_sync(kind: str, cmd: list[str], log_path: Path) -> None:
+    with open(log_path, "w") as f:
+        proc = subprocess.run(cmd, cwd=BASE_DIR, stdout=f, stderr=subprocess.STDOUT, text=True)
+    with _sync_lock:
+        _sync_state[kind]["running"] = False
+        _sync_state[kind]["finished_at"] = datetime.now(timezone.utc).isoformat()
+        _sync_state[kind]["returncode"] = proc.returncode
+    _projection_cache.clear()  # the DB just changed under us - don't serve a stale pool
+
+
+def _start_sync(kind: str, cmd: list[str], seasons: list[str]) -> bool:
+    """Returns False (does nothing) if a sync of this kind is already running."""
+    with _sync_lock:
+        if _sync_state[kind]["running"]:
+            return False
+        LOGS_DIR.mkdir(exist_ok=True)
+        log_path = LOGS_DIR / f"sync_{kind}_{datetime.now(timezone.utc):%Y%m%dT%H%M%S}.log"
+        _sync_state[kind].update(
+            running=True,
+            log_path=str(log_path),
+            started_at=datetime.now(timezone.utc).isoformat(),
+            returncode=None,
+            seasons=seasons,
+        )
+    thread = threading.Thread(target=_run_sync, args=(kind, cmd, log_path), daemon=True)
+    thread.start()
+    return True
 
 
 def get_db() -> sqlite3.Connection:
@@ -119,6 +183,61 @@ _SORT_KEY_FNS = {
 @app.route("/how-it-works")
 def how_it_works():
     return render_template("how_it_works.html")
+
+
+@app.route("/sync")
+def sync_page():
+    conn = get_db()
+    season_info = [
+        {"season": s, "rows": row_count(conn, s), "latest_game_date": (latest_game_date(conn, s) or "")[:10]}
+        for s in KNOWN_SEASONS
+    ]
+    roster_info = {
+        "count": len(load_roster(conn, CURRENT_SEASON)),
+        "synced_at": roster_synced_at(conn, CURRENT_SEASON),
+    }
+
+    with _sync_lock:
+        state = {k: dict(v) for k, v in _sync_state.items()}
+    logs = {}
+    for kind, s in state.items():
+        if s.get("log_path") and Path(s["log_path"]).exists():
+            logs[kind] = Path(s["log_path"]).read_text()[-4000:]
+    running_any = any(s["running"] for s in state.values())
+
+    return render_template(
+        "sync.html",
+        season_info=season_info,
+        roster_info=roster_info,
+        state=state,
+        logs=logs,
+        running_any=running_any,
+        current_season=CURRENT_SEASON,
+        known_seasons=KNOWN_SEASONS,
+    )
+
+
+@app.route("/sync/db", methods=["POST"])
+def sync_db_trigger():
+    seasons = [s for s in KNOWN_SEASONS if request.form.get(f"season_{s}") == "1"]
+    if not seasons:
+        seasons = [CURRENT_SEASON]
+    cmd = [sys.executable, "sync_db.py", "--seasons", *seasons]
+    if _start_sync("db", cmd, seasons):
+        flash(f"Started syncing box scores for {', '.join(seasons)} in the background.", "success")
+    else:
+        flash("A box-score sync is already running - wait for it to finish.", "error")
+    return redirect(url_for("sync_page"))
+
+
+@app.route("/sync/rosters", methods=["POST"])
+def sync_rosters_trigger():
+    cmd = [sys.executable, "sync_rosters.py", "--season", CURRENT_SEASON]
+    if _start_sync("rosters", cmd, [CURRENT_SEASON]):
+        flash(f"Started syncing {CURRENT_SEASON} rosters in the background.", "success")
+    else:
+        flash("A roster sync is already running - wait for it to finish.", "error")
+    return redirect(url_for("sync_page"))
 
 
 @app.route("/draft")

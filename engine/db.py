@@ -236,6 +236,21 @@ def load_roster(conn: sqlite3.Connection, season_code: str) -> list[dict]:
     return rows
 
 
+def latest_game_date(conn: sqlite3.Connection, season_code: str) -> str | None:
+    """Most recent played game's date for a season - a freshness proxy for
+    the sync-status page (when the app doesn't otherwise track "last synced
+    at" for box scores, unlike `rosters`)."""
+    row = conn.execute(
+        "SELECT MAX(game_date) FROM player_game_stats WHERE season_code = ? AND played = 1", (season_code,)
+    ).fetchone()
+    return row[0] if row else None
+
+
+def roster_synced_at(conn: sqlite3.Connection, season_code: str) -> str | None:
+    row = conn.execute("SELECT MAX(synced_at) FROM rosters WHERE season_code = ?", (season_code,)).fetchone()
+    return row[0] if row else None
+
+
 def known_player_ids(conn: sqlite3.Connection) -> set[str]:
     """Every player_id with at least one synced box-score row, across all
     seasons in the local DB - used to flag players "new to the league" (no
