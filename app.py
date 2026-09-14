@@ -22,9 +22,10 @@ from flask import Flask, abort, flash, g, redirect, render_template, request, ur
 
 from draft_board import build_draft_board, replacement_values, tier_breaks
 from engine import ownership
-from engine.db import DB_PATH, get_connection, load_rows
+from engine.db import DB_PATH, get_connection, known_player_ids, load_roster, load_rows
 from engine.projections import Projection, build_projections
 from engine.roster import REQUIRED_COUNTS, Roster
+from engine.rosters import merge_roster
 from engine.transfers import suggest_transfers
 
 # Edit these once per year as seasons roll over.
@@ -64,7 +65,13 @@ def _resolve_pool_source(conn: sqlite3.Connection) -> tuple[str, int]:
     return CURRENT_SEASON, max_round + 1
 
 
-def get_pool(conn: sqlite3.Connection) -> dict[str, Projection]:
+def get_pool(conn: sqlite3.Connection) -> tuple[dict[str, Projection], set[str]]:
+    """(projections, new_player_ids) - the projection pool merged with the
+    current CURRENT_SEASON roster (engine.rosters.merge_roster), so a
+    transferred player shows their real current team and a player with no
+    box-score history yet (new to the league) still appears, flagged, rather
+    than being silently absent. Run sync_rosters.py to refresh the roster
+    data this reads from `rosters` (empty until then - see CLAUDE.md)."""
     season_code, as_of_round = _resolve_pool_source(conn)
     key = (season_code, as_of_round)
     mtime_ns = DB_PATH.stat().st_mtime_ns
@@ -75,8 +82,13 @@ def get_pool(conn: sqlite3.Connection) -> dict[str, Projection]:
 
     rows = load_rows(conn, season_code=season_code)
     projections = build_projections(rows, as_of_round=as_of_round)
-    _projection_cache[key] = (mtime_ns, projections)
-    return projections
+
+    roster_rows = load_roster(conn, CURRENT_SEASON)
+    seen = known_player_ids(conn)
+    projections, new_ids = merge_roster(projections, roster_rows, seen)
+
+    _projection_cache[key] = (mtime_ns, (projections, new_ids))
+    return projections, new_ids
 
 
 @app.route("/")
@@ -90,7 +102,7 @@ def index():
 @app.route("/draft")
 def draft():
     conn = get_db()
-    pool = get_pool(conn)
+    pool, new_ids = get_pool(conn)
     board = build_draft_board(pool)
     replacement = replacement_values(board)
     managers = ownership.list_managers(conn)
@@ -116,6 +128,7 @@ def draft():
                 "vorp": p.projected_pir_with_bonus - replacement[position],
                 "owner_id": owner_id,
                 "tier_break_after": i in breaks,
+                "is_new": p.player_id in new_ids,
             })
         positions_out[position] = rows_out
 
@@ -171,7 +184,7 @@ def manager_roster(manager_id: int):
     if manager is None:
         abort(404)
 
-    pool = get_pool(conn)
+    pool, new_ids = get_pool(conn)
     player_ids = ownership.manager_roster_ids(conn, manager_id)
 
     by_position: dict[str, list[Projection]] = {position: [] for position in REQUIRED_COUNTS}
@@ -191,6 +204,7 @@ def manager_roster(manager_id: int):
         by_position=by_position,
         total=len(player_ids),
         unresolved=unresolved,
+        new_ids=new_ids,
     )
 
 
@@ -199,7 +213,7 @@ def transactions():
     conn = get_db()
     managers = ownership.list_managers(conn)
     manager_names = {m["manager_id"]: m["name"] for m in managers}
-    pool = get_pool(conn)
+    pool, _new_ids = get_pool(conn)
     history = ownership.transaction_history(conn, limit=200)
     for t in history:
         p = pool.get(t["player_id"])
@@ -277,7 +291,7 @@ def transfers():
 
     if manager_id_raw:
         selected_manager_id = int(manager_id_raw)
-        pool = get_pool(conn)
+        pool, _new_ids = get_pool(conn)
         player_ids = ownership.manager_roster_ids(conn, selected_manager_id)
         players = [pool[pid] for pid in player_ids if pid in pool]
         unresolved = len(player_ids) - len(players)

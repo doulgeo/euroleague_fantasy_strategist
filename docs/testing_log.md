@@ -788,3 +788,76 @@ managers).
 `app.py`'s routes/caching all behave as designed. No regressions:
 `poc_run.py` end-to-end smoke test (unaffected `suggest_transfers` call
 site) still produces identical output to before this change.
+
+---
+
+## 2026-09-14 — Roster sync (v2 `/people`) + "new to the league" marking
+
+**What**: added a way to keep club rosters current independent of played
+games, and to surface players with no local box-score history distinctly,
+instead of them being silently invisible on the draft board. Prompted by the
+user noting that a player who transfers mid-window wouldn't show their new
+team until their first box score, and that brand-new-to-EuroLeague players
+had no path onto the board at all.
+
+**Built**: `EuroleagueClient.list_people` + `normalize_people`
+(`engine/data.py`) hitting `v2/.../people`; a `rosters` table
+(`engine/db.py`, full delete-and-reinsert per sync — unlike
+`player_game_stats` this is current state, not history); `sync_rosters.py`
+(the refresh command, mirrors `sync_db.py`); `engine/rosters.py::merge_roster`
+(merges the synced roster into a projections pool — corrects a transferred
+player's `team`, and adds a zero-value placeholder `Projection` for anyone
+on a roster with no box-score history anywhere in the local DB, flagging
+their `player_id` as new); wired into `app.py`'s `get_pool` (now returns
+`(pool, new_ids)`) and `draft_board.py`'s CLI; `NEW` badge in
+`templates/draft.html` / `manager_roster.html` + `.new-player`/`.new-badge`
+CSS.
+
+**How**:
+1. Live-tested `list_people` against the real `E2026` season before writing
+   any normalization code. Found `/people` returns every person type
+   (players, coaches, refs, scorers...) — `type == "J"` isolates players
+   (332 of 837 rows on that pull).
+2. First `normalize_people` pass (keep all `type == "J"` rows) crashed
+   `replace_roster` on a `UNIQUE` constraint: a transferred player appears
+   **twice** in the response, once per club (old club `active: False` with a
+   past `endDate`, new club `active: True`) — confirmed directly (e.g.
+   player `012613`, inactive at `ULK`, active at `MAD`). Fixed by filtering
+   to `active` rows. Also found 2 of 332 players with two *simultaneous*
+   `active: True` rows for the same player_id (likely a transient dual-active
+   state mid-transfer in the upstream data) — broke the tie by latest
+   `startDate` rather than raising, since this is unauthenticated/
+   undocumented upstream data and failing the whole sync over 2 edge-case
+   rows would be the wrong tradeoff.
+3. Ran `sync_rosters.py --season E2026` for real: 269 active players synced,
+   568 non-player staff/officials filtered out, 47 flagged new-to-the-league
+   (no row in `player_game_stats` for any locally-synced season, E2023+).
+4. Sanity-checked the 47: an entire club (`BAS`, all positions) showed up
+   as 100% new — consistent with Baskonia being new to EuroLeague this
+   season rather than a join bug, since every other club's "new" players
+   were individual transfers/rookies, not whole rosters. Spot-checked known
+   veterans (e.g. Barcelona/ASVEL players) landed correctly in the "known"
+   bucket, confirming the `person.code` / `player_id` join between `/people`
+   and `player_game_stats` is consistent.
+5. `draft_board.py --season E2025 --top-n 400`: merge log line reported
+   "Merged E2026 roster (269 players, 47 new to the league)"; grepping the
+   full board output for `[NEW]` showed those 47 correctly appearing at
+   0.0 projected value (the placeholder), tagged, rather than being absent.
+6. Started `app.py`, fetched `/draft` over HTTP: 47 `new-badge` spans in the
+   rendered HTML, matching the CLI count exactly. Spot-checked the raw HTML
+   for two of them (Baugh, Dotson) — correct team, correct badge, correct
+   tooltip. Also hit `/managers/<id>`, `/managers`, `/transfers?manager_id=`,
+   `/transactions` after the `get_pool` signature change (now returns a
+   tuple) — all 200, no regressions.
+7. `py_compile` on every changed file (`app.py`, `draft_board.py`,
+   `engine/data.py`, `engine/db.py`, `engine/rosters.py`, `sync_rosters.py`)
+   — all clean.
+
+**Result**: all checks passed, including two real upstream data quirks
+(duplicate transfer rows, transient dual-active rows) caught and handled
+before they could reach the DB rather than discovered later. Deliberately
+NOT built yet, per the user ("I will try and think of a way to get
+additional context to establish value for new players"): any actual
+projected-value estimate for new players — they're visible and flagged now,
+but still score 0.0/excluded from ranking, which is honest (no data exists
+yet) rather than a guess.

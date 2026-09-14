@@ -105,6 +105,33 @@ Full context for a fresh session, in order of what to read:
   `docs/testing_log.md` → "Draft/ownership tracking + Flask app" for the
   full write-up. Run it with `python app.py`, seed the league first with
   `python seed_league.py "Name1" "Name2" ...` (12 names).
+- **Current-roster sync + "new to the league" marking**, as of 2026-09-14:
+  `EuroleagueClient.list_people`/`normalize_people` (`engine/data.py`) pull
+  club rosters from the v2 `/people` endpoint — live current-state data
+  (who's on which club right now), not disk-cached like box scores. A new
+  `rosters` table (full delete-and-reinsert per sync, `engine/db.py`) and
+  `sync_rosters.py` (the refresh command — run before a draft or after
+  transfer news, not tied to gameweeks) keep it current.
+  `engine/rosters.py::merge_roster` folds this into a projections pool: it
+  corrects a transferred player's team (previously only updated once they
+  played a box-score game for the new club) and adds a zero-value
+  placeholder `Projection` for anyone on a roster with **no box-score
+  history anywhere in the local DB** (E2023+), flagging them as new so
+  they're visible-but-honestly-unranked rather than silently absent. Wired
+  into `app.py` (`get_pool` now returns `(pool, new_ids)`) and
+  `draft_board.py`'s CLI (`--roster-season`, `[NEW]` tags); a `NEW` badge +
+  highlighted row renders in `templates/draft.html` and
+  `manager_roster.html`. Live-tested against the real E2026 season: found
+  and handled two real upstream data quirks first (a transferred player
+  appears twice in `/people`, old-club-inactive + new-club-active; 2 of 332
+  players briefly showed simultaneous dual-active rows) — see
+  `docs/testing_log.md` → "Roster sync + new-to-the-league marking" for the
+  full write-up, including validation that an entire club (Baskonia, `BAS`)
+  correctly came back 100% "new," consistent with being new to EuroLeague
+  this season rather than a join bug. Deliberately NOT built: any actual
+  projected value for new players (still 0.0/unranked, honestly reflecting
+  no data rather than a guess) — user is thinking through how to source
+  additional context for that.
 
 **Explicitly NOT done yet (all deferred, not forgotten):**
 - The draft-tracking UI above is v1: no draft-credit/budget tracking
@@ -175,45 +202,53 @@ over the network), never needs to be committed.
   (hosting/deployment target — local-only was the working assumption for
   the draft-tracking app above, confirmed by the user for that feature,
   but full deployment target for the wider project is still open).
-- `sync_db.py` is a manual command today ("run this after each gameweek") -
-  automating that trigger (cron/scheduled task) is a small later step, not
+- `sync_db.py` and `sync_rosters.py` are both manual commands today ("run
+  after each gameweek" / "run before a draft or after transfer news") -
+  automating either trigger (cron/scheduled task) is a small later step, not
   urgent given trades/rounds are infrequent in this league.
+- New-player valuation: once the user has an approach for sourcing
+  additional context on players with no local box-score history (see
+  "Current status" → roster sync entry), wire it into
+  `engine/rosters.py::merge_roster`'s placeholder `Projection` instead of
+  the current flat 0.0.
 
-## Where things were left off (2026-09-13 session)
+## Where things were left off (2026-09-14 session)
 
-Nothing is mid-flight or running in the background - safe to pick up
-directly from any of the "Natural next steps" above, or from scratch on
-something new. What happened this session, most recent first:
+Nothing is mid-flight or running in the background (the local dev Flask
+server from testing this session was left running in the background of
+that session only — start fresh with `python app.py` for a new session) -
+safe to pick up directly from any of the "Natural next steps" above, or
+from scratch on something new. What happened this session, most recent
+first:
 
-1. Built real 12-manager draft/ownership/transaction tracking: three new
-   tables (`engine/db.py`), `engine/ownership.py`, the `owned_ids` param on
-   `engine.transfers.suggest_transfers`, and a local Flask app (`app.py` +
-   `templates/` + `static/` + `seed_league.py`) for logging the draft and
-   trades. End-to-end validated (draft picks, duplicate-draft rejection,
-   trades, add/drop, and the real-ownership-gates-suggestions payoff) then
-   test data cleared from the DB so it's ready for the actual draft. See
-   "Current status" above and `docs/testing_log.md`'s most recent entry.
-2. Added `draft_board.py` (per-position ranked draft cheat sheet, tiering,
-   VORP) and `engine.lineup.choose_active_squad` (real logic for which 3
-   of 13 to exclude each round, replacing a random stand-in), then reran
-   the full validated backtest with the new exclusion logic - it turned
-   out to matter far more than expected, raising the headline mean gain
-   from +9.83 to +24.06 PIR. Reran the ridge/gbm/ensemble ML comparison
-   under the same new logic per the user's request (expecting no change in
-   verdict) - confirmed: still no demonstrable win over the heuristic, now
-   against the stronger baseline. See `docs/testing_log.md`'s three most
-   recent entries and "Current status" above for the details.
-3. Set up the git repo (see "Repo" above), pushed everything to GitHub.
-4. Ran an elaborate multi-season backtest with confidence intervals, a
-   loss-case breakdown, and a rolling-window sensitivity check - in the
-   process found and fixed a real methodology bug (playoff rounds were
-   skewing results; now excluded by default). See
-   `docs/testing_log.md` → "Elaborate backtest" for the full story and the
-   current validated headline numbers (also summarized above under
-   "Current status").
-5. Backfilled E2023-E2025 and loaded it into `euroleague.db` (SQLite).
-6. Original POC session (roster/scoring model corrections, base engine
-   build) - see `docs/technical_notes.md` for that history.
+1. Built current-roster sync (`sync_rosters.py`, v2 `/people` endpoint) and
+   "new to the league" marking (zero-value placeholder + `NEW` badge for
+   any rostered player with no local box-score history), so transferred
+   players show their real team and brand-new players are visible instead
+   of silently absent from the draft board. Live-tested against the real
+   E2026 season, including catching and handling two real upstream data
+   quirks (duplicate transfer rows, transient dual-active rows) before they
+   hit the DB. See "Current status" above and `docs/testing_log.md`'s most
+   recent entry for the full write-up. New player *values* are explicitly
+   NOT estimated yet — the user is thinking through how to source
+   additional context for that; revisit when they have an approach.
+2. Evaluated a user-supplied research document on EuroLeague data sourcing
+   and PIR-prediction methodology against this project's own validated
+   findings — mostly corroborated (same endpoints, same PIR formula, same
+   field quirks), one correction (the doc conflated v2's confirmed deep
+   historical coverage with the legacy Boxscore endpoint, which this
+   project already proved is current-season-only), and the licensing/
+   Sportradar section doesn't apply here (see "Licensing" above). The
+   `/people` endpoint it surfaced is what led directly to item 1.
+3. Earlier sessions (2026-09-10 through 2026-09-13): built the heuristic
+   engine and corrected the roster/scoring model
+   (`docs/technical_notes.md`), backfilled E2023-E2025 into `euroleague.db`,
+   ran the elaborate multi-season backtest (current validated headline
+   numbers are under "Current status" above), built `draft_board.py` +
+   `engine.lineup.choose_active_squad` (real per-round exclusion logic,
+   which raised the headline gain from +9.83 to +24.06 PIR), and built the
+   12-manager draft/ownership/transaction tracking Flask app. Full detail
+   in `docs/testing_log.md`.
 
 If picking this up fresh: read this file top to bottom (it's short), then
 skim the two most recent `docs/testing_log.md` entries for the current

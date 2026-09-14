@@ -11,8 +11,8 @@
       <thead><tr><th>Player</th><th>Team</th><th>Proj+Bonus</th><th>n</th></tr></thead>
       <tbody>
         {% for p in by_position.get(position, []) %}
-          <tr>
-            <td>{{ p.player_name }}</td>
+          <tr class="{{ 'new-player' if p.player_id in new_ids else '' }}">
+            <td>{{ p.player_name }}{% if p.player_id in new_ids %} <span class="new-badge" title="No EuroLeague box-score history in this project's data (E2023+) - new to the league, or a returning player not yet re-synced">NEW</span>{% endif %}</td>
             <td>{{ p.team }}</td>
             <td>{{ "%.1f"|format(p.projected_pir_with_bonus) }}</td>
             <td>{{ p.games_sampled }}</td>

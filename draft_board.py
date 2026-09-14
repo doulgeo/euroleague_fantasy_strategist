@@ -42,9 +42,10 @@ from __future__ import annotations
 import argparse
 import csv
 
-from engine.db import get_connection, load_rows
+from engine.db import get_connection, known_player_ids, load_roster, load_rows
 from engine.projections import Projection, build_projections, stdev
 from engine.roster import REQUIRED_COUNTS
+from engine.rosters import merge_roster
 
 LEAGUE_SIZE = 12
 
@@ -89,7 +90,17 @@ def tier_breaks(ranked: list[Projection]) -> set[int]:
     return {i for i, gap in enumerate(gaps) if gap >= threshold}
 
 
-def print_board(board: dict[str, list[Projection]], replacement: dict[str, float], top_n: int) -> None:
+def _label(p: Projection, new_ids: frozenset[str]) -> str:
+    name = p.player_name
+    return f"{name} [NEW]" if p.player_id in new_ids else name
+
+
+def print_board(
+    board: dict[str, list[Projection]],
+    replacement: dict[str, float],
+    top_n: int,
+    new_ids: frozenset[str] = frozenset(),
+) -> None:
     for position in ("Guard", "Forward", "Center"):
         ranked = board.get(position, [])
         breaks = tier_breaks(ranked)
@@ -99,7 +110,7 @@ def print_board(board: dict[str, list[Projection]], replacement: dict[str, float
         tier = 1
         for i, p in enumerate(ranked[:top_n]):
             print(
-                f"{i + 1:>3} {p.player_name:<28} {p.team:<5} {p.projected_pir_with_bonus:>10.1f} "
+                f"{i + 1:>3} {_label(p, new_ids):<28} {p.team:<5} {p.projected_pir_with_bonus:>10.1f} "
                 f"{p.projected_pir_with_bonus - replacement[position]:>+7.1f} {p.games_sampled:>3} "
                 f"{p.volatility:>10.1f}"
             )
@@ -108,23 +119,33 @@ def print_board(board: dict[str, list[Projection]], replacement: dict[str, float
                 print(f"    --- tier {tier} ---")
 
 
-def print_overall_board(board: dict[str, list[Projection]], replacement: dict[str, float], top_n: int) -> None:
+def print_overall_board(
+    board: dict[str, list[Projection]],
+    replacement: dict[str, float],
+    top_n: int,
+    new_ids: frozenset[str] = frozenset(),
+) -> None:
     all_players = [p for ranked in board.values() for p in ranked]
     all_players.sort(key=lambda p: p.projected_pir_with_bonus - replacement[p.position], reverse=True)
     print(f"\n=== Best available overall, scarcity-adjusted (VORP), top {top_n} ===")
     print(f"{'#':>3} {'Player':<28} {'Pos':<8} {'Team':<5} {'Proj+Bonus':>10} {'VORP':>7}")
     for i, p in enumerate(all_players[:top_n]):
         print(
-            f"{i + 1:>3} {p.player_name:<28} {p.position:<8} {p.team:<5} "
+            f"{i + 1:>3} {_label(p, new_ids):<28} {p.position:<8} {p.team:<5} "
             f"{p.projected_pir_with_bonus:>10.1f} {p.projected_pir_with_bonus - replacement[p.position]:>+7.1f}"
         )
 
 
-def write_csv(board: dict[str, list[Projection]], replacement: dict[str, float], path: str) -> None:
+def write_csv(
+    board: dict[str, list[Projection]],
+    replacement: dict[str, float],
+    path: str,
+    new_ids: frozenset[str] = frozenset(),
+) -> None:
     with open(path, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["position", "position_rank", "player_name", "team", "games_sampled",
-                          "projected_pir_with_bonus", "vorp", "volatility", "drafted"])
+                          "projected_pir_with_bonus", "vorp", "volatility", "new_to_league", "drafted"])
         for position, ranked in board.items():
             for i, p in enumerate(ranked, 1):
                 writer.writerow([
@@ -132,6 +153,7 @@ def write_csv(board: dict[str, list[Projection]], replacement: dict[str, float],
                     round(p.projected_pir_with_bonus, 2),
                     round(p.projected_pir_with_bonus - replacement[position], 2),
                     round(p.volatility, 2),
+                    "yes" if p.player_id in new_ids else "",
                     "",  # blank column to check off during the live draft
                 ])
 
@@ -139,6 +161,9 @@ def write_csv(board: dict[str, list[Projection]], replacement: dict[str, float],
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--season", default="E2025", help="Season to build the board from (most recent completed season)")
+    parser.add_argument("--roster-season", default="E2026",
+                         help="Season to pull current club rosters from (engine.db `rosters`, via sync_rosters.py) - "
+                              "used to correct transferred players' team and surface [NEW] players missing from --season entirely")
     parser.add_argument("--min-games", type=int, default=10,
                          help="Drop players with fewer than this many sampled games - filters out end-of-bench noise")
     parser.add_argument("--top-n", type=int, default=20, help="How many players to print per position/overall")
@@ -156,14 +181,24 @@ def main() -> None:
     print(f"Built projections for {len(projections)} players from {args.season} "
           f"(rounds 1-{max_round}, min {args.min_games} games played)")
 
+    roster_rows = load_roster(conn, args.roster_season)
+    new_ids: frozenset[str] = frozenset()
+    if roster_rows:
+        seen = known_player_ids(conn)
+        projections, new_ids_set = merge_roster(projections, roster_rows, seen)
+        new_ids = frozenset(new_ids_set)
+        print(f"Merged {args.roster_season} roster ({len(roster_rows)} players, {len(new_ids)} new to the league)")
+    else:
+        print(f"No {args.roster_season} roster synced yet - run sync_rosters.py to get current teams and [NEW] markers")
+
     board = build_draft_board(projections)
     replacement = replacement_values(board)
 
-    print_board(board, replacement, args.top_n)
-    print_overall_board(board, replacement, args.top_n * 2)
+    print_board(board, replacement, args.top_n, new_ids)
+    print_overall_board(board, replacement, args.top_n * 2, new_ids)
 
     if args.output_csv:
-        write_csv(board, replacement, args.output_csv)
+        write_csv(board, replacement, args.output_csv, new_ids)
         print(f"\nFull board written to {args.output_csv}")
 
 

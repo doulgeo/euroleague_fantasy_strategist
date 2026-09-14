@@ -6,6 +6,8 @@ th, td { border: 1px solid #ccc; padding: 0.3rem 0.6rem; text-align: left; font-
 th { background: #f0f0f0; }
 tr.drafted { color: #999; }
 tr.tier-break td { background: #eee; font-style: italic; text-align: center; }
+tr.new-player { background: #fff8e1; }
+.new-badge { display: inline-block; background: #f5a623; color: #1a1a1a; font-size: 0.65rem; font-weight: bold; padding: 0.05rem 0.35rem; border-radius: 3px; margin-left: 0.3rem; vertical-align: middle; }
 .flashes { list-style: none; padding: 0; }
 .flash-success { color: #1a7a3a; }
 .flash-error { color: #a01818; }

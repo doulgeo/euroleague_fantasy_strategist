@@ -28,9 +28,9 @@
       </thead>
       <tbody>
         {% for row in rows %}
-          <tr class="{{ 'drafted' if row.owner_id else '' }}">
+          <tr class="{{ 'drafted' if row.owner_id else '' }} {{ 'new-player' if row.is_new else '' }}">
             <td>{{ row.rank }}</td>
-            <td>{{ row.player.player_name }}</td>
+            <td>{{ row.player.player_name }}{% if row.is_new %} <span class="new-badge" title="No EuroLeague box-score history in this project's data (E2023+) - new to the league, or a returning player not yet re-synced">NEW</span>{% endif %}</td>
             <td>{{ row.player.team }}</td>
             <td>{{ "%.1f"|format(row.player.projected_pir_with_bonus) }}</td>
             <td>{{ "%+.1f"|format(row.vorp) }}</td>

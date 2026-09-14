@@ -15,6 +15,7 @@ duplicates.
 from __future__ import annotations
 
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 
 from engine.data import FIELDNAMES
@@ -97,6 +98,38 @@ _CREATE_TRANSACTIONS_GROUP_INDEX_SQL = (
     "CREATE INDEX IF NOT EXISTS idx_transactions_group ON transactions (group_id)"
 )
 
+# --- Current-season club rosters (engine.rosters / sync_rosters.py) ---
+#
+# Sourced from the v2 /people endpoint (engine.data.EuroleagueClient.list_people)
+# - who's on which club's roster *right now*, independent of whether they've
+# played a game yet this season. Unlike player_game_stats (an immutable
+# historical log, upsert-only), this is current state: sync_rosters.py does
+# a full delete-and-reinsert per season each run, so a player who leaves a
+# club stops appearing here rather than lingering as a stale row.
+
+_CREATE_ROSTERS_SQL = """
+CREATE TABLE IF NOT EXISTS rosters (
+    season_code TEXT NOT NULL,
+    player_id TEXT NOT NULL,
+    player_name TEXT NOT NULL,
+    position TEXT,
+    team TEXT,
+    team_name TEXT,
+    dorsal TEXT,
+    active INTEGER NOT NULL,
+    synced_at TEXT NOT NULL,
+    PRIMARY KEY (season_code, player_id)
+)
+"""
+
+_CREATE_ROSTERS_TEAM_INDEX_SQL = (
+    "CREATE INDEX IF NOT EXISTS idx_rosters_team ON rosters (season_code, team)"
+)
+
+_ROSTER_COLUMNS = (
+    "season_code", "player_id", "player_name", "position", "team", "team_name", "dorsal", "active", "synced_at",
+)
+
 
 def get_connection(db_path: Path | str = DB_PATH) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path)
@@ -108,6 +141,8 @@ def get_connection(db_path: Path | str = DB_PATH) -> sqlite3.Connection:
     conn.execute(_CREATE_TRANSACTIONS_SQL)
     conn.execute(_CREATE_TRANSACTIONS_PLAYER_INDEX_SQL)
     conn.execute(_CREATE_TRANSACTIONS_GROUP_INDEX_SQL)
+    conn.execute(_CREATE_ROSTERS_SQL)
+    conn.execute(_CREATE_ROSTERS_TEAM_INDEX_SQL)
     conn.commit()
     return conn
 
@@ -170,3 +205,42 @@ def row_count(conn: sqlite3.Connection, season_code: str | None = None) -> int:
         query += " WHERE season_code = ?"
         params = (season_code,)
     return conn.execute(query, params).fetchone()[0]
+
+
+def replace_roster(conn: sqlite3.Connection, season_code: str, rows: list[dict]) -> int:
+    """Full snapshot refresh: `rows` (engine.data.normalize_people output)
+    replaces whatever was previously synced for this season, so a player who
+    leaves a club's roster stops showing up rather than lingering as a stale
+    row (unlike player_game_stats, which only ever upserts)."""
+    synced_at = datetime.now(timezone.utc).isoformat()
+    conn.execute("DELETE FROM rosters WHERE season_code = ?", (season_code,))
+    if rows:
+        prepared = [{**r, "active": int(bool(r["active"])), "synced_at": synced_at} for r in rows]
+        placeholders = ", ".join(f":{c}" for c in _ROSTER_COLUMNS)
+        conn.executemany(
+            f"INSERT INTO rosters ({', '.join(_ROSTER_COLUMNS)}) VALUES ({placeholders})",
+            prepared,
+        )
+    conn.commit()
+    return len(rows)
+
+
+def load_roster(conn: sqlite3.Connection, season_code: str) -> list[dict]:
+    cur = conn.execute("SELECT * FROM rosters WHERE season_code = ?", (season_code,))
+    cols = [d[0] for d in cur.description]
+    rows = []
+    for record in cur.fetchall():
+        row = dict(zip(cols, record))
+        row["active"] = bool(row["active"])
+        rows.append(row)
+    return rows
+
+
+def known_player_ids(conn: sqlite3.Connection) -> set[str]:
+    """Every player_id with at least one synced box-score row, across all
+    seasons in the local DB - used to flag players "new to the league" (no
+    EuroLeague history locally; the DB only goes back to E2023, see
+    docs/technical_notes.md, so this is scoped to that window, not literally
+    every EuroLeague season ever played)."""
+    cur = conn.execute("SELECT DISTINCT player_id FROM player_game_stats")
+    return {row[0] for row in cur.fetchall()}

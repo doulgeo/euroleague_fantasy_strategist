@@ -152,6 +152,16 @@ class EuroleagueClient:
             ),
         )
 
+    def list_people(self, competition: str, season_code: str, limit: int = 1000) -> list[dict]:
+        """Current roster + staff for a season - club, position, active flag
+        per person. Deliberately NOT disk-cached like everything else above:
+        this is mutable current-state data (rosters change on transfers),
+        not an immutable historical record, so every call re-fetches live
+        (still paced the same as any other request)."""
+        url = f"{V2_BASE}/{competition}/seasons/{season_code}/people"
+        data = self._get_json(url, params={"limit": limit})
+        return (data or {}).get("data", [])
+
 
 def recompute_pir(row: dict) -> int:
     return (
@@ -304,6 +314,57 @@ def normalize_legacy(payload: dict, season_code: str, game_code: int) -> list[di
             rows.append(_finalize_row(row))
 
     return rows
+
+
+def normalize_people(payload: list[dict], season_code: str) -> list[dict]:
+    """Flatten a list_people() response down to one row per current player-
+    club assignment. The /people endpoint returns every person type attached
+    to a season (players, coaches, referees, team staff, scorers...) -
+    `type == "J"` (`typeName == "Player"`) is the filter that keeps only
+    actual players, confirmed against a live E2026 response.
+
+    A player who transferred mid-window shows up **twice** - once per club
+    (their old club's row has `active: False`, an `endDate` in the past),
+    confirmed on a live E2026 response (e.g. player 012613, ULK inactive +
+    MAD active). Filtering to `active` rows handles that in the normal case;
+    a rare case also observed live had two simultaneous `active: True` rows
+    for the same player (2 of 332 on that pull) - broken ties by latest
+    `startDate` there rather than raising, since this is unauthenticated/
+    undocumented upstream data (see docs/technical_notes.md) and a transient
+    dual-active state during a transfer is more likely than a bug worth
+    failing the whole sync over."""
+    by_player: dict[str, tuple[str, dict]] = {}
+
+    for p in payload:
+        if p.get("type") != "J" or not p.get("active"):
+            continue
+
+        person = p.get("person") or {}
+        club = p.get("club") or {}
+        player_id = person.get("code")
+        if not player_id:
+            continue
+
+        start_date = p.get("startDate") or ""
+        prior = by_player.get(player_id)
+        if prior is not None and prior[0] >= start_date:
+            continue
+
+        by_player[player_id] = (
+            start_date,
+            {
+                "season_code": season_code,
+                "player_id": player_id,
+                "player_name": person.get("name"),
+                "position": POSITION_NAMES.get(p.get("position"), p.get("positionName")),
+                "team": club.get("code"),
+                "team_name": club.get("name"),
+                "dorsal": p.get("dorsal") or None,
+                "active": True,
+            },
+        )
+
+    return [row for _, row in by_player.values()]
 
 
 def fetch_season(
