@@ -898,3 +898,64 @@ Python that lacks `requests`), and `_projection_cache.clear()` after a sync
 finishes was confirmed necessary in principle (the mtime-based cache key
 would eventually self-correct too, but the explicit clear removes any
 timing dependency on that).
+
+---
+
+## 2026-09-14 — Team strength index: standalone backtest, no demonstrable win
+
+**What**: prototyped a per-team defensive-form index (`engine/team_strength.py`
+- recency-safe "PIR allowed" per team, same leakage-safe cutoff-round
+discipline as `engine.projections`) and, before touching the real projection
+pipeline at all, backtested whether knowing a player's next opponent's
+defensive weakness actually improves next-game PIR prediction accuracy over
+the existing heuristic alone (`team_strength_backtest.py`). Same discipline
+that ruled out the ML path: prove it helps on a backtest before adding the
+complexity, not before.
+
+**How**: walked forward through every regular-season round (playoffs
+excluded, reusing `backtest_eval.classify_phase`) from round 8 across
+E2023-E2025, building leakage-safe player projections and team-strength
+figures using only strictly-prior rounds at each step. For every played
+player-game in the round being evaluated, compared the existing baseline
+projection against an opponent-adjusted version
+(`baseline * (1 + weight * opponent_factor)`, `opponent_factor` = that
+opponent's PIR-allowed relative to the league average that round) at a grid
+of weights, against the player's actual PIR that game (MAE/RMSE), plus the
+correlation between `opponent_factor` and the baseline's own prediction
+error.
+
+**Sanity check first**: before the accuracy test, printed the E2025
+end-of-season team-strength ranking directly - Olympiacos (the actual E2025
+champion) came out with both the *lowest* PIR allowed and a 1.0 recent win
+rate, and the ranking generally tracked win rate sensibly. Confirmed the
+metric itself is behaviorally sound before asking whether it's *useful*.
+
+**Result**: 85 rounds, 16,703 player-games evaluated.
+- Correlation(opponent_factor, baseline residual) = **+0.050** - the right
+  sign (a weak-defense opponent does correlate with the baseline
+  under-predicting), but very weak.
+- Baseline MAE 5.738. Best weight in an initial 0-0.5 grid (0.5) got MAE
+  down to 5.731 - a monotonic-looking improvement that turned out to be the
+  left slope of a real minimum: widened the grid (0.5 through 10.0) and
+  found the true optimum sits around weight ~0.5-0.7, past which MAE gets
+  rapidly worse (w=2.0: MAE 5.815; w=10.0: MAE 8.267 - badly overshooting).
+- **Best-case improvement: MAE 5.738 -> ~5.731, about 0.13% relative.**
+  RMSE showed the same negligible-improvement shape.
+
+**Conclusion**: the signal is real and correctly-signed but too weak to
+matter for point-prediction accuracy - **not wired into
+`engine.projections.build_projections`**. Matches the same "no demonstrable
+win" verdict already reached for the ML comparison (see
+`docs/technical_notes.md`), for the same reason: don't add a parameter
+(here, an opponent-adjustment weight) that doesn't measurably earn its
+complexity. `engine/team_strength.py` and `team_strength_backtest.py` are
+kept as-is (not deleted) - the module is useful on its own (e.g. an
+at-a-glance defensive ranking) and the backtest script is reusable if a
+better-targeted opponent signal is tried later (team totals/pace rather
+than PIR-allowed, or a matchup-specific rather than blanket adjustment).
+One open question this doesn't resolve: this tests raw point-prediction
+accuracy across the whole player population, not narrow tie-breaking
+between two similarly-projected players for a captain/day-2-swap choice -
+a weaker bar the signal might still clear even though it fails here. Not
+tested; would need `engine.lineup` to be wired into the app first (see
+CLAUDE.md "Natural next steps") to have a real decision to break ties on.

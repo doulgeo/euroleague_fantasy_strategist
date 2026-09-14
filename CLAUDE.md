@@ -162,8 +162,23 @@ Full context for a fresh session, in order of what to read:
   disconfirmed, and a minimal-vs-full feature-set ablation showing the extra
   box-score detail (beyond what the heuristic itself uses) does measurably
   help. Heuristic remains the default; the ML code paths stay available for
-  revisiting with a richer feature set (opponent strength wasn't attempted)
-  or more data.
+  revisiting with a richer feature set or more data.
+- **Opponent-strength adjustment**: tried 2026-09-14, and it *was* the one
+  feature the ML writeup above flagged as unattempted — same "no
+  demonstrable win" verdict. `engine/team_strength.py` (per-team PIR-allowed,
+  leakage-safe, same cutoff-round discipline as projections) sanity-checked
+  soundly (E2025's stingiest-defense team was the actual champion), but
+  `team_strength_backtest.py` found only a +0.050 correlation between
+  opponent weakness and the existing projection's error, and the
+  best-case MAE improvement from actually using it was ~0.13% — not worth
+  the added complexity. Not wired into `build_projections`. Both files kept
+  as standalone tools (useful on their own; reusable if a better-targeted
+  opponent signal is tried later). See `docs/testing_log.md` → "Team
+  strength index" for the full writeup, including one open question it
+  doesn't resolve: whether the signal, though too weak for point-prediction
+  accuracy, could still help as a narrow tiebreaker in the (not yet built)
+  lineup builder's captain/swap choices — untested, since that UI doesn't
+  exist yet.
 - Frontend approach, hosting/deployment target, and full historical backfill
   sequencing were raised as open questions earlier and explicitly deferred
   by the user ("let's see what data we get first") — still open, see
