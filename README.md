@@ -27,6 +27,9 @@ for personal use among friends — never monetized or redistributed.
   data backend, so transfers and new signings are reflected without waiting
   for a player's first box score. Triggerable from the app itself (a
   **Sync** page) as well as from the terminal.
+- **Dev tools** — a one-click "randomize a full draft" button (also on the
+  Sync page) for populating a realistic 12-manager league while developing,
+  without hand-drafting 156 players. Not for the real draft.
 
 See the in-app **How this works** page (linked in the nav once the app is
 running) for the full mechanics — scoring model, projection method, what

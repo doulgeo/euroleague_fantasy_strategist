@@ -1129,3 +1129,35 @@ projection history vs. all-seasons-scoped NEW flag, affecting a handful of
 Besiktas players) was found but deliberately not fixed this session -
 logged as a known issue rather than silently expanding scope beyond what
 was asked.
+
+---
+
+## 2026-09-14 — Randomize-draft dev tool, and the full loop end-to-end
+
+**What**: added a "Randomize a full draft" dev tool (`engine/dev_draft.py`,
+a `/dev/randomize-draft` route, a "Developer tools" section on `/sync`) -
+wipes all current ownership and re-drafts every seeded manager a fresh,
+valid, exclusive 13-player roster (weighted-random by projected value,
+reusing `engine.roster._weighted_sample_without_replacement` - same
+mechanism `sample_roster` already uses, just applied against real
+managers/ownership instead of a throwaway in-memory `Roster`). Explicitly a
+dev/testing convenience, not for the real draft - labeled as such in the
+UI. Requested specifically so there's always a realistic full-league state
+to develop the lineup builder etc. against, without hand-drafting 156
+players.
+
+**How**: `py_compile` on `engine/dev_draft.py` and `app.py`. Triggered the
+route for real via HTTP (`POST /dev/randomize-draft`) against the 12
+already-seeded test managers - got a `302` with the correct flash cookie
+("Randomized a fresh draft: 156 picks across 12 managers"). Confirmed
+directly in the DB: all 12 managers ended up with exactly 13 players each
+(156 total, matches). Closed the loop the user actually asked for: hit
+`/lineup?manager_id=13&round=1` immediately after - `200`, all three
+sections (excluded/day-1/day-2) rendered correctly against the freshly
+randomized roster, exercising the full "randomize a draft, then predict
+lineups" flow end-to-end in the running app.
+
+**Result**: all checks passed. Left the randomized draft in place
+afterward (not cleaned up) - unlike earlier single-player test drafts this
+session, populating a realistic full league is this tool's actual purpose,
+and the user asked for it to stay available "while we are developing."

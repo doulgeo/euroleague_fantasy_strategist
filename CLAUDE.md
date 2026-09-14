@@ -170,6 +170,20 @@ Full context for a fresh session, in order of what to read:
   the greyed-out rendering, then cleaned up). See `docs/testing_log.md` →
   "\"GONE\" player marking" for the full write-up, including a related-but-
   separate gap found and *not* fixed this session (below).
+- **Randomize-draft dev tool** (`/dev/randomize-draft`, a "Developer tools"
+  section on `/sync`), as of 2026-09-14: `engine/dev_draft.py` wipes all
+  current ownership and re-drafts every seeded manager a fresh, valid,
+  exclusive 13-player roster (weighted-random, reusing
+  `engine.roster._weighted_sample_without_replacement`). Explicitly
+  dev/testing only, labeled as such in the UI — requested so there's
+  always a realistic full 12-manager league to develop/test the lineup
+  builder etc. against without hand-drafting 156 players. Live-tested for
+  real: 156 picks across the 12 seeded managers, then immediately exercised
+  `/lineup` against the fresh roster to confirm the full "randomize a
+  draft, then predict lineups" loop the user asked for actually works
+  end-to-end in the running app. Left in place afterward (unlike other test
+  data this session) — populating a working league is this tool's actual
+  purpose.
 
 **Explicitly NOT done yet (all deferred, not forgotten):**
 - The draft-tracking UI above is v1: no draft-credit/budget tracking
@@ -287,14 +301,20 @@ safe to pick up directly from any of the "Natural next steps" above, or
 from scratch on something new. What happened this session, most recent
 first:
 
-1. Added "GONE" player marking, prompted directly by the user spot-
-   checking item 2's lineup-builder output against real domain knowledge
+1. Added a randomize-draft dev tool (`/dev/randomize-draft` on `/sync`) so
+   there's always a realistic full 12-manager league to develop against —
+   see "Current status" above. Live-tested the full loop it exists for:
+   randomized a real draft (156 picks, 12 managers), then immediately hit
+   `/lineup` against it to confirm the "randomize a draft, then predict
+   lineups" flow actually works end-to-end.
+2. Added "GONE" player marking, prompted directly by the user spot-
+   checking item 3's lineup-builder output against real domain knowledge
    (Monaco isn't in the 2026-27 EuroLeague) — see "Current status" above
    for the full summary. Also resolved a "where are the Besiktas players"
    question along the way (they're there, mostly just low-value/sorted to
    the bottom) and found — but deliberately did not fix — a related,
    distinct gap (see "Explicitly NOT done yet" above).
-2. Wired the lineup builder into the app (`/lineup`) — see "Current
+3. Wired the lineup builder into the app (`/lineup`) — see "Current
    status" above for the full summary. Found and fixed a real
    architectural gap along the way (no local schedule data for
    not-yet-played rounds), added a `schedule` table + `sync_db.py`
@@ -306,16 +326,16 @@ first:
    `engine.ownership`/`engine.db`/`app.py` conventions, then a Plan agent
    for the file-by-file design) given the scope. Test draft data used to
    validate it was cleaned up afterward.
-3. Brainstormed a team-strength/opponent-adjustment idea at the user's
+4. Brainstormed a team-strength/opponent-adjustment idea at the user's
    request, then prototyped and backtested it (`engine/team_strength.py`,
    `team_strength_backtest.py`) — no demonstrable predictive win, not wired
    into projections; see "Explicitly NOT done yet" above.
-4. Added a `/sync` page: buttons to trigger `sync_db.py`/`sync_rosters.py`
+5. Added a `/sync` page: buttons to trigger `sync_db.py`/`sync_rosters.py`
    from the browser (background subprocess per script, log tail, an
    auto-refreshing status view, a same-kind-already-running guard) instead
    of only from the terminal. Live-tested end-to-end via real HTTP triggers
    of both scripts, watched them complete and the DB update.
-5. UI polish on the Flask app, per the user's direction: added
+6. UI polish on the Flask app, per the user's direction: added
    `README.md` (public-facing repo overview, now part of the working
    agreement above — keep it current) and a `/how-it-works` page (league
    rules, scoring, projection/VORP/tier/NEW-badge explanations, data-refresh
@@ -328,7 +348,7 @@ first:
    meaningful in other orderings. All routes re-verified 200 after the
    changes; sort/filter behavior spot-checked directly against the live
    E2026-seeded local DB (e.g. team=MAD filter, sort=team asc).
-6. Built current-roster sync (`sync_rosters.py`, v2 `/people` endpoint) and
+7. Built current-roster sync (`sync_rosters.py`, v2 `/people` endpoint) and
    "new to the league" marking (zero-value placeholder + `NEW` badge for
    any rostered player with no local box-score history), so transferred
    players show their real team and brand-new players are visible instead
@@ -339,15 +359,15 @@ first:
    full write-up. New player *values* are explicitly NOT estimated yet —
    the user is thinking through how to source additional context for that;
    revisit when they have an approach.
-7. Evaluated a user-supplied research document on EuroLeague data sourcing
+8. Evaluated a user-supplied research document on EuroLeague data sourcing
    and PIR-prediction methodology against this project's own validated
    findings — mostly corroborated (same endpoints, same PIR formula, same
    field quirks), one correction (the doc conflated v2's confirmed deep
    historical coverage with the legacy Boxscore endpoint, which this
    project already proved is current-season-only), and the licensing/
    Sportradar section doesn't apply here (see "Licensing" above). The
-   `/people` endpoint it surfaced is what led directly to item 6.
-8. Earlier sessions (2026-09-10 through 2026-09-13): built the heuristic
+   `/people` endpoint it surfaced is what led directly to item 7.
+9. Earlier sessions (2026-09-10 through 2026-09-13): built the heuristic
    engine and corrected the roster/scoring model
    (`docs/technical_notes.md`), backfilled E2023-E2025 into `euroleague.db`,
    ran the elaborate multi-season backtest (current validated headline
