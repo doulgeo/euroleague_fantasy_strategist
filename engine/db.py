@@ -130,6 +130,40 @@ _ROSTER_COLUMNS = (
     "season_code", "player_id", "player_name", "position", "team", "team_name", "dorsal", "active", "synced_at",
 )
 
+# --- Season schedule (engine.data.normalize_schedule / sync_db.py) ---
+#
+# Every game in a season, played or not - `player_game_stats` only ever has
+# rows for games that have already been played (fetch_season filters to
+# `played` before ever writing anything), so it can't answer "who plays
+# whom, and when, in a round that hasn't happened yet." This table can -
+# it's what makes a lineup recommendation possible *before* a round starts,
+# not just a review of one after the fact. Same "replace per scope" pattern
+# as `rosters` rather than upsert: real schedules get rescheduled (see
+# docs/technical_notes.md's round-33 E2025 note), so a sync must be able to
+# make a stale date/matchup disappear, not just add to what's there.
+
+_CREATE_SCHEDULE_SQL = """
+CREATE TABLE IF NOT EXISTS schedule (
+    season_code TEXT NOT NULL,
+    game_code INTEGER NOT NULL,
+    round INTEGER,
+    game_date TEXT,
+    local_team_code TEXT,
+    road_team_code TEXT,
+    played INTEGER NOT NULL,
+    synced_at TEXT NOT NULL,
+    PRIMARY KEY (season_code, game_code)
+)
+"""
+
+_CREATE_SCHEDULE_ROUND_INDEX_SQL = (
+    "CREATE INDEX IF NOT EXISTS idx_schedule_season_round ON schedule (season_code, round)"
+)
+
+_SCHEDULE_COLUMNS = (
+    "season_code", "game_code", "round", "game_date", "local_team_code", "road_team_code", "played", "synced_at",
+)
+
 
 def get_connection(db_path: Path | str = DB_PATH) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path)
@@ -143,6 +177,8 @@ def get_connection(db_path: Path | str = DB_PATH) -> sqlite3.Connection:
     conn.execute(_CREATE_TRANSACTIONS_GROUP_INDEX_SQL)
     conn.execute(_CREATE_ROSTERS_SQL)
     conn.execute(_CREATE_ROSTERS_TEAM_INDEX_SQL)
+    conn.execute(_CREATE_SCHEDULE_SQL)
+    conn.execute(_CREATE_SCHEDULE_ROUND_INDEX_SQL)
     conn.commit()
     return conn
 
@@ -248,6 +284,56 @@ def latest_game_date(conn: sqlite3.Connection, season_code: str) -> str | None:
 
 def roster_synced_at(conn: sqlite3.Connection, season_code: str) -> str | None:
     row = conn.execute("SELECT MAX(synced_at) FROM rosters WHERE season_code = ?", (season_code,)).fetchone()
+    return row[0] if row else None
+
+
+def replace_schedule(conn: sqlite3.Connection, season_code: str, rows: list[dict]) -> int:
+    """Full snapshot refresh: `rows` (engine.data.normalize_schedule output)
+    replaces whatever was previously synced for this season - a
+    rescheduled game must not leave its stale date/matchup lingering
+    alongside the new one, so this deletes first rather than upserting."""
+    synced_at = datetime.now(timezone.utc).isoformat()
+    conn.execute("DELETE FROM schedule WHERE season_code = ?", (season_code,))
+    if rows:
+        prepared = [{**r, "played": int(bool(r["played"])), "synced_at": synced_at} for r in rows]
+        placeholders = ", ".join(f":{c}" for c in _SCHEDULE_COLUMNS)
+        conn.executemany(
+            f"INSERT INTO schedule ({', '.join(_SCHEDULE_COLUMNS)}) VALUES ({placeholders})",
+            prepared,
+        )
+    conn.commit()
+    return len(rows)
+
+
+def load_schedule(conn: sqlite3.Connection, season_code: str, round_no: int | None = None) -> list[dict]:
+    query = "SELECT * FROM schedule WHERE season_code = ?"
+    params: tuple = (season_code,)
+    if round_no is not None:
+        query += " AND round = ?"
+        params = (season_code, round_no)
+
+    cur = conn.execute(query, params)
+    cols = [d[0] for d in cur.description]
+    rows = []
+    for record in cur.fetchall():
+        row = dict(zip(cols, record))
+        row["played"] = bool(row["played"])
+        rows.append(row)
+    return rows
+
+
+def next_unplayed_round(conn: sqlite3.Connection, season_code: str) -> int | None:
+    """Earliest round in the synced schedule with at least one unplayed
+    game - the sensible default round for the live lineup builder, which
+    exists specifically to help decide a round that hasn't happened yet."""
+    row = conn.execute(
+        "SELECT MIN(round) FROM schedule WHERE season_code = ? AND played = 0", (season_code,)
+    ).fetchone()
+    return row[0] if row and row[0] is not None else None
+
+
+def schedule_synced_at(conn: sqlite3.Connection, season_code: str) -> str | None:
+    row = conn.execute("SELECT MAX(synced_at) FROM schedule WHERE season_code = ?", (season_code,)).fetchone()
     return row[0] if row else None
 
 

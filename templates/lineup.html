@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block title %}Lineup Builder{% endblock %}
+{% block content %}
+  <h1>Lineup Builder</h1>
+  <p><a href="{{ url_for('how_it_works') }}">How this works</a></p>
+
+  {% if not rounds %}
+    <p class="flash-error">No schedule synced yet for {{ current_season }} - run a box-score sync on the
+      <a href="{{ url_for('sync_page') }}">Sync</a> page (it now also pulls the season schedule).</p>
+  {% endif %}
+
+  <form method="get" class="filters">
+    <label>Manager:
+      <select name="manager_id" onchange="this.form.submit()">
+        <option value="">Choose a manager...</option>
+        {% for m in managers %}
+          <option value="{{ m.manager_id }}" {% if selected_manager_id == m.manager_id %}selected{% endif %}>{{ m.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Round:
+      <select name="round" onchange="this.form.submit()">
+        {% for r in rounds %}
+          <option value="{{ r }}" {% if selected_round == r %}selected{% endif %}>Round {{ r }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </form>
+
+  {% if roster_error %}
+    <p class="flash-error">Roster incomplete: {{ roster_error }}</p>
+  {% elif schedule_error %}
+    <p class="flash-error">{{ schedule_error }}</p>
+  {% elif recommended %}
+    <p>Round {{ selected_round }} game dates:
+      {% for d in team_dates.values() | unique | sort %}{{ d }}{{ ", " if not loop.last }}{% endfor %}
+    </p>
+
+    <h2 title="Score 0, cannot be used this round no matter what.">Excluded (3 of 13)</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Player</th><th>Position</th><th>Team</th>
+          <th title="Projected PIR for this player's next game.">Proj+Bonus</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in excluded %}
+          <tr>
+            <td>{{ p.player_name }}</td><td>{{ p.position }}</td><td>{{ p.team }}</td>
+            <td>{{ "%.1f"|format(p.projected_pir_with_bonus) }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <h2 title="Lock this in before the round starts.">Day 1: starting lineup</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Slot</th><th>Position</th><th>Player</th><th>Team</th>
+          <th title="day1 = plays on this round's earliest date; later = plays a subsequent date this round; not playing = no game this round.">Availability</th>
+          <th title="Projected PIR for this player's next game.">Proj+Bonus</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in initial.starters %}
+          <tr>
+            <td>Starter{{ " (C)" if p.player_id == initial.captain.player_id else "" }}</td>
+            <td>{{ p.position }}</td><td>{{ p.player_name }}</td><td>{{ p.team }}</td>
+            <td>{{ availability_label(p, team_dates) }}</td>
+            <td>{{ "%.1f"|format(p.projected_pir_with_bonus) }}</td>
+          </tr>
+        {% endfor %}
+        <tr>
+          <td title="Full points, but never captain-eligible.">6th Man</td>
+          <td>{{ initial.sixth_man.position }}</td><td>{{ initial.sixth_man.player_name }}</td>
+          <td>{{ initial.sixth_man.team }}</td>
+          <td>{{ availability_label(initial.sixth_man, team_dates) }}</td>
+          <td>{{ "%.1f"|format(initial.sixth_man.projected_pir_with_bonus) }}</td>
+        </tr>
+        {% for p in initial.bench %}
+          <tr>
+            <td title="Scores at half points automatically - no swap needed to count.">Bench</td>
+            <td>{{ p.position }}</td><td>{{ p.player_name }}</td><td>{{ p.team }}</td>
+            <td>{{ availability_label(p, team_dates) }}</td>
+            <td>{{ "%.1f"|format(p.projected_pir_with_bonus) }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <h2 title="Apply once day 1's games are finished.">Day 2: swap plan</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Slot</th><th>Position</th><th>Player</th><th>Team</th>
+          <th title="day1 = plays on this round's earliest date; later = plays a subsequent date this round; not playing = no game this round.">Availability</th>
+          <th title="Projected PIR for this player's next game.">Proj+Bonus</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in recommended.starters %}
+          <tr>
+            <td>Starter{{ " (C)" if p.player_id == recommended.captain.player_id else "" }}</td>
+            <td>{{ p.position }}</td><td>{{ p.player_name }}</td><td>{{ p.team }}</td>
+            <td>{{ availability_label(p, team_dates) }}</td>
+            <td>{{ "%.1f"|format(p.projected_pir_with_bonus) }}</td>
+          </tr>
+        {% endfor %}
+        <tr>
+          <td title="Full points, but never captain-eligible.">6th Man</td>
+          <td>{{ recommended.sixth_man.position }}</td><td>{{ recommended.sixth_man.player_name }}</td>
+          <td>{{ recommended.sixth_man.team }}</td>
+          <td>{{ availability_label(recommended.sixth_man, team_dates) }}</td>
+          <td>{{ "%.1f"|format(recommended.sixth_man.projected_pir_with_bonus) }}</td>
+        </tr>
+        {% for p in recommended.bench %}
+          <tr>
+            <td title="Scores at half points automatically - no swap needed to count.">Bench</td>
+            <td>{{ p.position }}</td><td>{{ p.player_name }}</td><td>{{ p.team }}</td>
+            <td>{{ availability_label(p, team_dates) }}</td>
+            <td>{{ "%.1f"|format(p.projected_pir_with_bonus) }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+{% endblock %}

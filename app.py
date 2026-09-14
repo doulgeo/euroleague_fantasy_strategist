@@ -34,8 +34,17 @@ from engine.db import (
     latest_game_date,
     load_roster,
     load_rows,
+    load_schedule,
+    next_unplayed_round,
     roster_synced_at,
     row_count,
+)
+from engine.lineup import (
+    availability_label,
+    build_lineup,
+    choose_active_squad,
+    swap_after_day1,
+    team_dates_from_schedule,
 )
 from engine.projections import Projection, build_projections
 from engine.roster import REQUIRED_COUNTS, Roster
@@ -482,6 +491,76 @@ def transfers():
         roster=roster,
         roster_error=roster_error,
         suggestions=suggestions,
+    )
+
+
+@app.route("/lineup")
+def lineup():
+    conn = get_db()
+    managers = ownership.list_managers(conn)
+
+    manager_id_raw = request.args.get("manager_id")
+    selected_manager_id = int(manager_id_raw) if manager_id_raw else None
+
+    rounds = sorted({r["round"] for r in load_schedule(conn, CURRENT_SEASON) if r.get("round") is not None})
+    default_round = next_unplayed_round(conn, CURRENT_SEASON)
+    round_raw = request.args.get("round")
+    selected_round = int(round_raw) if round_raw else default_round
+
+    roster = None
+    roster_error = None
+    schedule_error = None
+    initial = None
+    recommended = None
+    excluded: list[Projection] = []
+    team_dates: dict[str, str] = {}
+
+    if selected_manager_id and selected_round:
+        pool, _new_ids = get_pool(conn)
+        player_ids = ownership.manager_roster_ids(conn, selected_manager_id)
+        players = [pool[pid] for pid in player_ids if pid in pool]
+        unresolved = len(player_ids) - len(players)
+
+        try:
+            roster = Roster(players=players)
+        except ValueError as e:
+            roster_error = f"{e} (drafted so far: {len(player_ids)}/13, {unresolved} not found in current pool)"
+
+        if roster is not None:
+            schedule_rows = load_schedule(conn, CURRENT_SEASON, round_no=selected_round)
+            team_dates = team_dates_from_schedule(schedule_rows, selected_round)
+
+            if not team_dates:
+                schedule_error = (
+                    f"No scheduled games found for round {selected_round} of {CURRENT_SEASON}. "
+                    f"Either the schedule hasn't been synced yet (see Sync) or this round genuinely "
+                    f"has no games - try a different round."
+                )
+            else:
+                projected_value = lambda pid: pool[pid].projected_pir_with_bonus  # noqa: E731
+                try:
+                    active_squad = choose_active_squad(roster, team_dates, projected_value)
+                    initial = build_lineup(active_squad, team_dates, projected_value)
+                    recommended = swap_after_day1(initial, team_dates, projected_value)
+                    excluded = active_squad.excluded
+                except RuntimeError as e:
+                    schedule_error = f"Could not build a lineup for this round: {e}"
+
+    return render_template(
+        "lineup.html",
+        managers=managers,
+        rounds=rounds,
+        selected_manager_id=selected_manager_id,
+        selected_round=selected_round,
+        roster=roster,
+        roster_error=roster_error,
+        schedule_error=schedule_error,
+        initial=initial,
+        recommended=recommended,
+        excluded=excluded,
+        team_dates=team_dates,
+        availability_label=availability_label,
+        current_season=CURRENT_SEASON,
     )
 
 

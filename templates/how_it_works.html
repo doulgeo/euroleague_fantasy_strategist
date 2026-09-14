@@ -31,11 +31,8 @@
     full points. Team win gives a <strong>+10% bonus</strong> to that
     player's round score. Full detail (including the day-1/day-2 "golden
     rule") is in <code>docs/game_rules.md</code> in the repo.</p>
-    <p><strong>Note:</strong> this app doesn't have a lineup-builder page yet
-    (choosing your active 10, starters, captain, and day-2 swaps each round)
-    - it currently covers the draft, ownership, and transfers. That logic
-    exists in <code>engine/lineup.py</code> and is validated by backtesting,
-    but isn't wired into the web UI yet.</p>
+    <p>The <a href="{{ url_for('lineup') }}">Lineup</a> page applies all of
+    this for a chosen manager and round - see "Lineup builder" below.</p>
 
     <h2>Scoring: PIR</h2>
     <p>PIR (Performance Index Rating) is the fantasy currency, not raw
@@ -110,6 +107,20 @@
     rostered player at the same position. It's naive by design - it doesn't
     account for a manager's active-squad exclusion choices or bye weeks, just
     raw projected value at the same position.</p>
+
+    <h2>Lineup builder</h2>
+    <p>For a chosen manager and round, picks which 3 of the 13 roster players
+    to exclude, builds the day-1 starting lineup, and separately shows the
+    swap plan to apply once day 1's games are finished - see "The league's
+    rules, in brief" above for the three-tier scoring model and the
+    day-1/day-2 golden rule this follows exactly. Exclusion is chosen by
+    trying every possible 3-player exclusion (286 combinations - cheap) and
+    keeping whichever leaves the best lineup, since a benched player keeps
+    swap-in option value an excluded player doesn't. Needs the season
+    schedule to be synced for the round in question - the regular box-score
+    sync (see below) now also refreshes it. Like Transfer suggestions, this
+    is a live, recomputed-on-every-visit recommendation, not a saved record
+    of what a manager actually did.</p>
 
     <h2>Keeping the data fresh</h2>
     <p>This app only ever reads the local database - it never calls the live

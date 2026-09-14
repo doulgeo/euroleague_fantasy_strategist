@@ -367,6 +367,35 @@ def normalize_people(payload: list[dict], season_code: str) -> list[dict]:
     return [row for _, row in by_player.values()]
 
 
+def normalize_schedule(games: list[dict], season_code: str) -> list[dict]:
+    """Flatten a list_games() response into schedule-table rows - unlike
+    fetch_season (which filters to played games only, before ever touching
+    the DB), this keeps EVERY game, played or not. The whole point of the
+    schedule table is knowing which teams play which dates in rounds that
+    haven't happened yet, which player_game_stats (played-games-only) can
+    never answer."""
+    rows: list[dict] = []
+    for g in games:
+        game_code = g.get("gameCode")
+        if game_code is None:
+            continue  # gameCode is the table's PK component - skip rather than collide
+
+        local = (g.get("local") or {}).get("club") or {}
+        road = (g.get("road") or {}).get("club") or {}
+        rows.append(
+            {
+                "season_code": season_code,
+                "game_code": game_code,
+                "round": g.get("round"),
+                "game_date": g.get("date"),
+                "local_team_code": local.get("code"),
+                "road_team_code": road.get("code"),
+                "played": bool(g.get("played")),
+            }
+        )
+    return rows
+
+
 def fetch_season(
     client: EuroleagueClient,
     competition: str,

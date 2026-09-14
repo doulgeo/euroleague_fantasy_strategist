@@ -41,6 +41,12 @@ they're easy to revisit):
 - Captain can only be one of the 5 starters, never the sixth man (matches
   how the user described it: "5 players are starters ... 1 of them is the
   captain ... then there is a 6th player").
+
+Two ways to get the team_dates dict every function below needs:
+team_dates_for_round (from played box scores - historical/backtest use)
+and team_dates_from_schedule (from the schedule table - the only one that
+works for a round that hasn't been played yet, which is what the live
+/lineup route in app.py needs). Both produce the same dict[str, str] shape.
 """
 
 from __future__ import annotations
@@ -85,6 +91,32 @@ def team_dates_for_round(rows: list[dict], round_no: int) -> dict[str, str]:
         date = _date_only(r.get("game_date"))
         if date and r.get("team") not in dates:
             dates[r["team"]] = date
+    return dates
+
+
+def team_dates_from_schedule(schedule_rows: list[dict], round_no: int) -> dict[str, str]:
+    """team_code -> date (YYYY-MM-DD) for the given round, built from
+    engine.db's `schedule` table (engine.db.load_schedule) instead of
+    played box-score rows.
+
+    The future-round sibling of team_dates_for_round: that function can
+    only ever see rounds that have already happened, since it's built from
+    player_game_stats (played games only). This one works for a round that
+    hasn't been played yet - the actual case a lineup *decision* needs.
+    Produces the exact same dict[str, str] shape, so build_lineup/
+    choose_active_squad/swap_after_day1/availability_label consume either
+    interchangeably without caring which one built it.
+    """
+    dates: dict[str, str] = {}
+    for r in schedule_rows:
+        if r.get("round") != round_no:
+            continue
+        date = _date_only(r.get("game_date"))
+        if not date:
+            continue
+        for team in (r.get("local_team_code"), r.get("road_team_code")):
+            if team and team not in dates:
+                dates[team] = date
     return dates
 
 
