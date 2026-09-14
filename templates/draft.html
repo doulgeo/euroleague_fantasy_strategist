@@ -3,6 +3,28 @@
 {% block content %}
   <h1>Draft Board</h1>
 
+  <details class="col-legend">
+    <summary>What do these columns mean?</summary>
+    <dl>
+      <dt>#</dt>
+      <dd>Rank within this position, best projected value first.</dd>
+      <dt>Player</dt>
+      <dd>Player name. A <span class="new-badge">NEW</span> badge means no EuroLeague box-score history in this project's local data (E2023 onward) - a new signing/rookie, or a club new to the league. Their projection is a placeholder (0.0) since there's no data yet to base one on.</dd>
+      <dt>Team</dt>
+      <dd>Current club, from the most recently synced roster (run <code>sync_rosters.py</code> to refresh).</dd>
+      <dt>Proj+Bonus</dt>
+      <dd>Projected PIR (the fantasy scoring stat) for this player's next game: a recency-weighted average of their last 10 games, plus a bonus scaled to their team's recent win rate.</dd>
+      <dt>VORP</dt>
+      <dd>Value over replacement: how much better this player projects than the last player at the same position who'd plausibly still get drafted across all 12 managers. Makes positions comparable - a scarce Center can rank above a slightly-higher-projected Guard once scarcity is factored in.</dd>
+      <dt>n</dt>
+      <dd>Games sampled to build the projection (up to 10, most recent weighted highest). Fewer than 3 games means no real projection can be built yet.</dd>
+      <dt>Owner</dt>
+      <dd>Manager who has already drafted this player, if any - drafted rows are greyed out.</dd>
+      <dt>&mdash; tier break &mdash;</dt>
+      <dd>A divider marking a bigger-than-usual drop-off to the next player at this position - players above the line are roughly interchangeable, so don't reach for one over another within the same tier.</dd>
+    </dl>
+  </details>
+
   <form method="get" class="filters">
     <label>Position:
       <select name="position" onchange="this.form.submit()">

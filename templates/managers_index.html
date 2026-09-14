@@ -2,6 +2,17 @@
 {% block title %}Managers{% endblock %}
 {% block content %}
   <h1>Managers</h1>
+
+  <details class="col-legend">
+    <summary>What do these columns mean?</summary>
+    <dl>
+      <dt>Name</dt>
+      <dd>Manager's name, as seeded by <code>seed_league.py</code>. Click through to see their full roster.</dd>
+      <dt>Roster size</dt>
+      <dd>How many players this manager currently owns, out of the 13-player roster limit (5 Guard / 5 Forward / 3 Center).</dd>
+    </dl>
+  </details>
+
   <table>
     <thead><tr><th>Name</th><th>Roster size</th></tr></thead>
     <tbody>

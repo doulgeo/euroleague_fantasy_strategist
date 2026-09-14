@@ -50,6 +50,27 @@
   </form>
 
   <h2>History</h2>
+
+  <details class="col-legend">
+    <summary>What do these columns mean?</summary>
+    <dl>
+      <dt>When</dt>
+      <dd>Timestamp this transaction was logged in the tool - not necessarily when it happened in the real league.</dd>
+      <dt>Round</dt>
+      <dd>Fantasy round number this transaction applies to, if you entered one.</dd>
+      <dt>Type</dt>
+      <dd>How the player changed hands: a draft pick, a free-agent add, a drop, or a trade.</dd>
+      <dt>Player</dt>
+      <dd>The player involved.</dd>
+      <dt>From / To</dt>
+      <dd>Manager who lost / gained the player. Blank "From" means a draft pick or free-agent add (no prior owner); blank "To" means a drop (no new owner).</dd>
+      <dt>Group</dt>
+      <dd>Shared ID linking the two legs of a trade - both players in a 1-for-1 trade show the same group ID.</dd>
+      <dt>Notes</dt>
+      <dd>Free-text notes you entered when logging the transaction.</dd>
+    </dl>
+  </details>
+
   <table>
     <thead>
       <tr><th>When</th><th>Round</th><th>Type</th><th>Player</th><th>From</th><th>To</th><th>Group</th><th>Notes</th></tr>
