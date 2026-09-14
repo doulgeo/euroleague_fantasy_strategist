@@ -861,3 +861,40 @@ additional context to establish value for new players"): any actual
 projected-value estimate for new players — they're visible and flagged now,
 but still score 0.0/excluded from ranking, which is honest (no data exists
 yet) rather than a guess.
+
+---
+
+## 2026-09-14 — UI polish + Sync page, end-to-end via live HTTP
+
+**What**: this session's UI work (README, `/how-it-works` page, header
+tooltips replacing column-legend boxes, draft-board team filter/sort, and
+the `/sync` page triggering `sync_db.py`/`sync_rosters.py` from the
+browser) was validated by hitting the running Flask app directly, not just
+by reading the templates.
+
+**How**:
+1. `py_compile` on every changed Python file after each round of edits.
+2. Curled every route (`/`, `/how-it-works`, `/draft`, `/managers`,
+   `/managers/<id>`, `/transactions`, `/transfers?manager_id=`, `/sync`) —
+   all 200.
+3. Draft board: confirmed `sort=team&dir=asc` actually produces
+   alphabetically-ordered teams (ASV, BAR, BAS...), confirmed `team=MAD`
+   filtering returns only MAD rows, confirmed tier-break markup (`grep -c
+   tier-break`) is present in the default sort and exactly zero under any
+   other sort/dir combination.
+4. `/sync`: triggered a real roster sync via `POST /sync/rosters` (no
+   `--dry-run`, this hit the live API for real) — watched it run as a
+   background subprocess, complete, and update `roster_synced_at`/the log
+   tail on the page. Triggered a real box-score sync
+   (`POST /sync/db, season_E2026=1`) — confirmed it correctly found 0
+   played E2026 games (season hasn't started) rather than erroring. Fired
+   two roster-sync triggers back-to-back to confirm the concurrent-run
+   guard rejects the second one with a flash message rather than running
+   both at once (or crashing on the same log file).
+
+**Result**: all checks passed, no regressions. The sync subprocess
+correctly runs under the venv's Python (`sys.executable`, not the system
+Python that lacks `requests`), and `_projection_cache.clear()` after a sync
+finishes was confirmed necessary in principle (the mtime-based cache key
+would eventually self-correct too, but the explicit clear removes any
+timing dependency on that).
