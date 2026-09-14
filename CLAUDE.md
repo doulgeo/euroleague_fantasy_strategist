@@ -22,7 +22,11 @@ changes into one commit or wait for a natural stopping point. Keep
 `docs/testing_log.md` updated with validation activity (what was tested,
 how, result) as a running log separate from git history — append, don't
 rewrite past entries (only correct them if a past entry turns out to be
-wrong, and say so explicitly rather than silently editing).
+wrong, and say so explicitly rather than silently editing). Also keep
+`README.md` (the public-facing repo overview — what the tool does, quick
+start) updated whenever a change would make it stale — new
+features/commands, changed setup steps — unlike `docs/testing_log.md` this
+is a living doc, not an append-only log: edit it in place to stay accurate.
 
 Full context for a fresh session, in order of what to read:
 
@@ -221,7 +225,20 @@ safe to pick up directly from any of the "Natural next steps" above, or
 from scratch on something new. What happened this session, most recent
 first:
 
-1. Built current-roster sync (`sync_rosters.py`, v2 `/people` endpoint) and
+1. UI polish on the Flask app, per the user's direction: added
+   `README.md` (public-facing repo overview, now part of the working
+   agreement above — keep it current) and a `/how-it-works` page (league
+   rules, scoring, projection/VORP/tier/NEW-badge explanations, data-refresh
+   commands — everything a user of the tool might need, linked from every
+   page). Replaced the per-page column-explanation boxes from earlier this
+   session with `title`-attribute tooltips on table headers instead (hover,
+   no box taking up space). Added a team filter and sort-by-any-column
+   control to the draft board (`app.py`'s `/draft` route), with tier breaks
+   now only rendered in the default value-sorted view since they're not
+   meaningful in other orderings. All routes re-verified 200 after the
+   changes; sort/filter behavior spot-checked directly against the live
+   E2026-seeded local DB (e.g. team=MAD filter, sort=team asc).
+2. Built current-roster sync (`sync_rosters.py`, v2 `/people` endpoint) and
    "new to the league" marking (zero-value placeholder + `NEW` badge for
    any rostered player with no local box-score history), so transferred
    players show their real team and brand-new players are visible instead
@@ -232,15 +249,15 @@ first:
    recent entry for the full write-up. New player *values* are explicitly
    NOT estimated yet — the user is thinking through how to source
    additional context for that; revisit when they have an approach.
-2. Evaluated a user-supplied research document on EuroLeague data sourcing
+3. Evaluated a user-supplied research document on EuroLeague data sourcing
    and PIR-prediction methodology against this project's own validated
    findings — mostly corroborated (same endpoints, same PIR formula, same
    field quirks), one correction (the doc conflated v2's confirmed deep
    historical coverage with the legacy Boxscore endpoint, which this
    project already proved is current-season-only), and the licensing/
    Sportradar section doesn't apply here (see "Licensing" above). The
-   `/people` endpoint it surfaced is what led directly to item 1.
-3. Earlier sessions (2026-09-10 through 2026-09-13): built the heuristic
+   `/people` endpoint it surfaced is what led directly to item 2.
+4. Earlier sessions (2026-09-10 through 2026-09-13): built the heuristic
    engine and corrected the roster/scoring model
    (`docs/technical_notes.md`), backfilled E2023-E2025 into `euroleague.db`,
    ran the elaborate multi-season backtest (current validated headline
