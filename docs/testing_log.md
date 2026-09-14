@@ -1047,3 +1047,85 @@ existing box-score sync, at no extra network cost since it reuses
 and fixed (not just "wire existing code into a route" - the schedule table
 was a real missing piece), verified against the real, live, upcoming 2026-27
 season schedule rather than only historical data.
+
+---
+
+## 2026-09-14 — "GONE" player marking (departed clubs / unsigned players)
+
+**What**: while spot-checking the lineup builder's round-1 output above,
+`JAMES, MIKE` (20.6 projected, higher than several actual starters) showed
+up excluded with team `MCO`. The user, pasting the real confirmed 2026-27
+club list, pointed out Monaco isn't part of the league this season at all -
+prompting a check of whether that was stale sync data or something else.
+
+**How**: queried the already-synced `rosters` table directly - confirmed
+Monaco (`MCO`) has **zero** players in the E2026 roster sync and the 20
+teams present match the user's list exactly, and confirmed `MCO` appears in
+**zero** of the 380 games across all 38 rounds of the synced schedule. So
+the sync itself was correct - the gap was downstream: `merge_roster` only
+overrides a player's `team` when they're found on a *current* roster: a
+player absent from every current club (Monaco's former roster, in this
+case) keeps their last-known team indefinitely with nothing marking them as
+no longer part of the league. Confirmed this is a real, previously-
+unflagged case, distinct from the existing NEW badge (which flags the
+opposite: present now, absent from history).
+
+Also checked a related question the user raised ("where are the Besiktas
+players") while investigating: Besiktas (`BES`) **is** correctly synced (9
+players, 20-team roster confirmed), 5 of 9 have real E2025-based
+projections (transferred in from other EuroLeague clubs) - so they weren't
+actually missing, just mostly showing very low/placeholder values and
+sorting toward the bottom of the board (only 3 of 9 have a real
+above-replacement value). Separately noted (not fixed this session):
+`known_player_ids` checks history across ALL locally-synced seasons
+(E2023-E2025) for the NEW flag, but `build_projections` only uses ONE
+season (whichever `_resolve_pool_source` picks) for the actual value -
+so a player with history in an *earlier* season but not the one currently
+used for projections (e.g. `ZIZIC, ANTE`, `DEJULIUS, DAVID`) is correctly
+NOT flagged NEW, but still gets an unhelpful 0.0 placeholder with nothing
+distinguishing that from "genuinely brand new." Flagged as a known gap in
+CLAUDE.md, not addressed yet - a third, distinct case beyond NEW/GONE.
+
+**Fix**: `engine.rosters.merge_roster` now returns a third value,
+`gone_player_ids` (pool players absent from the current-season roster
+entirely). Wired through `app.py`'s `get_pool` (now a 3-tuple) and
+`draft_board.py`'s CLI. `/draft` filters gone players out of the board
+entirely (`build_draft_board` never sees them) rather than just flagging
+them, per the user's explicit direction ("they should vanish"). `/transfers`
+filters them from the ADD-candidate pool (can't suggest acquiring someone
+not really acquirable) while still allowing them as a DROP candidate if a
+manager already owns one (`roster.players` is built from the full,
+unfiltered pool). `/managers/<id>` shows an owned GONE player greyed out
+with a badge and an explicit "consider dropping or trading" tooltip,
+mirroring the NEW badge's styling but distinct (grey `GONE` vs. orange
+`NEW`).
+
+**Validation**:
+1. `draft_board.py --season E2025`: log line correctly reported "90 no
+   longer on any current roster - excluded from this board" (out of a
+   284-player pool) - plausible given a full season of transfers,
+   retirements, and a genuinely departed club (Monaco).
+2. Live app: confirmed `JAMES, MIKE` no longer appears anywhere on
+   `/draft?position=Guard` (0 matches), and the 20 teams shown on the board
+   exactly match the user's confirmed club list (no `MCO`).
+3. Drafted `JAMES, MIKE` to a test manager directly (bypassing the UI, via
+   `engine.ownership.record_draft_pick`) specifically to exercise the
+   "already owned" path: `/managers/<id>` rendered him with the
+   `gone-player` row class, the grey `GONE` badge, and the stale `MCO` team
+   still visible for context - exactly as designed.
+4. Directly confirmed in Python that `005985` (his player_id) is in
+   `gone_ids` and absent from the `addable_pool` passed to
+   `suggest_transfers` - the ADD-suggestion exclusion is real, not just
+   inferred from the UI.
+5. Test draft cleaned up afterward (dropped back to free agency).
+6. `py_compile` on every changed file
+   (`engine/rosters.py`, `app.py`, `draft_board.py`); all five `/draft`,
+   `/managers`, `/transactions`, `/transfers`, `/lineup` routes reconfirmed
+   200 after the `get_pool`/`merge_roster` signature change (2-tuple ->
+   3-tuple) touched every call site.
+
+**Result**: all checks passed. One related gap (season-scoped-only
+projection history vs. all-seasons-scoped NEW flag, affecting a handful of
+Besiktas players) was found but deliberately not fixed this session -
+logged as a known issue rather than silently expanding scope beyond what
+was asked.

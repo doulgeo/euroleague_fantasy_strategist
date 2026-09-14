@@ -149,11 +149,27 @@ Full context for a fresh session, in order of what to read:
   (untouched) `team_dates_for_round`, validated to produce byte-identical
   output across all 47 rounds of E2025. End-to-end tested against the real,
   live E2026 round 1 (2026-09-25) — including tracing one surprising-looking
-  exclusion (a 20.6-projected player benched) down to the correct reason
-  (his team has no game that round, confirmed against the schedule) rather
-  than assuming it was a bug. See `docs/technical_notes.md` → "Season
+  exclusion (a 20.6-projected player benched) down to the correct reason:
+  his club (Monaco) isn't part of the 2026-27 EuroLeague at all — which led
+  directly to the next entry. See `docs/technical_notes.md` → "Season
   schedule" and `docs/testing_log.md` → "Wired the lineup builder into the
   app" for the full write-up.
+- **"GONE" player marking**, as of 2026-09-14: the flip side of the NEW
+  badge — a player with real history who's fallen off *every* current club
+  roster (their club left the competition, e.g. Monaco this season — user-
+  confirmed against the real 2026-27 club list — or they're unsigned/
+  released) previously kept showing a stale team with a normal-looking
+  projection, with nothing marking them as no longer part of the league.
+  `engine.rosters.merge_roster` now returns a third value, `gone_player_ids`
+  (`get_pool` is a 3-tuple; every call site updated). Per the user's
+  explicit direction, these players **vanish from the draft board and
+  transfer suggestions entirely** (not just flagged) but still show —
+  visibly greyed out with a `GONE` badge, prompting a drop/trade — on a
+  manager's own roster page if already owned. Live-tested including the
+  "already owned" path (drafted one to a test manager directly, confirmed
+  the greyed-out rendering, then cleaned up). See `docs/testing_log.md` →
+  "\"GONE\" player marking" for the full write-up, including a related-but-
+  separate gap found and *not* fixed this session (below).
 
 **Explicitly NOT done yet (all deferred, not forgotten):**
 - The draft-tracking UI above is v1: no draft-credit/budget tracking
@@ -251,6 +267,16 @@ over the network), never needs to be committed.
 - The team-strength tiebreaker question the "Opponent-strength adjustment"
   entry above leaves open is now actually testable, since `/lineup` exists
   — worth trying if opponent-aware lineup decisions come up again.
+- **Known gap, found but not fixed 2026-09-14**: `known_player_ids` (the
+  NEW-badge check) looks across ALL locally-synced seasons (E2023-E2025),
+  but `build_projections` (the actual value) only ever uses ONE season
+  (whichever `_resolve_pool_source` currently picks). A player with history
+  in an *earlier* season but not the one currently used for projections
+  (found via real examples: `ZIZIC, ANTE`, `DEJULIUS, DAVID`, both on
+  Besiktas's real E2026 roster) is correctly not flagged NEW, but still
+  gets an unhelpful flat 0.0 with nothing distinguishing that from
+  "genuinely brand new." A third case, distinct from NEW and GONE — no
+  design decided yet on how (or whether) to surface it.
 
 ## Where things were left off (2026-09-14 session)
 
@@ -261,7 +287,14 @@ safe to pick up directly from any of the "Natural next steps" above, or
 from scratch on something new. What happened this session, most recent
 first:
 
-1. Wired the lineup builder into the app (`/lineup`) — see "Current
+1. Added "GONE" player marking, prompted directly by the user spot-
+   checking item 2's lineup-builder output against real domain knowledge
+   (Monaco isn't in the 2026-27 EuroLeague) — see "Current status" above
+   for the full summary. Also resolved a "where are the Besiktas players"
+   question along the way (they're there, mostly just low-value/sorted to
+   the bottom) and found — but deliberately did not fix — a related,
+   distinct gap (see "Explicitly NOT done yet" above).
+2. Wired the lineup builder into the app (`/lineup`) — see "Current
    status" above for the full summary. Found and fixed a real
    architectural gap along the way (no local schedule data for
    not-yet-played rounds), added a `schedule` table + `sync_db.py`
@@ -273,16 +306,16 @@ first:
    `engine.ownership`/`engine.db`/`app.py` conventions, then a Plan agent
    for the file-by-file design) given the scope. Test draft data used to
    validate it was cleaned up afterward.
-2. Brainstormed a team-strength/opponent-adjustment idea at the user's
+3. Brainstormed a team-strength/opponent-adjustment idea at the user's
    request, then prototyped and backtested it (`engine/team_strength.py`,
    `team_strength_backtest.py`) — no demonstrable predictive win, not wired
    into projections; see "Explicitly NOT done yet" above.
-3. Added a `/sync` page: buttons to trigger `sync_db.py`/`sync_rosters.py`
+4. Added a `/sync` page: buttons to trigger `sync_db.py`/`sync_rosters.py`
    from the browser (background subprocess per script, log tail, an
    auto-refreshing status view, a same-kind-already-running guard) instead
    of only from the terminal. Live-tested end-to-end via real HTTP triggers
    of both scripts, watched them complete and the DB update.
-4. UI polish on the Flask app, per the user's direction: added
+5. UI polish on the Flask app, per the user's direction: added
    `README.md` (public-facing repo overview, now part of the working
    agreement above — keep it current) and a `/how-it-works` page (league
    rules, scoring, projection/VORP/tier/NEW-badge explanations, data-refresh
@@ -295,7 +328,7 @@ first:
    meaningful in other orderings. All routes re-verified 200 after the
    changes; sort/filter behavior spot-checked directly against the live
    E2026-seeded local DB (e.g. team=MAD filter, sort=team asc).
-5. Built current-roster sync (`sync_rosters.py`, v2 `/people` endpoint) and
+6. Built current-roster sync (`sync_rosters.py`, v2 `/people` endpoint) and
    "new to the league" marking (zero-value placeholder + `NEW` badge for
    any rostered player with no local box-score history), so transferred
    players show their real team and brand-new players are visible instead
@@ -306,15 +339,15 @@ first:
    full write-up. New player *values* are explicitly NOT estimated yet —
    the user is thinking through how to source additional context for that;
    revisit when they have an approach.
-6. Evaluated a user-supplied research document on EuroLeague data sourcing
+7. Evaluated a user-supplied research document on EuroLeague data sourcing
    and PIR-prediction methodology against this project's own validated
    findings — mostly corroborated (same endpoints, same PIR formula, same
    field quirks), one correction (the doc conflated v2's confirmed deep
    historical coverage with the legacy Boxscore endpoint, which this
    project already proved is current-season-only), and the licensing/
    Sportradar section doesn't apply here (see "Licensing" above). The
-   `/people` endpoint it surfaced is what led directly to item 5.
-7. Earlier sessions (2026-09-10 through 2026-09-13): built the heuristic
+   `/people` endpoint it surfaced is what led directly to item 6.
+8. Earlier sessions (2026-09-10 through 2026-09-13): built the heuristic
    engine and corrected the roster/scoring model
    (`docs/technical_notes.md`), backfilled E2023-E2025 into `euroleague.db`,
    ran the elaborate multi-season backtest (current validated headline
