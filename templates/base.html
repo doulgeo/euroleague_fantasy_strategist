@@ -48,5 +48,13 @@
   <main>
     {% block content %}{% endblock %}
   </main>
+
+  <script>
+    // Use data-tip + CSS instead of the native title tooltip (slow, unstyled).
+    document.querySelectorAll('[title]').forEach(function (el) {
+      el.setAttribute('data-tip', el.getAttribute('title'));
+      el.removeAttribute('title');
+    });
+  </script>
 </body>
 </html>

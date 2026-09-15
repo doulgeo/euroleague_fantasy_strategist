@@ -163,7 +163,35 @@ tr.gone-player:hover { background: #e2dccc; }
   margin-left: 0.3rem; vertical-align: middle; text-transform: uppercase;
 }
 
-th[title] { cursor: help; text-decoration: underline dotted; text-decoration-color: var(--ink-soft); text-underline-offset: 3px; }
+/* Custom tooltips: base.html swaps title -> data-tip on load so the slow,
+   unstyled native browser tooltip never fires; this renders instantly and
+   matches the theme instead. */
+[data-tip] { position: relative; cursor: help; }
+th[data-tip] { text-decoration: underline dotted; text-decoration-color: rgba(243, 233, 214, 0.55); text-underline-offset: 3px; }
+[data-tip]:hover::after,
+[data-tip]:focus-visible::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: 0;
+  top: 100%;
+  margin-top: 6px;
+  background: var(--charcoal);
+  color: #f3e9d6;
+  font-family: var(--font-body);
+  font-size: 0.75rem;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
+  line-height: 1.35;
+  white-space: normal;
+  width: max-content;
+  max-width: 260px;
+  padding: 0.45rem 0.65rem;
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(34, 26, 18, 0.3);
+  z-index: 50;
+  pointer-events: none;
+}
 
 /* ---- Prose / info pages ---- */
 .prose { max-width: 800px; line-height: 1.6; }
