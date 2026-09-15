@@ -1,25 +1,28 @@
 """
 The real EuroLeague Fantasy game's live draftable player pool, sourced from
 a user-maintained Google Sheet (not the EuroLeague API) - see
-sync_fantasy_pool.py. This is a better ground-truth for "is this player
-actually draftable right now" than what engine.rosters derives on its own
-from box scores + club rosters: a player can be on a EuroLeague club roster
-(engine.rosters' source) without being part of the real Fantasy game's pool
-(e.g. Head Coaches, who this league's rules don't include at all - see
-docs/game_rules.md), or vice versa.
+sync_fantasy_pool.py. As of 2026-09-15 this is the PRIMARY source of roster
+composition (who's on which team, at what position) for the app's player
+pool - see app.py's get_pool and engine.rosters.merge_roster. It replaced
+EuroLeague's own /people endpoint (engine.db `rosters`) in that role after
+the user found /people significantly incomplete pre-season for some clubs
+(ASVEL: 4 of ~15-20 real players registered; Barcelona: 7 - confirmed
+directly against the raw API, not a bug in this project's sync). `rosters`
+stays synced and is still used here, as a fallback identity source (see
+resolve_pool_rows) and directly when the sheet itself hasn't been synced
+yet (app.py falls back to the old /people-driven composition then).
 
 The sheet has no player ID, only Name/Surname/Position/Team, so matching it
-to this project's own player_id (from engine.db `rosters`, which does have
-one) happens here, live, by normalized name + team - not at sync time. A
-Credits/price column exists in the sheet but is intentionally never read;
-draft-credit tracking is out of scope for this project (see CLAUDE.md).
+to this project's own player_id happens here, live, by normalized name +
+team (not at sync time - resolve_pool_rows). A Credits/price column exists
+in the sheet but is intentionally never read; draft-credit tracking is out
+of scope for this project (see CLAUDE.md).
 
-Matching is conservative by design: an unmatched or ambiguous row is
-skipped rather than guessed, consistent with this project's existing
-"flag rather than silently guess" approach (see the NEW/GONE badges in
-engine.rosters). A false "not eligible" would hide a real, draftable
-player - worse than an occasional missed match, which just means a legit
-player briefly doesn't get the extra eligibility check applied to them.
+Matching is conservative by design: an unmatched or ambiguous row falls
+back to a synthetic placeholder ID rather than guessing a real one,
+consistent with this project's existing "flag rather than silently guess"
+approach (see the NEW/GONE badges in engine.rosters) - a wrong match would
+silently merge two different players' histories together.
 """
 
 from __future__ import annotations
@@ -117,48 +120,107 @@ def _normalize_name(s: str) -> str:
     return " ".join(tokens)
 
 
-def eligible_player_ids(pool_rows: list[dict], roster_rows: list[dict]) -> tuple[set[str], dict]:
-    """Matches fantasy_pool rows (name/surname/team, no player_id) against
-    engine.db `rosters` rows (player_id + 'SURNAME, FIRST' player_name +
-    team) by normalized surname + team, falling back to a first-name check
-    only to break a tie among same-surname/same-team teammates. Returns
-    (eligible_player_ids, diagnostics) - diagnostics has counts and the
-    unmatched sheet rows, meant for sync_fantasy_pool.py's printed summary
-    so match quality is visible, not just trusted blindly."""
-    by_team_surname: dict[tuple[str, str], list[tuple[str, str]]] = {}
+def _synthetic_id(team: str, surname_norm: str, first_norm: str) -> str:
+    slug = lambda s: s.lower().replace(" ", "-")
+    return f"sheet:{team.lower()}:{slug(surname_norm)}:{slug(first_norm)}"
+
+
+def resolve_pool_rows(
+    pool_rows: list[dict], roster_rows: list[dict], historical_players: list[dict]
+) -> tuple[list[dict], dict]:
+    """Resolves each Fantasy-sheet row (name/surname/position/team, no
+    player_id) to this project's own player_id, so the sheet's team/
+    position can drive roster composition (engine.rosters.merge_roster)
+    while still reusing a real, existing ID whenever the player is
+    already known - keeping their box-score-based projection linked,
+    rather than starting them over as a zero-value placeholder just
+    because EuroLeague's own /people endpoint hasn't caught up (the
+    problem this was built for - ASVEL/Barcelona had only 4-7 of their
+    real ~15-20 players registered there pre-season; see
+    docs/testing_log.md, 2026-09-15).
+
+    Two-tier lookup, most confident first:
+    1. (team, normalized surname) against `roster_rows` (this season's
+       EuroLeague-sourced roster) - correct current team, when
+       EuroLeague's own data has the player at all.
+    2. Only if that finds nothing: (normalized surname, normalized first
+       name) against EVERY player_id this project has ever synced
+       box-score data for (`historical_players`, any season, any team) -
+       catches a player whose club hasn't re-registered them with
+       EuroLeague yet this season, but who has history from a prior one.
+
+    A row matching neither gets a stable synthetic ID
+    (f"sheet:{team}:{surname}:{first}") instead of a real one - genuinely
+    new to this project's data, same zero-value NEW-badge placeholder
+    treatment as always. Either tier's match is skipped (not guessed) if
+    ambiguous - a wrong match would silently merge two different players'
+    histories, worse than falling back to a placeholder.
+
+    Returns (resolved_rows, diagnostics); each resolved row is
+    {player_id, player_name, position, team}, ready for
+    engine.rosters.merge_roster as-is."""
+    by_team_surname: dict[tuple[str, str], list[tuple[str, str, str]]] = {}
     for r in roster_rows:
         name = r["player_name"]
         if "," not in name:
             continue
         surname_part, _, first_part = name.partition(",")
         key = (r["team"], _normalize_name(surname_part))
-        by_team_surname.setdefault(key, []).append((r["player_id"], _normalize_name(first_part)))
+        by_team_surname.setdefault(key, []).append((r["player_id"], _normalize_name(first_part), name))
 
-    eligible: set[str] = set()
-    unmatched: list[str] = []
-    ambiguous: list[str] = []
+    by_full_name: dict[tuple[str, str], list[tuple[str, str]]] = {}
+    for r in historical_players:
+        name = r["player_name"]
+        if "," not in name:
+            continue
+        surname_part, _, first_part = name.partition(",")
+        key = (_normalize_name(surname_part), _normalize_name(first_part))
+        by_full_name.setdefault(key, []).append((r["player_id"], name))
+
+    resolved: list[dict] = []
+    matched_current = 0
+    matched_historical = 0
+    synthetic: list[str] = []
 
     for row in pool_rows:
-        key = (row["team"], _normalize_name(row["surname"]))
-        candidates = by_team_surname.get(key, [])
+        surname_norm = _normalize_name(row["surname"])
+        first_norm = _normalize_name(row["name"])
         label = f"{row['name']} {row['surname']} ({row['team']})"
 
+        pid = player_name = None
+
+        candidates = by_team_surname.get((row["team"], surname_norm), [])
         if len(candidates) == 1:
-            eligible.add(candidates[0][0])
+            pid, _, player_name = candidates[0]
         elif len(candidates) > 1:
-            first_norm = _normalize_name(row["name"])
-            narrowed = [pid for pid, cand_first in candidates if cand_first == first_norm or cand_first.startswith(first_norm)]
+            narrowed = [c for c in candidates if c[1] == first_norm or c[1].startswith(first_norm)]
             if len(narrowed) == 1:
-                eligible.add(narrowed[0])
-            else:
-                ambiguous.append(label)
+                pid, _, player_name = narrowed[0]
+
+        if pid is not None:
+            matched_current += 1
         else:
-            unmatched.append(label)
+            hist_candidates = by_full_name.get((surname_norm, first_norm), [])
+            if len(hist_candidates) == 1:
+                pid, player_name = hist_candidates[0]
+                matched_historical += 1
+
+        if pid is None:
+            pid = _synthetic_id(row["team"], surname_norm, first_norm)
+            player_name = f"{row['surname'].upper()}, {row['name'].upper()}"
+            synthetic.append(label)
+
+        resolved.append({
+            "player_id": pid,
+            "player_name": player_name,
+            "position": row["position"],
+            "team": row["team"],
+        })
 
     diagnostics = {
         "total": len(pool_rows),
-        "matched": len(eligible),
-        "unmatched": unmatched,
-        "ambiguous": ambiguous,
+        "matched_current_roster": matched_current,
+        "matched_historical": matched_historical,
+        "synthetic": synthetic,
     }
-    return eligible, diagnostics
+    return resolved, diagnostics

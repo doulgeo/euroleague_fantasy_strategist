@@ -398,3 +398,15 @@ def known_player_ids(conn: sqlite3.Connection) -> set[str]:
     every EuroLeague season ever played)."""
     cur = conn.execute("SELECT DISTINCT player_id FROM player_game_stats")
     return {row[0] for row in cur.fetchall()}
+
+
+def all_known_players(conn: sqlite3.Connection) -> list[dict]:
+    """Every distinct player_id + player_name this project has ever synced
+    box-score data for, across all seasons - a fallback identity lookup for
+    engine.fantasy_pool.resolve_pool_rows, for when a player is missing
+    from the CURRENT season's `rosters` table (EuroLeague's own /people
+    endpoint can be significantly behind for some clubs pre-season - see
+    docs/testing_log.md, 2026-09-15) but already has history under a
+    known player_id from a prior season."""
+    cur = conn.execute("SELECT DISTINCT player_id, player_name FROM player_game_stats")
+    return [{"player_id": r[0], "player_name": r[1]} for r in cur.fetchall()]

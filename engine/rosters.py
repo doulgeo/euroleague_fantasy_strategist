@@ -1,7 +1,14 @@
 """
-Merges the current-season club roster (engine.db `rosters` table, synced via
-sync_rosters.py) into a projections pool built from box-score history
-(engine.projections.build_projections).
+Merges a roster-composition source into a projections pool built from
+box-score history (engine.projections.build_projections). As of 2026-09-15,
+`roster_rows` is usually the real EuroLeague Fantasy draft pool
+(engine.fantasy_pool.resolve_pool_rows' output - a user-maintained Google
+Sheet, synced via sync_fantasy_pool.py, resolved to this project's own
+player_ids) rather than EuroLeague's own current-season club roster
+(engine.db `rosters`, synced via sync_rosters.py) - see app.py's get_pool
+for the fallback logic when the sheet hasn't been synced yet. Either way,
+`roster_rows` just needs player_id/player_name/position/team per row -
+this function doesn't care which source it came from.
 
 Three problems this solves that build_projections alone can't:
 - A transferred player still shows their OLD team in a projection (team is

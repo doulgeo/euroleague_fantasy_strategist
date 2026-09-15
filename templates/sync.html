@@ -72,11 +72,13 @@
 
   <h2>Fantasy draft pool</h2>
   <p>The real EuroLeague Fantasy game's actual draftable pool, from a
-  user-maintained Google Sheet (not the EuroLeague API) - used to filter the
-  <a href="{{ url_for('draft') }}">draft board</a> and
-  <a href="{{ url_for('transfers') }}">transfer suggestions</a> down to
-  players who are genuinely part of the real game right now. If this hasn't
-  been synced yet, nothing is filtered.</p>
+  user-maintained Google Sheet (not the EuroLeague API) - this is the
+  primary source of roster composition (who's on which team, at what
+  position) for the <a href="{{ url_for('draft') }}">draft board</a> and
+  <a href="{{ url_for('transfers') }}">transfer suggestions</a>, found to be
+  more complete and current than EuroLeague's own roster data especially
+  pre-season. If this hasn't been synced yet, EuroLeague's own roster data
+  is used instead.</p>
   <p>
     <strong>{{ fantasy_pool_info.count }}</strong> players in the synced pool{% if fantasy_pool_info.synced_at %},
     last synced {{ fantasy_pool_info.synced_at[:19] }} UTC{% else %} (never synced yet){% endif %}.

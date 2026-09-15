@@ -27,12 +27,13 @@ for personal use among friends — never monetized or redistributed.
   data backend, so transfers and new signings are reflected without waiting
   for a player's first box score. Triggerable from the app itself (a
   **Sync** page) as well as from the terminal.
-- **Fantasy draft-pool eligibility** — the real EuroLeague Fantasy game's
-  actual draftable pool, synced from a user-maintained Google Sheet and used
-  to filter the draft board and transfer suggestions down to players who are
-  genuinely part of the real game right now (e.g. Head Coaches, which this
-  league doesn't draft, are excluded). Also triggerable from the **Sync**
-  page.
+- **Real Fantasy draft-pool sync** — the real EuroLeague Fantasy game's
+  actual draftable pool, synced from a user-maintained Google Sheet, is the
+  primary source for the draft board's roster composition (who's on which
+  team, at what position) — found to be more complete and current than
+  EuroLeague's own official roster data, especially pre-season. Falls back
+  to EuroLeague's own roster data if the sheet hasn't been synced yet. Also
+  triggerable from the **Sync** page.
 - **Dev tools** — a one-click "randomize a full draft" button (also on the
   Sync page) for populating a realistic 12-manager league while developing,
   without hand-drafting 156 players. Not for the real draft.

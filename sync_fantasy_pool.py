@@ -19,13 +19,13 @@ from __future__ import annotations
 
 import argparse
 
-from engine.db import get_connection, load_roster, replace_fantasy_pool
-from engine.fantasy_pool import eligible_player_ids, fetch_pool_csv, parse_pool_csv
+from engine.db import all_known_players, get_connection, load_roster, replace_fantasy_pool
+from engine.fantasy_pool import fetch_pool_csv, parse_pool_csv, resolve_pool_rows
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--season", default="E2026", help="Season to check match quality against (rosters table).")
+    parser.add_argument("--season", default="E2026", help="Season to resolve player IDs against (rosters table).")
     args = parser.parse_args()
 
     text = fetch_pool_csv()
@@ -36,24 +36,19 @@ def main() -> None:
     print(f"{n} players synced to fantasy_pool")
 
     roster_rows = load_roster(conn, args.season)
-    if roster_rows:
-        _eligible, diag = eligible_player_ids(rows, roster_rows)
-        print(
-            f"Match check against {args.season} rosters: {diag['matched']}/{len(roster_rows)} "
-            f"current roster players matched to the fantasy pool"
-        )
-        if diag["unmatched"]:
-            print(f"{len(diag['unmatched'])} fantasy-pool rows didn't match any current roster player:")
-            for label in diag["unmatched"][:30]:
-                print(f"  - {label}")
-            if len(diag["unmatched"]) > 30:
-                print(f"  ... and {len(diag['unmatched']) - 30} more")
-        if diag["ambiguous"]:
-            print(f"{len(diag['ambiguous'])} fantasy-pool rows matched more than one same-surname/same-team player, skipped:")
-            for label in diag["ambiguous"]:
-                print(f"  - {label}")
-    else:
-        print(f"No {args.season} roster synced yet (run sync_rosters.py first) - skipping match check.")
+    historical_players = all_known_players(conn)
+    _resolved, diag = resolve_pool_rows(rows, roster_rows, historical_players)
+    print(
+        f"Resolved {diag['total']} fantasy-pool players: "
+        f"{diag['matched_current_roster']} matched this season's synced roster, "
+        f"{diag['matched_historical']} matched an existing player_id from a prior season, "
+        f"{len(diag['synthetic'])} are new to this project's data (placeholder ID, 0.0 projection)"
+    )
+    if diag["synthetic"]:
+        for label in diag["synthetic"][:30]:
+            print(f"  - {label}")
+        if len(diag["synthetic"]) > 30:
+            print(f"  ... and {len(diag['synthetic']) - 30} more")
 
     conn.close()
 

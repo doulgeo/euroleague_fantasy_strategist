@@ -85,30 +85,33 @@
       local data (E2023 onward) - a new signing, a rookie, or a club new to
       the league itself. Their projection is a placeholder of 0.0 rather
       than a guess, since there's genuinely no data yet to base one on.
-      Their team still shown correctly, pulled from the current roster sync
-      rather than box scores.</dd>
+      Their team is still shown correctly, from the current roster
+      source (see below).</dd>
       <dt><span class="gone-badge">GONE</span> badge</dt>
       <dd>The mirror image of NEW - this player has EuroLeague history but
-      isn't on ANY current club's roster this season (their club may have
-      left the competition, or they've been released/gone unsigned). These
-      players never appear on the draft board or as a transfer suggestion -
-      they're only shown, greyed out, on a manager's own roster page if
-      already owned, since their old team is now stale and they can't
-      really be acquired. Treat a GONE player on your roster as a drop/trade
-      candidate.</dd>
+      isn't part of the current roster source at all (their club may have
+      left the competition, they've been released/gone unsigned, or -
+      before round 1 of a new season - they simply haven't been re-
+      registered anywhere yet). These players never appear on the draft
+      board or as a transfer suggestion - they're only shown, greyed out,
+      on a manager's own roster page if already owned, since their old team
+      is now stale and they can't really be acquired. Treat a GONE player on
+      your roster as a drop/trade candidate.</dd>
       <dt>Filter and sort</dt>
       <dd>Filter by position and/or team, and sort by any column (value,
       VORP, games sampled, name, or team), ascending or descending.</dd>
-      <dt>Fantasy pool eligibility</dt>
-      <dd>Separately from NEW/GONE, a player currently on a club roster but
-      NOT matched to the real EuroLeague Fantasy game's actual draft pool
-      (synced from a Google Sheet, see "Keeping the data fresh" below) is
-      also left off the draft board and transfer suggestions - same
-      treatment as GONE, just a different reason. Matching is by name and
-      team and deliberately conservative: an unmatched or ambiguous name is
-      never assumed ineligible, so a real, draftable player is never
-      wrongly hidden by a matching miss. If the pool hasn't been synced yet,
-      nothing is filtered by this at all.</dd>
+      <dt>Roster composition source</dt>
+      <dd>Who's on which team, at what position, comes primarily from a
+      user-maintained Google Sheet tracking the real EuroLeague Fantasy
+      game's actual draft pool (synced via <code>sync_fantasy_pool.py</code>,
+      see "Keeping the data fresh" below) - found to be more complete and
+      up to date than EuroLeague's own official roster data, especially
+      pre-season. A sheet player who already has EuroLeague box-score
+      history (this season or a prior one) keeps that link automatically,
+      even if their new club hasn't officially re-registered them with
+      EuroLeague yet; a genuinely new player gets the NEW-badge placeholder
+      above. If the sheet hasn't been synced yet, EuroLeague's own roster
+      data is used instead.</dd>
     </dl>
 
     <h2>Draft, ownership, and transactions</h2>
@@ -149,8 +152,16 @@
       <dt><code>sync_db.py</code></dt>
       <dd>Pulls newly played box scores (run after each gameweek).</dd>
       <dt><code>sync_rosters.py</code></dt>
-      <dd>Refreshes current club rosters (run before a draft, or whenever
-      transfer news breaks - not tied to gameweeks).</dd>
+      <dd>Refreshes current club rosters from EuroLeague's own data (run
+      before a draft, or whenever transfer news breaks - not tied to
+      gameweeks). Still kept fresh even though the Fantasy pool sheet is
+      now the primary composition source - used as a fallback identity
+      lookup and for when the sheet hasn't been synced.</dd>
+      <dt><code>sync_fantasy_pool.py</code></dt>
+      <dd>Refreshes the real EuroLeague Fantasy draft pool from the
+      Google Sheet (run whenever the sheet changes - it's meant to be kept
+      current). This is the primary source of who's on which roster; see
+      "Roster composition source" above.</dd>
     </dl>
     <p>If the draft board looks stale (wrong teams, missing new signings, or
     projections not reflecting recent games), that's the fix.</p>

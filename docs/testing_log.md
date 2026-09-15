@@ -1355,3 +1355,80 @@ matching logic. Flagging for the user: worth spot-checking a few of the
 25 remaining "ineligible" names (e.g. `Lorenzo Brown` / `MIL`, a
 recognizable rotation player) against the real sheet/game directly, in
 case the sheet itself has gaps rather than this project's matching.
+
+---
+
+## 2026-09-15 — Fantasy sheet promoted to primary roster-composition source
+
+**What**: after the eligibility-filter feature above shipped, the user
+reported ASV (ASVEL Villeurbanne) down to a single draftable player.
+Investigated by pulling the raw EuroLeague `/people` API directly and
+counting real player-type entries (`type: "J"`, not staff) per club:
+ASV had only 4, Barcelona only 7 - everyone else had 13-24. Confirmed via
+`client._get_json(...)` against the live endpoint, not a guess. This
+predates today's eligibility filter entirely (`rosters` table already had
+only 4 ASV rows before any of today's work) - EuroLeague's own backend
+simply hasn't finished registering some clubs' full squads pre-season
+(round 1 is 2026-09-25). The eligibility filter just made an existing gap
+much more visible (4 mediocre options -> 1), rather than causing it.
+
+Presented the finding and two options (wait for EuroLeague's data to catch
+up vs. build a stopgap); the user asked for a bigger change than either
+option offered - use the sheet as the PRIMARY roster-composition source
+outright (not just a filter on top of EuroLeague's roster data), since real
+players like Patty Mills and Jae Crowder are already in the sheet with
+zero box-score history yet (they're new to EuroLeague this season), so
+matching them to a real player_id isn't even possible via EuroLeague's own
+roster - explicitly: "use the sheet to recreate the rosters, it is the
+most reliable source... for the initial population the sheet should be the
+one to trust", keeping the EuroLeague endpoint for box scores.
+
+Replaced the additive `ineligible_player_ids` filter (this session's
+earlier design) with a source swap:
+- `engine.fantasy_pool.resolve_pool_rows()` (replaces
+  `eligible_player_ids()`) resolves each sheet row to a REAL existing
+  player_id via two tiers - first the current season's synced EuroLeague
+  roster (correct current team when EuroLeague has it), then, only if
+  that finds nothing, ANY player_id this project has ever synced box-score
+  data for regardless of season/prior team (`engine.db.all_known_players`,
+  new) - catches a player whose club hasn't re-registered them with
+  EuroLeague yet but who has real history (e.g. Joel Bolomboy, ASV,
+  resolved to his existing E-seasons player_id this way). A row matching
+  neither gets a stable synthetic ID
+  (`sheet:{team}:{surname}:{first}`) - genuinely new to this project's
+  data (e.g. Patty Mills - confirmed via direct query: zero rows anywhere
+  in `player_game_stats` under his name), same zero-value NEW-badge
+  placeholder treatment as always.
+- `app.py`'s `get_pool()` reverted to a 3-tuple (dropped
+  `ineligible_player_ids` entirely - redundant now, since sheet
+  membership IS pool membership by construction) and now passes
+  `resolve_pool_rows`' output to the EXISTING `engine.rosters.merge_roster`
+  unchanged (it only ever needed player_id/player_name/position/team per
+  row, so no new merge function was needed) when the Fantasy pool has been
+  synced, falling back to the old EuroLeague-`rosters`-driven call
+  otherwise (fails open, never blocks on missing data).
+
+**How**: iterated against the real local DB throughout, not just at the
+end. Confirmed via direct query that Mills/Crowder/Waters/Pons (ASV) have
+zero box-score history anywhere (correctly need placeholder IDs) while
+Bolomboy/Dossou-Yovo/Sestina/Cale/Massa/Lighty/Jackson (ASV) DO have
+existing player_ids from prior seasons (correctly should reuse them, not
+get a new placeholder). Ran `sync_fantasy_pool.py` for real: 245/326
+matched the current synced roster, 44 more matched via the historical
+fallback, 37 genuinely new (placeholder). Verified ASV and Barcelona both
+resolve to their full real 15-player rosters now (were 4 and 7). Live-
+tested end-to-end via the running app: `/draft?team=ASV` now shows Mills,
+Crowder, Bolomboy, Waters (previously invisible or absent); temporarily
+dropped a player from a full (13/13) manager, drafted the synthetic-ID
+`sheet:asv:mills:patty` via a real `POST /draft/pick`, confirmed it
+persisted (`manager_id=14` in `ownership`) and rendered correctly
+(`MILLS, PATTY`) on that manager's roster page, then undid the test drop/
+draft to restore the exact prior DB state. All 8 routes re-verified `200`
+after the change (one incidental restart needed - the dev server process
+from earlier in the session had been killed when its owning terminal
+closed, unrelated to this change; restarted cleanly with no errors).
+
+**Result**: working and live-tested. ASV and Barcelona now show their real
+rosters; the underlying EuroLeague `/people` incompleteness for those two
+clubs remains (unfixable from this project's side) but no longer matters
+for roster composition, only as a secondary identity-resolution input.
