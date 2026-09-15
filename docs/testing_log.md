@@ -1230,3 +1230,35 @@ script/`data-tip` markup is present in the served HTML.
 **Gap carried over from the prior entry**: still no headless browser in
 this sandbox to visually confirm the tooltip actually renders/positions
 correctly - asked the user to check in their own browser.
+
+---
+
+## 2026-09-15 — Roster-cap validation on draft/free-agent-add
+
+**What**: user reported drafting a player onto an already-full (13-player)
+roster in the `/draft` tab silently succeeded when it should error and
+leave the DB unchanged. Root cause: `engine.ownership.record_draft_pick`
+and `record_free_agent_add` only enforced player-level uniqueness (the
+`ownership` table's `player_id` primary key stops the same player being
+owned twice) - neither checked the manager's total roster count against
+`engine.roster.TOTAL_ROSTER_SIZE` (13). Fixed with a
+`_check_roster_not_full` guard called before any write in both functions;
+raises `ValueError` (already caught and flashed as an error by both
+`app.py` routes - `draft_pick` and `transactions_add` - so no route
+changes were needed).
+
+**How**: live-tested against the running app/DB rather than just unit
+logic. Found the bug was already live in the data: manager 13 had 14
+players (one over cap) from before this fix existed - left as-is, flagged
+to the user rather than silently corrected (it's their roster to fix via
+Transactions). Confirmed the fix rejects a `POST /draft/pick` and a
+`POST /transactions/add` against that already-over-cap manager with the
+correct flash message, and that the DB was unaffected (`ownership` count
+stayed at 14, the free agent stayed unowned) in both cases. Regression-
+checked normal drafting still works: temporarily dropped a player from a
+13/13 manager, drafted a different free agent into the freed slot
+(succeeded), then undid both steps (dropped the test pick, re-drafted the
+original player back) to restore the exact prior DB state.
+
+**Result**: fix confirmed working; one pre-existing over-cap roster
+(manager 13, 14/13) found but left for the user to resolve.
