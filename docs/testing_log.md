@@ -1161,3 +1161,47 @@ lineups" flow end-to-end in the running app.
 afterward (not cleaned up) - unlike earlier single-player test drafts this
 session, populating a realistic full league is this tool's actual purpose,
 and the user asked for it to stay available "while we are developing."
+
+---
+
+## 2026-09-15 — UI restyle ("Courtside" theme)
+
+**What**: reskinned the Flask app's look, per the user's explicit ask to
+make it "more professional and sporty" - brainstormed direction with the
+user first (`AskUserQuestion`: color palette, scope, logo approach) before
+touching anything. Landed on a "courtside hardwood" palette (warm
+off-white/parquet background, charcoal-brown header, basketball-orange
+accent), an Oswald (headings/nav/buttons) + Inter (body/tables) Google
+Fonts pairing, and a small original inline-SVG basketball-icon logo + "
+EuroLeague Fantasy / Strategist" wordmark in a new dark header bar with
+active-page highlighting. Deliberately scoped as a design-tokens pass
+(CSS variables + `base.html` header restructure) rather than a per-page
+layout rework, per the user's choice - no template beyond `base.html` was
+touched; existing classes (`new-badge`, `gone-player`, `tier-break`,
+`filters`, `stacked-form`, etc.) were re-skinned in place via
+`static/style.css` rather than renamed, so no other template needed
+edits. Not affiliated with/doesn't reuse the real EuroLeague logo -
+original mark, consistent with this project's existing non-affiliation
+stance (see README).
+
+**How**: confirmed the full class/element surface first (`grep -oh
+'class="[^"]*"' templates/*.html`) so the new stylesheet covers everything
+actually used, including plain unstyled elements (`button`, `select`,
+`input`) used in `draft.html`'s filter/draft-pick forms. Applied against
+the already-running local dev server (`debug=True`, auto-reload) rather
+than restarting it. Verified all 8 routes (`/`, `/draft`, `/managers`,
+`/transactions`, `/transfers`, `/lineup`, `/sync`, `/how-it-works`) still
+return `200` after the change, and that the new header markup
+(`site-header`, `brand-name`) and font link (`Oswald`) actually appear in
+the rendered HTML.
+
+**Gap**: this sandboxed environment has no headless browser (no
+`chromium-cli`, no Playwright, no `node`/`npx`) to actually screenshot the
+result - visual correctness (spacing, contrast, whether the palette reads
+as intended) was not confirmed by looking at rendered pixels, only by
+HTTP status + markup presence. Flagged to the user directly rather than
+claimed as visually verified; asked them to eyeball it at
+`http://127.0.0.1:5000` in their own browser.
+
+**Result**: all automated checks passed; visual review pending the user's
+own look.

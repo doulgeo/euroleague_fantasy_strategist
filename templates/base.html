@@ -3,19 +3,37 @@
 <head>
   <meta charset="utf-8">
   <title>{% block title %}EuroLeague Fantasy{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-  <nav>
-    <a href="{{ url_for('index') }}">Home</a>
-    <a href="{{ url_for('draft') }}">Draft</a>
-    <a href="{{ url_for('managers_index') }}">Managers</a>
-    <a href="{{ url_for('transactions') }}">Transactions</a>
-    <a href="{{ url_for('transfers') }}">Transfers</a>
-    <a href="{{ url_for('lineup') }}">Lineup</a>
-    <a href="{{ url_for('sync_page') }}">Sync</a>
-    <a href="{{ url_for('how_it_works') }}">How this works</a>
-  </nav>
+  <header class="site-header">
+    <div class="site-header-inner">
+      <a class="brand" href="{{ url_for('index') }}">
+        <svg class="brand-mark" width="30" height="30" viewBox="0 0 32 32" aria-hidden="true">
+          <circle cx="16" cy="16" r="15" fill="#d9731a" stroke="#221a12" stroke-width="1.5"/>
+          <path d="M16 1 V31 M1 16 H31 M4.5 6.5 C10 12 10 20 4.5 25.5 M27.5 6.5 C22 12 22 20 27.5 25.5"
+                fill="none" stroke="#221a12" stroke-width="1.5"/>
+        </svg>
+        <span class="brand-text">
+          <span class="brand-name">EuroLeague Fantasy</span>
+          <span class="brand-tag">Strategist</span>
+        </span>
+      </a>
+      <nav class="site-nav">
+        <a href="{{ url_for('index') }}" class="{{ 'active' if request.endpoint == 'index' }}">Home</a>
+        <a href="{{ url_for('draft') }}" class="{{ 'active' if request.endpoint == 'draft' }}">Draft</a>
+        <a href="{{ url_for('managers_index') }}" class="{{ 'active' if request.endpoint in ('managers_index', 'manager_roster') }}">Managers</a>
+        <a href="{{ url_for('transactions') }}" class="{{ 'active' if request.endpoint == 'transactions' }}">Transactions</a>
+        <a href="{{ url_for('transfers') }}" class="{{ 'active' if request.endpoint == 'transfers' }}">Transfers</a>
+        <a href="{{ url_for('lineup') }}" class="{{ 'active' if request.endpoint == 'lineup' }}">Lineup</a>
+        <a href="{{ url_for('sync_page') }}" class="{{ 'active' if request.endpoint == 'sync_page' }}">Sync</a>
+        <a href="{{ url_for('how_it_works') }}" class="{{ 'active' if request.endpoint == 'how_it_works' }}">How this works</a>
+      </nav>
+    </div>
+  </header>
 
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}
