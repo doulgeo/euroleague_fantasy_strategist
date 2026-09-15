@@ -1205,3 +1205,28 @@ claimed as visually verified; asked them to eyeball it at
 
 **Result**: all automated checks passed; visual review pending the user's
 own look.
+
+---
+
+## 2026-09-15 — Tooltip fix (native title tooltip wasn't showing)
+
+**What**: user reported hovering for column/badge explanations "doesn't
+work" after the restyle above. Root cause: the dotted-underline hover hint
+color on table headers (`--ink-soft`, a mid-brown meant for a light
+background) was nearly invisible against the new dark charcoal header
+background, and separately the native browser `title` tooltip has a long,
+inconsistent show delay - together these made hovering feel broken even
+though the underlying `title` attributes were still correctly rendered
+(verified via `curl` - unaffected by the CSS change). Fixed by having
+`base.html` swap every `title` attribute to `data-tip` on page load
+(so the native tooltip never fires) and rendering a themed, instant
+tooltip via CSS `content: attr(data-tip)` on hover/focus - no template
+content changes needed, since it reads the same text that was already in
+each `title=`.
+
+**How**: verified via `curl` that `/draft` still returns `200` and the new
+script/`data-tip` markup is present in the served HTML.
+
+**Gap carried over from the prior entry**: still no headless browser in
+this sandbox to visually confirm the tooltip actually renders/positions
+correctly - asked the user to check in their own browser.
