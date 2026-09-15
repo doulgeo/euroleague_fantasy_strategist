@@ -27,6 +27,8 @@ import sqlite3
 import uuid
 from datetime import datetime, timezone
 
+from engine.roster import TOTAL_ROSTER_SIZE
+
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -50,6 +52,15 @@ def current_owner(conn: sqlite3.Connection, player_id: str) -> int | None:
 def manager_roster_ids(conn: sqlite3.Connection, manager_id: int) -> set[str]:
     cur = conn.execute("SELECT player_id FROM ownership WHERE manager_id = ?", (manager_id,))
     return {r[0] for r in cur.fetchall()}
+
+
+def _check_roster_not_full(conn: sqlite3.Connection, manager_id: int) -> None:
+    size = len(manager_roster_ids(conn, manager_id))
+    if size >= TOTAL_ROSTER_SIZE:
+        raise ValueError(
+            f"Manager {manager_id} already has a full roster "
+            f"({size}/{TOTAL_ROSTER_SIZE}) - drop or trade a player first"
+        )
 
 
 def all_owned_ids(conn: sqlite3.Connection) -> set[str]:
@@ -114,6 +125,7 @@ def record_draft_pick(
     round_: int | None = None,
     notes: str | None = None,
 ) -> None:
+    _check_roster_not_full(conn, manager_id)
     try:
         with conn:
             conn.execute(
@@ -137,6 +149,7 @@ def record_free_agent_add(
     round_: int | None = None,
     notes: str | None = None,
 ) -> None:
+    _check_roster_not_full(conn, manager_id)
     try:
         with conn:
             conn.execute(
