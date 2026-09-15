@@ -27,6 +27,12 @@ for personal use among friends — never monetized or redistributed.
   data backend, so transfers and new signings are reflected without waiting
   for a player's first box score. Triggerable from the app itself (a
   **Sync** page) as well as from the terminal.
+- **Fantasy draft-pool eligibility** — the real EuroLeague Fantasy game's
+  actual draftable pool, synced from a user-maintained Google Sheet and used
+  to filter the draft board and transfer suggestions down to players who are
+  genuinely part of the real game right now (e.g. Head Coaches, which this
+  league doesn't draft, are excluded). Also triggerable from the **Sync**
+  page.
 - **Dev tools** — a one-click "randomize a full draft" button (also on the
   Sync page) for populating a realistic 12-manager league while developing,
   without hand-drafting 156 players. Not for the real draft.
@@ -56,6 +62,7 @@ since that's a longer-running fetch):
 ```bash
 .venv/bin/python3 sync_db.py --seasons E2023 E2024 E2025 E2026
 .venv/bin/python3 sync_rosters.py --season E2026
+.venv/bin/python3 sync_fantasy_pool.py --season E2026
 ```
 
 A standalone pre-draft cheat sheet (no server needed) is also available:
@@ -70,8 +77,9 @@ A standalone pre-draft cheat sheet (no server needed) is also available:
 engine/         Data fetching, projections, roster/lineup/transfer logic
 app.py          Flask web app (draft board, rosters, transactions, transfers, lineup)
 draft_board.py  Standalone CLI draft cheat sheet
-sync_db.py      Refreshes box-score history (run after each gameweek)
-sync_rosters.py Refreshes current club rosters (run before a draft / after transfer news)
+sync_db.py           Refreshes box-score history (run after each gameweek)
+sync_rosters.py      Refreshes current club rosters (run before a draft / after transfer news)
+sync_fantasy_pool.py Refreshes the real Fantasy draft pool from a Google Sheet (run whenever the sheet changes)
 seed_league.py  One-time setup of the 12 managers
 docs/           Fuller technical notes, game rules, and a validation log
 ```

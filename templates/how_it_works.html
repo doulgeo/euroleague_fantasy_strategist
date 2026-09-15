@@ -99,6 +99,16 @@
       <dt>Filter and sort</dt>
       <dd>Filter by position and/or team, and sort by any column (value,
       VORP, games sampled, name, or team), ascending or descending.</dd>
+      <dt>Fantasy pool eligibility</dt>
+      <dd>Separately from NEW/GONE, a player currently on a club roster but
+      NOT matched to the real EuroLeague Fantasy game's actual draft pool
+      (synced from a Google Sheet, see "Keeping the data fresh" below) is
+      also left off the draft board and transfer suggestions - same
+      treatment as GONE, just a different reason. Matching is by name and
+      team and deliberately conservative: an unmatched or ambiguous name is
+      never assumed ineligible, so a real, draftable player is never
+      wrongly hidden by a matching miss. If the pool hasn't been synced yet,
+      nothing is filtered by this at all.</dd>
     </dl>
 
     <h2>Draft, ownership, and transactions</h2>

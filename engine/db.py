@@ -130,6 +130,30 @@ _ROSTER_COLUMNS = (
     "season_code", "player_id", "player_name", "position", "team", "team_name", "dorsal", "active", "synced_at",
 )
 
+# --- Real EuroLeague Fantasy draft pool (engine.fantasy_pool / sync_fantasy_pool.py) ---
+#
+# A user-maintained Google Sheet (not the EuroLeague API) tracking the real
+# game's actual draftable pool - who's currently eligible to draft, per the
+# real Fantasy platform, independent of what this project derives on its own
+# from box scores + club rosters. Same "replace per sync" pattern as
+# `rosters`: no stable ID in the source, so a row here can't be upserted
+# against a prior one - a full snapshot replace keeps it honest each run.
+# Matching these rows to this project's own player_id (there's no shared ID)
+# happens live in engine.fantasy_pool, not at sync time - this table just
+# holds the raw synced rows.
+
+_CREATE_FANTASY_POOL_SQL = """
+CREATE TABLE IF NOT EXISTS fantasy_pool (
+    name TEXT NOT NULL,
+    surname TEXT NOT NULL,
+    position TEXT NOT NULL,
+    team TEXT NOT NULL,
+    synced_at TEXT NOT NULL
+)
+"""
+
+_FANTASY_POOL_COLUMNS = ("name", "surname", "position", "team", "synced_at")
+
 # --- Season schedule (engine.data.normalize_schedule / sync_db.py) ---
 #
 # Every game in a season, played or not - `player_game_stats` only ever has
@@ -177,6 +201,7 @@ def get_connection(db_path: Path | str = DB_PATH) -> sqlite3.Connection:
     conn.execute(_CREATE_TRANSACTIONS_GROUP_INDEX_SQL)
     conn.execute(_CREATE_ROSTERS_SQL)
     conn.execute(_CREATE_ROSTERS_TEAM_INDEX_SQL)
+    conn.execute(_CREATE_FANTASY_POOL_SQL)
     conn.execute(_CREATE_SCHEDULE_SQL)
     conn.execute(_CREATE_SCHEDULE_ROUND_INDEX_SQL)
     conn.commit()
@@ -284,6 +309,34 @@ def latest_game_date(conn: sqlite3.Connection, season_code: str) -> str | None:
 
 def roster_synced_at(conn: sqlite3.Connection, season_code: str) -> str | None:
     row = conn.execute("SELECT MAX(synced_at) FROM rosters WHERE season_code = ?", (season_code,)).fetchone()
+    return row[0] if row else None
+
+
+def replace_fantasy_pool(conn: sqlite3.Connection, rows: list[dict]) -> int:
+    """Full snapshot refresh, like replace_roster - the sheet has no stable
+    row ID to upsert against, and a player dropped from the real Fantasy
+    pool should stop appearing rather than linger as a stale row."""
+    synced_at = datetime.now(timezone.utc).isoformat()
+    conn.execute("DELETE FROM fantasy_pool")
+    if rows:
+        prepared = [{**r, "synced_at": synced_at} for r in rows]
+        placeholders = ", ".join(f":{c}" for c in _FANTASY_POOL_COLUMNS)
+        conn.executemany(
+            f"INSERT INTO fantasy_pool ({', '.join(_FANTASY_POOL_COLUMNS)}) VALUES ({placeholders})",
+            prepared,
+        )
+    conn.commit()
+    return len(rows)
+
+
+def load_fantasy_pool(conn: sqlite3.Connection) -> list[dict]:
+    cur = conn.execute("SELECT * FROM fantasy_pool")
+    cols = [d[0] for d in cur.description]
+    return [dict(zip(cols, record)) for record in cur.fetchall()]
+
+
+def fantasy_pool_synced_at(conn: sqlite3.Connection) -> str | None:
+    row = conn.execute("SELECT MAX(synced_at) FROM fantasy_pool").fetchone()
     return row[0] if row else None
 
 

@@ -29,9 +29,11 @@ from draft_board import build_draft_board, replacement_values, tier_breaks
 from engine import ownership
 from engine.db import (
     DB_PATH,
+    fantasy_pool_synced_at,
     get_connection,
     known_player_ids,
     latest_game_date,
+    load_fantasy_pool,
     load_roster,
     load_rows,
     load_schedule,
@@ -39,6 +41,7 @@ from engine.db import (
     roster_synced_at,
     row_count,
 )
+from engine.fantasy_pool import eligible_player_ids
 from engine.lineup import (
     availability_label,
     build_lineup,
@@ -80,6 +83,7 @@ _sync_lock = threading.Lock()
 _sync_state: dict[str, dict] = {
     "db": {"running": False, "log_path": None, "started_at": None, "finished_at": None, "returncode": None, "seasons": []},
     "rosters": {"running": False, "log_path": None, "started_at": None, "finished_at": None, "returncode": None, "seasons": []},
+    "fantasy_pool": {"running": False, "log_path": None, "started_at": None, "finished_at": None, "returncode": None, "seasons": []},
 }
 
 
@@ -139,16 +143,23 @@ def _resolve_pool_source(conn: sqlite3.Connection) -> tuple[str, int]:
     return CURRENT_SEASON, max_round + 1
 
 
-def get_pool(conn: sqlite3.Connection) -> tuple[dict[str, Projection], set[str], set[str]]:
-    """(projections, new_player_ids, gone_player_ids) - the projection pool
-    merged with the current CURRENT_SEASON roster (engine.rosters.merge_roster),
-    so a transferred player shows their real current team, a player with no
-    box-score history yet (new to the league) still appears flagged rather
-    than being silently absent, and a player no longer on ANY current club
-    roster (their club left the competition, or they're unsigned) is
-    flagged rather than looking like a normal draftable/tradeable player.
-    Run sync_rosters.py to refresh the roster data this reads from
-    `rosters` (empty until then - see CLAUDE.md)."""
+def get_pool(conn: sqlite3.Connection) -> tuple[dict[str, Projection], set[str], set[str], set[str]]:
+    """(projections, new_player_ids, gone_player_ids, ineligible_player_ids)
+    - the projection pool merged with the current CURRENT_SEASON roster
+    (engine.rosters.merge_roster), so a transferred player shows their real
+    current team, a player with no box-score history yet (new to the
+    league) still appears flagged rather than being silently absent, and a
+    player no longer on ANY current club roster (their club left the
+    competition, or they're unsigned) is flagged rather than looking like a
+    normal draftable/tradeable player. Run sync_rosters.py to refresh the
+    roster data this reads from `rosters` (empty until then - see
+    CLAUDE.md).
+
+    ineligible_player_ids = current-roster players NOT matched to the real
+    EuroLeague Fantasy draft pool (engine.fantasy_pool, synced via
+    sync_fantasy_pool.py into `fantasy_pool`) - empty if that hasn't been
+    synced yet, so an unsynced/unmatched pool never blocks drafting (fails
+    open, not closed)."""
     season_code, as_of_round = _resolve_pool_source(conn)
     key = (season_code, as_of_round)
     mtime_ns = DB_PATH.stat().st_mtime_ns
@@ -164,8 +175,17 @@ def get_pool(conn: sqlite3.Connection) -> tuple[dict[str, Projection], set[str],
     seen = known_player_ids(conn)
     projections, new_ids, gone_ids = merge_roster(projections, roster_rows, seen)
 
-    _projection_cache[key] = (mtime_ns, (projections, new_ids, gone_ids))
-    return projections, new_ids, gone_ids
+    fantasy_pool_rows = load_fantasy_pool(conn)
+    if fantasy_pool_rows:
+        eligible_ids, _diag = eligible_player_ids(fantasy_pool_rows, roster_rows)
+        roster_ids = {r["player_id"] for r in roster_rows}
+        ineligible_ids = roster_ids - eligible_ids
+    else:
+        ineligible_ids = set()
+
+    result = (projections, new_ids, gone_ids, ineligible_ids)
+    _projection_cache[key] = (mtime_ns, result)
+    return result
 
 
 @app.route("/")
@@ -209,6 +229,10 @@ def sync_page():
         "count": len(load_roster(conn, CURRENT_SEASON)),
         "synced_at": roster_synced_at(conn, CURRENT_SEASON),
     }
+    fantasy_pool_info = {
+        "count": len(load_fantasy_pool(conn)),
+        "synced_at": fantasy_pool_synced_at(conn),
+    }
     manager_count = len(ownership.list_managers(conn))
     owned_count = len(ownership.all_owned_ids(conn))
 
@@ -224,6 +248,7 @@ def sync_page():
         "sync.html",
         season_info=season_info,
         roster_info=roster_info,
+        fantasy_pool_info=fantasy_pool_info,
         state=state,
         logs=logs,
         running_any=running_any,
@@ -242,8 +267,8 @@ def dev_randomize_draft():
         flash("No managers seeded yet - run seed_league.py first.", "error")
         return redirect(url_for("sync_page"))
 
-    pool, _new_ids, gone_ids = get_pool(conn)
-    draftable_pool = {pid: p for pid, p in pool.items() if pid not in gone_ids}
+    pool, _new_ids, gone_ids, ineligible_ids = get_pool(conn)
+    draftable_pool = {pid: p for pid, p in pool.items() if pid not in gone_ids and pid not in ineligible_ids}
     manager_ids = [m["manager_id"] for m in managers]
 
     try:
@@ -279,11 +304,21 @@ def sync_rosters_trigger():
     return redirect(url_for("sync_page"))
 
 
+@app.route("/sync/fantasy-pool", methods=["POST"])
+def sync_fantasy_pool_trigger():
+    cmd = [sys.executable, "sync_fantasy_pool.py", "--season", CURRENT_SEASON]
+    if _start_sync("fantasy_pool", cmd, [CURRENT_SEASON]):
+        flash("Started syncing the Fantasy draft pool in the background.", "success")
+    else:
+        flash("A Fantasy pool sync is already running - wait for it to finish.", "error")
+    return redirect(url_for("sync_page"))
+
+
 @app.route("/draft")
 def draft():
     conn = get_db()
-    pool, new_ids, gone_ids = get_pool(conn)
-    draftable_pool = {pid: p for pid, p in pool.items() if pid not in gone_ids}
+    pool, new_ids, gone_ids, ineligible_ids = get_pool(conn)
+    draftable_pool = {pid: p for pid, p in pool.items() if pid not in gone_ids and pid not in ineligible_ids}
     board = build_draft_board(draftable_pool)
     replacement = replacement_values(board)
     managers = ownership.list_managers(conn)
@@ -394,7 +429,7 @@ def manager_roster(manager_id: int):
     if manager is None:
         abort(404)
 
-    pool, new_ids, gone_ids = get_pool(conn)
+    pool, new_ids, gone_ids, _ineligible_ids = get_pool(conn)
     player_ids = ownership.manager_roster_ids(conn, manager_id)
 
     by_position: dict[str, list[Projection]] = {position: [] for position in REQUIRED_COUNTS}
@@ -424,7 +459,7 @@ def transactions():
     conn = get_db()
     managers = ownership.list_managers(conn)
     manager_names = {m["manager_id"]: m["name"] for m in managers}
-    pool, _new_ids, _gone_ids = get_pool(conn)
+    pool, _new_ids, _gone_ids, _ineligible_ids = get_pool(conn)
     history = ownership.transaction_history(conn, limit=200)
     for t in history:
         p = pool.get(t["player_id"])
@@ -502,7 +537,7 @@ def transfers():
 
     if manager_id_raw:
         selected_manager_id = int(manager_id_raw)
-        pool, _new_ids, gone_ids = get_pool(conn)
+        pool, _new_ids, gone_ids, ineligible_ids = get_pool(conn)
         player_ids = ownership.manager_roster_ids(conn, selected_manager_id)
         players = [pool[pid] for pid in player_ids if pid in pool]
         unresolved = len(player_ids) - len(players)
@@ -514,11 +549,11 @@ def transfers():
 
         if roster is not None:
             owned_ids = ownership.all_owned_ids(conn)
-            # A player no longer on any current club roster can still be a
-            # DROP candidate (roster.players, built above, keeps them) but
-            # should never be suggested as an ADD - they're not really
-            # acquirable.
-            addable_pool = {pid: p for pid, p in pool.items() if pid not in gone_ids}
+            # A player no longer on any current club roster, or not part of
+            # the real Fantasy draft pool, can still be a DROP candidate
+            # (roster.players, built above, keeps them) but should never be
+            # suggested as an ADD - they're not really acquirable.
+            addable_pool = {pid: p for pid, p in pool.items() if pid not in gone_ids and pid not in ineligible_ids}
             suggestions = suggest_transfers(roster, addable_pool, owned_ids=owned_ids)
 
     return render_template(
@@ -553,7 +588,7 @@ def lineup():
     team_dates: dict[str, str] = {}
 
     if selected_manager_id and selected_round:
-        pool, _new_ids, _gone_ids = get_pool(conn)
+        pool, _new_ids, _gone_ids, _ineligible_ids = get_pool(conn)
         player_ids = ownership.manager_roster_ids(conn, selected_manager_id)
         players = [pool[pid] for pid in player_ids if pid in pool]
         unresolved = len(player_ids) - len(players)

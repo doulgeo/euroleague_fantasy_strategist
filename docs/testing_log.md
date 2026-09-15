@@ -1262,3 +1262,96 @@ original player back) to restore the exact prior DB state.
 
 **Result**: fix confirmed working; one pre-existing over-cap roster
 (manager 13, 14/13) found but left for the user to resolve.
+
+---
+
+## 2026-09-15 — Real Fantasy draft-pool eligibility filter
+
+**What**: the user shared a user-maintained Google Sheet
+(`docs.google.com/spreadsheets/d/1bAs-.../edit?gid=0`) listing the real
+EuroLeague Fantasy game's actual current draftable pool (Name/Surname/
+Position/Team, plus a Credits column the user explicitly said to ignore -
+draft-credit tracking is confirmed out of scope, see CLAUDE.md), noting it
+"should be updated constantly." Brainstormed intent with the user first
+(`AskUserQuestion`: what to use it for, one-off vs. ongoing sync) rather
+than guessing given the real architectural fork - landed on: an ongoing
+sync (mirroring `sync_rosters.py`) feeding an eligibility filter on the
+draft board and transfer suggestions, so a player on a EuroLeague club
+roster but NOT part of the real Fantasy game's pool (e.g. Head Coaches,
+which the sheet includes as a draftable category but this league's rules
+don't - see `docs/game_rules.md`) stops showing as draftable/addable, same
+treatment `gone_player_ids` already gets.
+
+Confirmed the sheet is publicly fetchable as CSV with no auth
+(`/export?format=csv&gid=0`) before building anything. Added:
+- `fantasy_pool` table (`engine/db.py`) - raw synced sheet rows, full
+  delete-and-reinsert per sync like `rosters`/`schedule` (no stable ID in
+  the source to upsert against).
+- `engine/fantasy_pool.py` - fetch/parse, a 20-entry team-code map (the
+  sheet and this project's own `rosters` table use different 3-letter
+  codes for the same 20 clubs - e.g. sheet's `RMB`/`EFS`/`VBC` = this
+  project's `MAD`/`IST`/`PAM` for Real Madrid/Efes/Valencia - confirmed by
+  cross-checking every one of the 20 codes against real rosters, not
+  guessed), and `eligible_player_ids()` - matches sheet rows to this
+  project's player_id by normalized surname + team (no player_id in the
+  sheet at all). Deliberately conservative: an unmatched/ambiguous name is
+  skipped rather than guessed, since a false "ineligible" would wrongly
+  hide a real draftable player - worse than an occasional missed match.
+- `sync_fantasy_pool.py` - mirrors `sync_rosters.py`'s structure; also
+  prints a match-quality summary (X/Y current roster players matched,
+  unmatched names listed) so match quality is visible, not blindly
+  trusted.
+- `app.py`: `get_pool()` is now a 4-tuple (added `ineligible_player_ids`,
+  empty if the pool hasn't been synced yet - fails open, never blocks
+  drafting on missing data); wired into the same `pid not in gone_ids`
+  filter already used for `draftable_pool` (draft board, dev randomize-
+  draft) and `addable_pool` (transfer suggestions). New `/sync/fantasy-
+  pool` trigger route + a "Fantasy draft pool" section on `/sync`
+  (mirrors the existing box-score/roster sync sections exactly - button,
+  status, log tail).
+
+**How**: ran the real sync against the real sheet and the real local DB
+repeatedly while developing, not just once at the end - this caught two
+real problems before they shipped:
+1. Our own `rosters` table turned out to be quite incomplete for some
+   clubs (ASV: 4 players, BAR: 5 - real players like Mike James and Jonas
+   Valanciunas are simply absent). Re-ran `sync_rosters.py` to check if it
+   was just stale - came back with the identical 269 rows, so this is an
+   upstream `/people` completeness gap, not staleness on this project's
+   side. Not something this session fixed (out of scope) - flagged here
+   and to the user. Doesn't cause any false eligibility exclusions though,
+   since `ineligible_ids` only ever draws from players already in
+   `roster_rows` - a player missing from `rosters` entirely is simply
+   unaffected by this feature, not wrongly excluded by it.
+2. A genuine false-hide bug: initial matching got 238/269 (88%), and
+   auditing the 31 "ineligible" names by hand found 6 were real, current,
+   legitimately-draftable players hidden only because of name-formatting
+   disagreement between the two sources (DB's 'BACOT JR., ARMANDO' /
+   'WRIGHT IV, MCKINLEY' / 'HORTON TUCKER, TALEN' vs. the sheet's 'Armando
+   Bacot Jr' / 'Mckinley Wright' / 'Talen Horton-Tucker' - suffix and
+   hyphen-vs-space handling). Fixed by normalizing hyphens to spaces and
+   stripping trailing Jr/Sr/II/III/IV/V tokens on both sides before
+   comparing; re-ran - 244/269 (91%), 0 ambiguous, and confirmed via
+   `curl` against the live app that all 6 previously-false-hidden players
+   (plus their exact DB name spellings) now appear on `/draft` again.
+   Audited the remaining 25 "ineligible" names by hand too: no further
+   false-hide pattern found - they read as genuine fringe/deep-bench
+   players not in the curated sheet (one likely exception, not chased
+   further: 'Maozinha Pereira' looks like a first/last name-order swap
+   between the two sources for one Brazilian player - left unmatched
+   rather than guessed, per the conservative-by-design approach).
+   Live-tested end-to-end via the running app throughout: `/sync/fantasy-
+   pool` triggered via real `POST`, confirmed the background subprocess,
+   log tail, and match-quality summary all render correctly on `/sync`;
+   confirmed a known-ineligible player (`KARUTASU, DARIUS`) is absent from
+   the live `/draft` HTML while a known-eligible free agent
+   (`SIMA, YANKUBA`) still appears normally; all 8 routes re-verified `200`
+   after every change.
+
+**Result**: working and live-tested; 91% match rate against currently-
+synced rosters, with the residual gap traced to this project's own roster
+sync completeness (a pre-existing, separate issue) rather than the new
+matching logic. Flagging for the user: worth spot-checking a few of the
+25 remaining "ineligible" names (e.g. `Lorenzo Brown` / `MIL`, a
+recognizable rotation player) against the real sheet/game directly, in
+case the sheet itself has gaps rather than this project's matching.

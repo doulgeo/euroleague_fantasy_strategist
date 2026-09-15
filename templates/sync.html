@@ -70,6 +70,29 @@
     <details><summary>Roster sync log</summary><pre>{{ logs.rosters }}</pre></details>
   {% endif %}
 
+  <h2>Fantasy draft pool</h2>
+  <p>The real EuroLeague Fantasy game's actual draftable pool, from a
+  user-maintained Google Sheet (not the EuroLeague API) - used to filter the
+  <a href="{{ url_for('draft') }}">draft board</a> and
+  <a href="{{ url_for('transfers') }}">transfer suggestions</a> down to
+  players who are genuinely part of the real game right now. If this hasn't
+  been synced yet, nothing is filtered.</p>
+  <p>
+    <strong>{{ fantasy_pool_info.count }}</strong> players in the synced pool{% if fantasy_pool_info.synced_at %},
+    last synced {{ fantasy_pool_info.synced_at[:19] }} UTC{% else %} (never synced yet){% endif %}.
+  </p>
+  <form method="post" action="{{ url_for('sync_fantasy_pool_trigger') }}" class="stacked-form">
+    <button type="submit" {% if state.fantasy_pool.running %}disabled{% endif %}>
+      {% if state.fantasy_pool.running %}Syncing...{% else %}Sync Fantasy draft pool{% endif %}
+    </button>
+  </form>
+  {% if state.fantasy_pool.finished_at and not state.fantasy_pool.running %}
+    <p><em>Last run finished {{ state.fantasy_pool.finished_at[:19] }} UTC (exit code {{ state.fantasy_pool.returncode }}).</em></p>
+  {% endif %}
+  {% if logs.fantasy_pool %}
+    <details><summary>Fantasy pool sync log (includes match-quality counts)</summary><pre>{{ logs.fantasy_pool }}</pre></details>
+  {% endif %}
+
   <h2>Developer tools</h2>
   <p class="note">Dev/testing only - <strong>not for the real draft</strong>.
     This wipes ALL current ownership (every manager's roster, back to free
