@@ -62,6 +62,12 @@
     </div>
 
     <h2 title="Score 0, cannot be used this round no matter what.">Excluded (3 of 13)</h2>
+    <p>Chosen by trying all 286 possible 3-player exclusions and keeping
+      whichever leaves the best final total (day-1 lineup + simulated day-2
+      swap) - not just cutting the 3 lowest-projected players, since a
+      benched player keeps swap-in option value an excluded player never
+      gets. See <a href="{{ url_for('how_it_works') }}">how this works</a>
+      for the full method.</p>
     <table>
       <thead>
         <tr>
@@ -80,6 +86,15 @@
     </table>
 
     <h2 title="Lock this in before the round starts.">Day 1: starting lineup</h2>
+    <p>The "golden rule": each full-scoring slot (5 starters + 6th man)
+      prefers a player whose team plays on this round's earliest date over
+      one who only plays later - projected value only breaks ties within
+      the same availability, never overrides it. That keeps the slot
+      flexible for day 2, instead of wasting it on someone who hasn't played
+      yet. Formation defaults to whichever of 2-2-1 / 2-1-2 / 3-1-1 leads to
+      the best simulated final total (force one with the dropdown above);
+      captain is the highest-projected starter. Full method on
+      <a href="{{ url_for('how_it_works') }}">how this works</a>.</p>
     {{ pitch_macros.pitch(initial) }}
     <table>
       <thead>

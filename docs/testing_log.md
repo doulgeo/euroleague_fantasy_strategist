@@ -1860,3 +1860,34 @@ behavior). No Jinja tracebacks in the response. CSS brace-balance checked
 worth a quick look next time the app is opened normally, since a headless
 sandbox check can't catch a purely visual misalignment (e.g. avatar
 overlap, text overflow on a long name) the way a real screenshot would.
+
+## 2026-09-16 — Explained the lineup heuristic (inline on `/lineup` + "How this works")
+
+**Prompted by**: the user asked whether the lineup-suggestion method could
+be explained, either inline on the recommendation itself or in the "How
+this works" tab.
+
+**Why both, not just one**: `/lineup`'s "Day 2: swap plan" section already
+had a full explanatory paragraph inline (the DEMOTED/PROMOTED writeup); the
+"Excluded" and "Day 1" sections had only a one-line tooltip, no equivalent
+prose - an inconsistency, not a deliberate choice. Fixed that gap to match
+the existing pattern, and separately expanded "How this works" → "Lineup
+builder" from a short paragraph into a full step-by-step (exclusion search,
+the day-1-first golden rule, formation auto-search vs. manual override,
+captain/6th-man selection, the day-2 flexible-pool re-solve, actual-vs-
+projected value at the swap decision, the total-score box, and the pitch
+view added earlier this session) for anyone who wants the full mechanism
+rather than the on-page summary.
+
+**Changes**: re-read `engine/lineup.py` in full first to write this from
+the actual algorithm rather than from memory of past sessions (the module's
+own docstrings turned out to be the most precise/accurate source - quoted
+close to verbatim in places). `templates/lineup.html` gained two new `<p>`
+blocks (before the Excluded table and before the Day-1 table, each linking
+to `/how-it-works`); `templates/how_it_works.html`'s "Lineup builder"
+section rewritten as a `<dl>` with one entry per decision step plus a
+"Pitch view" entry.
+
+**Validation**: `curl` on both `/lineup?manager_id=13&round=1` and
+`/how-it-works` → 200, no Jinja tracebacks; grepped for new content
+("golden rule", "286 possible") landing on both pages as expected.

@@ -131,18 +131,72 @@
     raw projected value at the same position.</p>
 
     <h2>Lineup builder</h2>
-    <p>For a chosen manager and round, picks which 3 of the 13 roster players
-    to exclude, builds the day-1 starting lineup, and separately shows the
-    swap plan to apply once day 1's games are finished - see "The league's
-    rules, in brief" above for the three-tier scoring model and the
-    day-1/day-2 golden rule this follows exactly. Exclusion is chosen by
-    trying every possible 3-player exclusion (286 combinations - cheap) and
-    keeping whichever leaves the best lineup, since a benched player keeps
-    swap-in option value an excluded player doesn't. Needs the season
-    schedule to be synced for the round in question - the regular box-score
-    sync (see below) now also refreshes it. Like Transfer suggestions, this
-    is a live, recomputed-on-every-visit recommendation, not a saved record
-    of what a manager actually did.</p>
+    <p>For a chosen manager and round, this makes three decisions in
+    sequence, each one feeding the next - see "The league's rules, in brief"
+    above for the three-tier scoring model and the day-1/day-2 golden rule
+    all three follow. Needs the season schedule to be synced for the round in
+    question - the regular box-score sync (see below) now also refreshes it.
+    Like Transfer suggestions, this is a live, recomputed-on-every-visit
+    recommendation, not a saved record of what a manager actually did.</p>
+    <dl>
+      <dt>1. Which 3 of 13 to exclude</dt>
+      <dd>Every one of the 286 possible 3-player exclusion combinations is
+      tried, not just "cut the 3 lowest-projected players": for each one,
+      the tool builds the full day-1 lineup <em>and</em> simulates the day-2
+      swap for the remaining 10, then keeps whichever exclusion leads to the
+      highest final total. This matters because a benched player keeps
+      swap-in option value an excluded player never gets back - a player
+      projected slightly lower than another might still be worth benching
+      rather than excluding, if their game falls on day 2 and gives them
+      swap-in upside the other player doesn't have.</dd>
+      <dt>2. The day-1 lock (starters, 6th man, captain, formation)</dt>
+      <dd>The "golden rule": each of the 6 full-scoring slots (5 starters +
+      6th man) is filled by <strong>preferring a player whose team plays on
+      the round's earliest date over one who only plays later</strong> -
+      projected value only breaks ties within the same availability, it
+      never overrides it. The reasoning: a full slot given to a day-1 player
+      stays flexible (day 2, you can judge them on real results and keep-or-
+      demote), while a full slot wasted on a day-2 player before they've
+      even played has thrown away that same-round information advantage for
+      nothing. <strong>Formation</strong> (2-2-1 / 2-1-2 / 3-1-1) defaults to
+      "Auto": all three are tried, each one carried all the way through a
+      simulated day-2 swap, and whichever leads to the highest simulated
+      final total is locked in - not just whichever fields the most day-1
+      players on paper. Force one manually with the dropdown to see what a
+      specific shape would do instead. <strong>Captain</strong> is simply
+      the highest-projected of the 5 chosen starters.</dd>
+      <dt>3. The day-2 swap plan</dt>
+      <dd>Once day 1's games are over (or still pre-round, using
+      projections for everyone), every day-1 full-slot player becomes
+      "flexible": keep them at full rate, or demote them to the bench -
+      which <strong>halves the points they already earned</strong>, it
+      doesn't protect them. Every player who hasn't played yet is flexible
+      too, regardless of where they started. The one player who is <em>not</em>
+      flexible is a day-1 bench player who's already played - the real rules
+      never let you swap in someone who's already played, so they're locked
+      there for good. From that flexible pool, the tool re-solves for the
+      best possible formation + starters + 6th man + captain by projected
+      (or, once synced, actual) value alone - no day-1-first tiebreak this
+      time, since this is the last decision point and there's no future swap
+      left to protect optionality for. If day 1's actual results are
+      already synced by the time you view the page, those real scores are
+      used instead of the pre-round projection for anyone who's already
+      played, since a swap decision made on a since-proven-wrong projection
+      is a real risk (see game_rules.md), not just a missed upside.</dd>
+      <dt>Total Projected Score box</dt>
+      <dd>No-swap total, recommended (post-swap) total, and the gain between
+      them - computed with that same "actual PIR if already played, else
+      projection" value used for the swap decision itself, so the numbers
+      shown always match the reasoning behind the recommendation.</dd>
+      <dt>Pitch view</dt>
+      <dd>The court graphic above each table is a visual of the exact same
+      day-1/day-2 lineup objects - starters grouped by position (Center
+      nearest the hoop, then Forward, then Guard), captain marked, and a
+      bench column with the 6th man tagged and a checkmark for everyone in
+      the active 10. No real player photos exist in EuroLeague's data (their
+      API returns an empty image for every player), so each player is shown
+      as a monogram instead.</dd>
+    </dl>
 
     <h2>Keeping the data fresh</h2>
     <p>This app only ever reads the local database - it never calls the live
