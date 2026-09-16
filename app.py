@@ -45,9 +45,11 @@ from engine.db import (
 )
 from engine.fantasy_pool import resolve_pool_rows
 from engine.lineup import (
+    VALID_FORMATIONS,
     availability_label,
     build_lineup,
     choose_active_squad,
+    compute_round_score,
     swap_after_day1,
     team_dates_from_schedule,
 )
@@ -672,6 +674,14 @@ def lineup():
     round_raw = request.args.get("round")
     selected_round = int(round_raw) if round_raw else default_round
 
+    formation_raw = request.args.get("formation")
+    try:
+        selected_formation = tuple(int(n) for n in formation_raw.split("-")) if formation_raw else None
+    except ValueError:
+        selected_formation = None
+    if selected_formation not in VALID_FORMATIONS:
+        selected_formation = None  # "Auto" or a garbled/unrecognized value - fall back to auto-search
+
     roster = None
     roster_error = None
     schedule_error = None
@@ -681,6 +691,8 @@ def lineup():
     team_dates: dict[str, str] = {}
     used_day1_actuals = False
     initial_full_ids: set[str] = set()
+    no_swap_total = None
+    recommended_total = None
 
     if selected_manager_id and selected_round:
         pool, _new_ids, _gone_ids = get_pool(conn)
@@ -706,8 +718,8 @@ def lineup():
             else:
                 projected_value = lambda pid: pool[pid].projected_pir_with_bonus  # noqa: E731
                 try:
-                    active_squad = choose_active_squad(roster, team_dates, projected_value)
-                    initial = build_lineup(active_squad, team_dates, projected_value)
+                    active_squad = choose_active_squad(roster, team_dates, projected_value, formation=selected_formation)
+                    initial = build_lineup(active_squad, team_dates, projected_value, formation=selected_formation)
 
                     # The real swap decision is made AFTER day 1's games are
                     # actually over, using their real results - not their
@@ -733,9 +745,18 @@ def lineup():
                         lambda pid: day1_actual[pid] if pid in day1_actual else projected_value(pid)
                     )  # noqa: E731
 
-                    recommended = swap_after_day1(initial, team_dates, decision_value)
+                    recommended = swap_after_day1(initial, team_dates, decision_value, formation=selected_formation)
                     excluded = active_squad.excluded
                     initial_full_ids = {p.player_id for p in initial.starters} | {initial.sixth_man.player_id}
+
+                    # Total projected score box: what the round is worth
+                    # under each lineup, using actual PIR for anyone who's
+                    # already played (day1_actual) and projections for
+                    # everyone else - the same "best information available
+                    # right now" values used for the swap decision above.
+                    score_value = {p.player_id: decision_value(p.player_id) for p in active_squad.active}
+                    no_swap_total = compute_round_score(initial, score_value)
+                    recommended_total = compute_round_score(recommended, score_value)
                 except RuntimeError as e:
                     schedule_error = f"Could not build a lineup for this round: {e}"
 
@@ -756,6 +777,10 @@ def lineup():
         current_season=CURRENT_SEASON,
         used_day1_actuals=used_day1_actuals,
         initial_full_ids=initial_full_ids,
+        valid_formations=VALID_FORMATIONS,
+        selected_formation=selected_formation,
+        no_swap_total=no_swap_total,
+        recommended_total=recommended_total,
     )
 
 

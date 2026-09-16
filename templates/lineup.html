@@ -25,6 +25,15 @@
         {% endfor %}
       </select>
     </label>
+    <label title="Auto tries all three valid formations and picks whichever one leads to the highest total projected PIR after the swap. Pick one manually to force it instead.">Formation:
+      <select name="formation" onchange="this.form.submit()">
+        <option value="" {% if not selected_formation %}selected{% endif %}>Auto (maximize PIR)</option>
+        {% for f in valid_formations %}
+          {% set f_str = f|join("-") %}
+          <option value="{{ f_str }}" {% if selected_formation == f %}selected{% endif %}>{{ f_str }} (G-F-C)</option>
+        {% endfor %}
+      </select>
+    </label>
   </form>
 
   {% if roster_error %}
@@ -35,6 +44,21 @@
     <p>Round {{ selected_round }} game dates:
       {% for d in team_dates.values() | unique | sort %}{{ d }}{{ ", " if not loop.last }}{% endfor %}
     </p>
+
+    <div class="stat-box" title="Projected total round score (captain 2x, starters/6th-man full, bench half), using actual PIR for anyone whose game has already been synced and projections for everyone else.">
+      <div class="stat-box-item">
+        <span class="stat-box-label">No-swap total</span>
+        <span class="stat-box-value">{{ "%.1f"|format(no_swap_total) }}</span>
+      </div>
+      <div class="stat-box-item">
+        <span class="stat-box-label">Recommended total</span>
+        <span class="stat-box-value">{{ "%.1f"|format(recommended_total) }}</span>
+      </div>
+      <div class="stat-box-item">
+        <span class="stat-box-label">Swap gain</span>
+        <span class="stat-box-value {{ 'stat-box-positive' if recommended_total > no_swap_total else 'stat-box-negative' if recommended_total < no_swap_total else '' }}">{{ "%+.1f"|format(recommended_total - no_swap_total) }}</span>
+      </div>
+    </div>
 
     <h2 title="Score 0, cannot be used this round no matter what.">Excluded (3 of 13)</h2>
     <table>

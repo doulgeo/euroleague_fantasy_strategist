@@ -212,52 +212,98 @@ def _build_formation_starters_by_value(
     return starters
 
 
-def build_lineup(active_squad: ActiveSquad, team_dates: dict[str, str], value_fn: ValueFn) -> Lineup:
-    """Choose the best of the three valid formations, fill it preferring
-    day-1-eligible players first (the golden rule), then by value_fn
-    descending. Sixth man = best remaining player under that same
-    day-1-first-then-value rule (any position) - it's a full-scoring slot
-    just like a starter slot, so it needs to follow the golden rule too:
-    otherwise a later-playing player can grab it outright (capturing only
-    their one game) while a day-1 player of real value gets stuck on the
-    half-scoring bench with no way to ever be upgraded, instead of banking
-    their day-1 game in this slot and then being swap_after_day1-upgraded
-    to the later player anyway. Captain = highest value_fn among the five
-    starters.
+def _lock_formation(
+    active_squad: ActiveSquad,
+    formation: tuple[int, int, int],
+    team_dates: dict[str, str],
+    value_fn: ValueFn,
+) -> Lineup | None:
+    """Build the day-1 lock (starters/sixth-man/bench/captain) for one
+    specific formation - the shared inner step both build_lineup's
+    formation search and a manually-forced formation use.
     """
+    starters = _build_formation_starters(active_squad, formation, team_dates, value_fn)
+    if starters is None:
+        return None
+
     min_date = _min_date(team_dates)
-    best_starters: list[Projection] | None = None
-    best_key: tuple[int, float] | None = None
-
-    for formation in VALID_FORMATIONS:
-        starters = _build_formation_starters(active_squad, formation, team_dates, value_fn)
-        if starters is None:
-            continue
-
-        day1_count = sum(1 for p in starters if _availability_rank(p, team_dates, min_date) == 0)
-        total_value = sum(value_fn(p.player_id) for p in starters)
-        key = (day1_count, total_value)
-
-        if best_key is None or key > best_key:
-            best_key = key
-            best_starters = starters
-
-    if best_starters is None:
-        raise RuntimeError("No valid formation (2-2-1 / 2-1-2 / 3-1-1) could be filled from this active squad")
-
-    starter_ids = {p.player_id for p in best_starters}
+    starter_ids = {p.player_id for p in starters}
     remaining = [p for p in active_squad.active if p.player_id not in starter_ids]
     sixth_man = min(
         remaining,
         key=lambda p: (_availability_rank(p, team_dates, min_date), -value_fn(p.player_id)),
     )
     bench = [p for p in remaining if p.player_id != sixth_man.player_id]
-    captain = max(best_starters, key=lambda p: value_fn(p.player_id))
+    captain = max(starters, key=lambda p: value_fn(p.player_id))
 
-    return Lineup(starters=best_starters, sixth_man=sixth_man, bench=bench, captain=captain)
+    return Lineup(starters=starters, sixth_man=sixth_man, bench=bench, captain=captain)
 
 
-def swap_after_day1(lineup: Lineup, team_dates: dict[str, str], value_fn: ValueFn) -> Lineup:
+def build_lineup(
+    active_squad: ActiveSquad,
+    team_dates: dict[str, str],
+    value_fn: ValueFn,
+    formation: tuple[int, int, int] | None = None,
+) -> Lineup:
+    """The day-1 lock: fill a formation preferring day-1-eligible players
+    first (the golden rule), then by value_fn descending. Sixth man = best
+    remaining player under that same day-1-first-then-value rule (any
+    position) - it's a full-scoring slot just like a starter slot, so it
+    needs to follow the golden rule too: otherwise a later-playing player
+    can grab it outright (capturing only their one game) while a day-1
+    player of real value gets stuck on the half-scoring bench with no way
+    to ever be upgraded. Captain = highest value_fn among the five starters.
+
+    Pass an explicit `formation` (one of VALID_FORMATIONS) to force that
+    shape - e.g. the user manually picked one on the /lineup page. By
+    default (formation=None), all three valid formations are tried and
+    scored by what they actually lead to: each candidate's day-1 lock is
+    carried all the way through a simulated swap_after_day1 (using
+    value_fn for both, since only projections exist at decision time
+    either way), and whichever formation produces the highest final total
+    wins - not just whichever has the most day-1 starters (an earlier,
+    weaker proxy). This matters because the choice of formation determines
+    which specific day-1 players get "protected" with a full slot (and so
+    stay flexible - keepable-or-demotable - once their games are over): a
+    formation with more Guard slots protects more day-1 Guards at the cost
+    of fewer Forward/Center slots, and only a downstream simulation can say
+    which trade-off actually pays off, since the swap step is itself
+    formation-agnostic once day-1 is locked in (see swap_after_day1).
+    """
+    if formation is not None:
+        initial = _lock_formation(active_squad, formation, team_dates, value_fn)
+        if initial is None:
+            raise RuntimeError(f"Formation {formation} isn't feasible with this active squad")
+        return initial
+
+    projected_as_actual = {p.player_id: value_fn(p.player_id) for p in active_squad.active}
+    best_initial: Lineup | None = None
+    best_score: float | None = None
+
+    for f in VALID_FORMATIONS:
+        initial = _lock_formation(active_squad, f, team_dates, value_fn)
+        if initial is None:
+            continue
+
+        final = swap_after_day1(initial, team_dates, value_fn)
+        score = compute_round_score(final, projected_as_actual)
+
+        if best_score is None or score > best_score:
+            best_score = score
+            best_initial = initial
+
+    if best_initial is None:
+        raise RuntimeError("No valid formation (2-2-1 / 2-1-2 / 3-1-1) could be filled from this active squad")
+
+    return best_initial
+
+
+def swap_after_day1(
+    lineup: Lineup,
+    team_dates: dict[str, str],
+    value_fn: ValueFn,
+    formation: tuple[int, int, int] | None = None,
+) -> Lineup:
     """The day-2 decision: given the day-1 lock, re-solve for the best final
     lineup now that both formation and full-slot occupants can change.
 
@@ -278,6 +324,11 @@ def swap_after_day1(lineup: Lineup, team_dates: dict[str, str], value_fn: ValueF
     when nothing beats them, and replaces them when something does - which
     correctly prices in that demoting them costs half of what they'd have
     kept by staying (see the module docstring's 2026-09-16 correction).
+
+    Pass an explicit `formation` to restrict the final re-solve to that one
+    shape instead of freely reconsidering all three - e.g. the user
+    manually locked a formation on the /lineup page and wants the day-2
+    plan to keep using it rather than switch shape.
     """
     min_date = _min_date(team_dates)
 
@@ -287,11 +338,12 @@ def swap_after_day1(lineup: Lineup, team_dates: dict[str, str], value_fn: ValueF
     flexible = [p for p in _all_players(lineup) if p.player_id not in day1_bench_locked_ids]
     day1_bench_locked = [p for p in lineup.bench if p.player_id in day1_bench_locked_ids]
 
+    candidate_formations = [formation] if formation is not None else VALID_FORMATIONS
     best_starters: list[Projection] | None = None
     best_total: float | None = None
 
-    for formation in VALID_FORMATIONS:
-        starters = _build_formation_starters_by_value(flexible, formation, value_fn)
+    for f in candidate_formations:
+        starters = _build_formation_starters_by_value(flexible, f, value_fn)
         if starters is None:
             continue
 
@@ -315,7 +367,12 @@ def swap_after_day1(lineup: Lineup, team_dates: dict[str, str], value_fn: ValueF
     return Lineup(starters=best_starters, sixth_man=sixth_man, bench=bench, captain=captain)
 
 
-def choose_active_squad(roster: Roster, team_dates: dict[str, str], value_fn: ValueFn) -> ActiveSquad:
+def choose_active_squad(
+    roster: Roster,
+    team_dates: dict[str, str],
+    value_fn: ValueFn,
+    formation: tuple[int, int, int] | None = None,
+) -> ActiveSquad:
     """Pick which 3 of the 13 roster players to exclude this round - the one
     real per-round decision that build_lineup/swap_after_day1 previously
     assumed was already made for them (engine.roster.sample_active_squad is
@@ -331,6 +388,10 @@ def choose_active_squad(roster: Roster, team_dates: dict[str, str], value_fn: Va
     for "actual" results, since the exclusion is locked in before the round
     starts and no results exist yet - means this picks the exclusion that
     sets up the best real decision, not just the best-looking static XI.
+
+    `formation`, if given, is forwarded to build_lineup/swap_after_day1 to
+    force that shape throughout instead of letting each auto-search for the
+    best one.
     """
     best_squad: ActiveSquad | None = None
     best_score: float | None = None
@@ -344,8 +405,11 @@ def choose_active_squad(roster: Roster, team_dates: dict[str, str], value_fn: Va
         except ValueError:
             continue  # can't field any valid formation with this exclusion
 
-        initial = build_lineup(candidate, team_dates, value_fn)
-        final = swap_after_day1(initial, team_dates, value_fn)
+        try:
+            initial = build_lineup(candidate, team_dates, value_fn, formation=formation)
+        except RuntimeError:
+            continue  # this exclusion can't field the forced formation, if one was given
+        final = swap_after_day1(initial, team_dates, value_fn, formation=formation)
         projected_as_actual = {p.player_id: value_fn(p.player_id) for p in active}
         score = compute_round_score(final, projected_as_actual)
 

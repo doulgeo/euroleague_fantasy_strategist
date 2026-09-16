@@ -58,10 +58,11 @@ Full context for a fresh session, in order of what to read:
   recommendation, rather than a greedy cut, so it accounts for a benched
   player's day-2 swap option value. **Current validated headline (regular
   season only, 91 rounds across E2023-E2025, 2730 trials, real exclusion
-  logic, corrected substitution rule): beats or ties a no-swap baseline in
-  84% of trials (74% outright beat, 16% lose), +11.11 PIR mean gain per
-  round (95% CI ±0.54), captures ~28% of the theoretical best-possible swap
-  upside.** This is a much lower-looking number than the prior headline,
+  logic, corrected substitution rule, formation-optimizing build_lineup):
+  beats or ties a no-swap baseline in 82% of trials (74% outright beat, 18%
+  lose), +10.62 PIR mean gain per round (95% CI ±0.53), captures ~23% of
+  the theoretical best-possible swap upside.** This is a much lower-looking
+  number than the pre-2026-09-16 headline,
   and that's expected, not a regression — see the **2026-09-16 substitution
   rule correction** below, which fundamentally changed what "swapping" even
   means. Two corrections landed the same day, in order:
@@ -92,7 +93,27 @@ Full context for a fresh session, in order of what to read:
      logic did, produced a 31%-loss-rate, actually-worse-than-no-swap
      result once the halving cost was correctly modeled, because a
      wrongly-projected day-1 player could get wrongly demoted at real cost.
-  Before either 2026-09-16 fix, the prior headline (random exclusion: 96%
+  3. **Formation-optimizing `build_lineup`** (same day, user-requested):
+     the day-1 lock's formation choice previously used a "most day-1
+     starters" proxy heuristic; now it simulates all three valid formations
+     all the way through the eventual `swap_after_day1` outcome and picks
+     whichever actually maximizes total projected PIR - directly optimizing
+     rather than approximating. `build_lineup`/`swap_after_day1`/
+     `choose_active_squad` also gained an optional `formation` param to
+     force one shape throughout instead of auto-searching, wired into the
+     `/lineup` page as a manual formation dropdown (default: Auto). This
+     landed within noise of the #2 headline (+10.62 vs +11.11, well inside
+     each other's ~±0.5 CI) - expected, since `swap_after_day1` already
+     re-solves formation freely at the final step regardless of which one
+     day-1 started with, so the initial choice only matters for *which*
+     day-1 players get protected with a full slot, a smaller effect. Kept
+     anyway since it's the more rigorous, directly-PIR-optimizing approach
+     the user asked for, not just a heuristic proxy, and it's provably no
+     worse. The `/lineup` page also gained a **Total Projected Score** box
+     (no-swap total / recommended total / swap gain), using actual PIR for
+     anyone whose game is already synced and projections otherwise - same
+     values the swap decision itself uses.
+  Before any of the three 2026-09-16 fixes, the prior headline (random exclusion: 96%
   beat-or-tie, +9.83 PIR, ~50% captured) — real exclusion logic alone
   turned out to be a bigger lever than the swap logic itself: it raised the
   no-swap *baseline* by +26.5 PIR and the best-possible ceiling by +40.0
@@ -102,7 +123,7 @@ Full context for a fresh session, in order of what to read:
   (below) was rerun under real exclusion logic (2026-09-13) and the "no
   demonstrable win" conclusion held against that stronger baseline too —
   see "ML-vs-heuristic comparison rerun" in the testing log; **note this
-  predates both 2026-09-16 fixes and hasn't been rerun against them** —
+  predates all three 2026-09-16 fixes and hasn't been rerun against them** —
   revisit if a precise ML-vs-heuristic number is needed again. Playoff
   rounds
   are excluded by default from this evaluation — this POC's random

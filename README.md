@@ -27,7 +27,9 @@ for personal use among friends — never monetized or redistributed.
   unowned free-agent pool.
 - **Lineup builder** — for a chosen manager and round (including a round
   that hasn't been played yet), picks which 3 of 13 to exclude, the day-1
-  starting lineup and captain, and the day-2 swap plan.
+  starting lineup and captain, and the day-2 swap plan - auto-optimizing
+  the starting formation (or force one manually) to maximize total
+  projected score, shown in a totals box alongside the recommendation.
 - **Roster sync** — current club rosters pulled directly from EuroLeague's
   data backend, so transfers and new signings are reflected without waiting
   for a player's first box score. Triggerable from the app itself (a

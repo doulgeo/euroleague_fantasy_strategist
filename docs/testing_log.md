@@ -1727,3 +1727,72 @@ same seed as prior headlines)**:
   both DEMOTED and PROMOTED badges rendering and the correct
   projections-only-fallback note showing (since E2026 has no synced
   results yet).
+
+---
+
+## 2026-09-16 — Formation-optimizing build_lineup, manual formation override, total projected score box
+
+**What**: three related asks after the substitution-rule correction
+(previous entry): (1) let the user manually select a formation instead of
+always auto-picking one, (2) make the day-1 lock's formation choice itself
+directly optimize for total projected PIR (not just a "most day-1 starters"
+proxy) - explicitly requested even if it means a different formation than
+day-1 gets used after the swap, and (3) add a visible total-projected-score
+summary to `/lineup`.
+
+**Changes** (`engine/lineup.py`):
+- `build_lineup` refactored: the shared day-1-lock-for-one-formation logic
+  moved into a new `_lock_formation` helper. By default (no `formation`
+  arg), `build_lineup` now tries all three valid formations, carries each
+  one's day-1 lock all the way through a simulated `swap_after_day1` (using
+  the same `value_fn`, since only projections exist at decision time
+  either way), and picks whichever formation's *final* simulated total is
+  highest - not just whichever formation has the most day-1 starters (the
+  prior proxy). Pass an explicit `formation` to force one shape instead of
+  searching.
+- `swap_after_day1` gained the same optional `formation` param, to keep the
+  day-2 plan pinned to a manually-forced shape instead of freely
+  reconsidering all three.
+- `choose_active_squad` gained the same param and forwards it to both
+  `build_lineup` and `swap_after_day1`; catches the `RuntimeError` a forced
+  formation can raise for a given exclusion candidate (some exclusions
+  simply can't field a specific formation) and skips that candidate rather
+  than crashing the whole exclusion search.
+
+**Changes** (`app.py` / `templates/lineup.html` / `static/style.css`):
+- `/lineup` gained a `?formation=G-F-C` query param (e.g. `2-2-1`), parsed
+  into a tuple and forwarded through `choose_active_squad`/`build_lineup`/
+  `swap_after_day1`; invalid/garbled values safely fall back to Auto rather
+  than erroring. A dropdown on the filter form (Auto (maximize PIR), plus
+  each of the 3 valid formations) drives it.
+- A **Total Projected Score** box (no-swap total / recommended total /
+  swap gain, gain colored green/red) now renders above the tables, using
+  `compute_round_score` with the same "actual PIR if the game's already
+  synced, else projection" values the swap decision itself uses - so the
+  box and the recommendation are always self-consistent.
+
+**Validation**:
+- Re-ran the full validated backtest (91 rounds/2730 trials, same seed as
+  every prior headline in this log): **+10.62 PIR mean gain (95% CI
+  ±0.53), 82% beat-or-tie (74% beat/8% tied/18% lost)** - statistically
+  indistinguishable from the pre-this-session +11.11 PIR/84% beat-or-tie
+  headline (both CIs overlap heavily). This is expected, not a null
+  result: `swap_after_day1` already re-solves formation freely at the
+  final step regardless of which formation day-1 started with, so
+  optimizing the *initial* formation choice only affects which specific
+  day-1 players get "protected" with a full slot (a smaller, harder-to-see
+  effect) rather than the final formation shape itself. Kept the change
+  anyway since it directly does what was asked - genuinely optimize for
+  PIR, not approximate it - and runtime stayed reasonable (~1m48s for the
+  full 2730-trial run, up from a faster but not-dramatically-so baseline,
+  despite `build_lineup` now doing ~3x the internal work per call).
+  **This supersedes the prior headline** (+11.11 PIR, 84% beat-or-tie) in
+  `CLAUDE.md` and above in this log.
+- `app.py` test client: `/lineup?manager_id=13&round=1` exercised with no
+  formation param (Auto), each of the 3 valid formations explicitly, and
+  two invalid values (`garbage`, `9-9-9`) - all returned 200; Auto's
+  chosen totals matched the best of the three explicit formations exactly
+  (180.4/181.1 for 2-2-1, which Auto also picked); invalid values correctly
+  fell back to Auto instead of crashing. All other routes spot-checked
+  (`/`, `/draft`, `/managers`, `/transfers`, `/sync`, `/how-it-works`) -
+  still 200 after the import/signature changes.
