@@ -58,30 +58,52 @@ Full context for a fresh session, in order of what to read:
   recommendation, rather than a greedy cut, so it accounts for a benched
   player's day-2 swap option value. **Current validated headline (regular
   season only, 91 rounds across E2023-E2025, 2730 trials, real exclusion
-  logic): beats or ties a no-swap baseline in 99% of trials (92% outright
-  beat), +29.67 PIR mean gain per round (95% CI ±0.74), captures ~72% of
-  the theoretical best-possible swap upside.** This supersedes the prior
-  headline (+24.06 PIR, 90% outright beat) — a 2026-09-16 fix made the
-  sixth-man slot follow the same day-1-first "golden rule" the 5 starters
-  already did (previously it picked by raw projected value alone, letting
-  a later-playing player grab that slot outright and forfeit its day-1
-  scoring opportunity entirely, while a real day-1 candidate sat wasted on
-  the bench) — see `docs/testing_log.md` → "Fixed sixth-man selection not
-  honoring the day-1-first golden rule" for the full writeup, including
-  why the theoretical best-possible ceiling also moved (it reuses the same
-  selection logic, so it was quietly capped by the same bug). Before that,
-  the prior headline (random exclusion: 96% beat-or-tie, +9.83 PIR, ~50%
-  captured) — real exclusion logic alone turned out to be a bigger lever
-  than the swap logic itself: it raised the no-swap *baseline* by +26.5
-  PIR and the best-possible ceiling by +40.0 PIR before the swap does
-  anything, simply by not randomly benching good players. See
-  `docs/testing_log.md` → "Full backtest with real exclusion logic" for
-  the full per-season table. The ML-vs-heuristic comparison (below) was
-  rerun under real exclusion logic (2026-09-13) and the "no demonstrable
-  win" conclusion held against that stronger baseline too — see
-  "ML-vs-heuristic comparison rerun" in the testing log; **note this
-  predates the 2026-09-16 sixth-man fix and hasn't been rerun against it**
-  — revisit if a precise ML-vs-heuristic number is needed again. Playoff
+  logic, corrected substitution rule): beats or ties a no-swap baseline in
+  84% of trials (74% outright beat, 16% lose), +11.11 PIR mean gain per
+  round (95% CI ±0.54), captures ~28% of the theoretical best-possible swap
+  upside.** This is a much lower-looking number than the prior headline,
+  and that's expected, not a regression — see the **2026-09-16 substitution
+  rule correction** below, which fundamentally changed what "swapping" even
+  means. Two corrections landed the same day, in order:
+  1. **Sixth-man day-1-first fix**: the sixth-man slot was picked by raw
+     projected value alone, letting a later-playing player grab it outright
+     and forfeit its day-1 scoring opportunity entirely, while a real day-1
+     candidate sat wasted on the bench. Fixed to follow the same
+     day-1-first "golden rule" the 5 starters already did. In isolation
+     this raised the then-headline from +24.06 to +29.67 PIR.
+  2. **Substitution-rule correction (bigger, and the current headline's
+     real driver)**: the user caught, live in the app, that the engine's
+     core assumption — a full-scoring slot's day-1 points are "banked
+     permanently," untouchable by a later swap — was simply wrong, and
+     confirmed against the official rules and their own experience playing
+     the real game: demoting an already-played starter/6th-man to the
+     bench **halves** their already-earned points. Formation can also
+     change at the swap window (not locked at day-1, another wrong prior
+     assumption). This isn't a bug-severity fix like #1 — it's a genuine
+     rule the engine was scoring against incorrectly the whole time, so the
+     backtest ceiling itself dropped a lot (mean best-possible went from
+     ~163 to ~149): a "swap" is a real bet with real downside now, not a
+     free option, so a much smaller fraction of the (also now much smaller)
+     theoretical upside gets captured. See `docs/testing_log.md` →
+     "Corrected the day-1/day-2 substitution rule" for the full writeup,
+     including why the swap *decision* also had to start using real day-1
+     actual results (once synced) instead of pre-round projections for
+     both sides — using projections throughout, as a naive port of the old
+     logic did, produced a 31%-loss-rate, actually-worse-than-no-swap
+     result once the halving cost was correctly modeled, because a
+     wrongly-projected day-1 player could get wrongly demoted at real cost.
+  Before either 2026-09-16 fix, the prior headline (random exclusion: 96%
+  beat-or-tie, +9.83 PIR, ~50% captured) — real exclusion logic alone
+  turned out to be a bigger lever than the swap logic itself: it raised the
+  no-swap *baseline* by +26.5 PIR and the best-possible ceiling by +40.0
+  PIR before the swap does anything, simply by not randomly benching good
+  players. See `docs/testing_log.md` → "Full backtest with real exclusion
+  logic" for the full per-season table. The ML-vs-heuristic comparison
+  (below) was rerun under real exclusion logic (2026-09-13) and the "no
+  demonstrable win" conclusion held against that stronger baseline too —
+  see "ML-vs-heuristic comparison rerun" in the testing log; **note this
+  predates both 2026-09-16 fixes and hasn't been rerun against them** —
+  revisit if a precise ML-vs-heuristic number is needed again. Playoff
   rounds
   are excluded by default from this evaluation — this POC's random
   league-wide roster *sampling* (the 13-man roster itself, not the

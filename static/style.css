@@ -163,10 +163,16 @@ tr.gone-player:hover { background: #e2dccc; }
   margin-left: 0.3rem; vertical-align: middle; text-transform: uppercase;
 }
 
-tr.banked-row { color: #a99f8c; }
-tr.banked-row:hover { background: var(--wood-line-soft); }
-.banked-badge {
-  display: inline-block; background: #a99f8c; color: #fff;
+tr.demoted-row { color: #a4544a; }
+tr.demoted-row:hover { background: #f3e2df; }
+.demoted-badge {
+  display: inline-block; background: #a4544a; color: #fff;
+  font-family: var(--font-display); font-size: 0.62rem; font-weight: 600;
+  letter-spacing: 0.04em; padding: 0.1rem 0.4rem; border-radius: 3px;
+  margin-left: 0.3rem; vertical-align: middle; text-transform: uppercase;
+}
+.promoted-badge {
+  display: inline-block; background: #4a7a5a; color: #fff;
   font-family: var(--font-display); font-size: 0.62rem; font-weight: 600;
   letter-spacing: 0.04em; padding: 0.1rem 0.4rem; border-radius: 3px;
   margin-left: 0.3rem; vertical-align: middle; text-transform: uppercase;

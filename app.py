@@ -679,6 +679,8 @@ def lineup():
     recommended = None
     excluded: list[Projection] = []
     team_dates: dict[str, str] = {}
+    used_day1_actuals = False
+    initial_full_ids: set[str] = set()
 
     if selected_manager_id and selected_round:
         pool, _new_ids, _gone_ids = get_pool(conn)
@@ -706,8 +708,34 @@ def lineup():
                 try:
                     active_squad = choose_active_squad(roster, team_dates, projected_value)
                     initial = build_lineup(active_squad, team_dates, projected_value)
-                    recommended = swap_after_day1(initial, team_dates, projected_value)
+
+                    # The real swap decision is made AFTER day 1's games are
+                    # actually over, using their real results - not their
+                    # pre-round projection (see engine.lineup's 2026-09-16
+                    # correction: demoting a day-1 player now genuinely
+                    # halves their score, so blindly trusting a projection
+                    # that may since have been proven wrong is a real risk,
+                    # not just a missed upside). player_game_stats only ever
+                    # has played games, so if day 1's box scores have been
+                    # synced (see Sync) by the time this page is visited,
+                    # use their actual PIR for the swap decision instead of
+                    # the projection; day-2 teams always use their
+                    # projection since their games haven't happened yet.
+                    min_date = min(team_dates.values())
+                    day1_teams = {team for team, date in team_dates.items() if date == min_date}
+                    day1_actual = {
+                        r["player_id"]: r["pir_official"]
+                        for r in load_rows(conn, CURRENT_SEASON)
+                        if r.get("round") == selected_round and r.get("team") in day1_teams
+                    }
+                    used_day1_actuals = bool(day1_actual)
+                    decision_value = (
+                        lambda pid: day1_actual[pid] if pid in day1_actual else projected_value(pid)
+                    )  # noqa: E731
+
+                    recommended = swap_after_day1(initial, team_dates, decision_value)
                     excluded = active_squad.excluded
+                    initial_full_ids = {p.player_id for p in initial.starters} | {initial.sixth_man.player_id}
                 except RuntimeError as e:
                     schedule_error = f"Could not build a lineup for this round: {e}"
 
@@ -726,6 +754,8 @@ def lineup():
         team_dates=team_dates,
         availability_label=availability_label,
         current_season=CURRENT_SEASON,
+        used_day1_actuals=used_day1_actuals,
+        initial_full_ids=initial_full_ids,
     )
 
 

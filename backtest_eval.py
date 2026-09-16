@@ -106,16 +106,33 @@ def run_one_trial(
         initial = build_lineup(active_squad, team_dates, projected_value)
     except RuntimeError:
         return None
-    recommended = swap_after_day1(initial, team_dates, projected_value)
 
+    # The real swap decision happens AFTER day-1 concludes, with day-1's
+    # actual results already known (not just their pre-round projection) -
+    # see engine.lineup's 2026-09-16 correction. Using day-1 projections for
+    # this decision (as an earlier version of this backtest did) understates
+    # the real risk: a day-1 player who actually outperforms their
+    # projection can get wrongly demoted, genuinely costing real points
+    # under the corrected halving-on-demotion rule. So the swap decision
+    # here uses actual PIR for whichever teams already played on day 1, and
+    # projections only for teams that haven't played yet - exactly the
+    # information a real manager has at that decision point. (Day-2 actuals
+    # are deliberately withheld from this lookup - peeking at those would be
+    # hindsight leakage into a decision that, in reality, precedes them.)
     actual = actual_pir_lookup(rows, round_no)
-    no_swap_score = compute_round_score(initial, initial, team_dates, actual)
-    recommended_score = compute_round_score(initial, recommended, team_dates, actual)
+    min_date = min(team_dates.values()) if team_dates else None
+    day1_teams = {team for team, date in team_dates.items() if date == min_date}
+    day1_actual = {pid: pir for pid, pir in actual.items() if pid in pool and pool[pid].team in day1_teams}
+    decision_value = lambda pid: day1_actual[pid] if pid in day1_actual else projected_value(pid)  # noqa: E731
+    recommended = swap_after_day1(initial, team_dates, decision_value)
+
+    no_swap_score = compute_round_score(initial, actual)
+    recommended_score = compute_round_score(recommended, actual)
 
     hindsight_value = lambda pid: actual.get(pid, 0.0)  # noqa: E731
     hindsight_initial = build_lineup(active_squad, team_dates, hindsight_value)
     hindsight_best = swap_after_day1(hindsight_initial, team_dates, hindsight_value)
-    best_possible_score = compute_round_score(hindsight_initial, hindsight_best, team_dates, actual)
+    best_possible_score = compute_round_score(hindsight_best, actual)
 
     return Trial(
         season=season,

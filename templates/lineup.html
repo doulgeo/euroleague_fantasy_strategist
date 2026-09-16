@@ -92,12 +92,22 @@
 
     <h2 title="Apply once day 1's games are finished.">Day 2: swap plan</h2>
     <p>
-      This table shows where each player ends up after the swap, not a second scoring pass for everyone in it.
-      A player marked <span class="banked-badge" title="Already played day 1 - their score for that game is locked in at whatever tier they held in the Day 1 table above, unaffected by where they land here.">BANKED</span>
-      already played on day 1: their points for that game are locked in from the Day 1 table above (at that
-      table's tier - full or double for a starter/captain, half for bench) regardless of what slot they're shown
-      in here. Only rows still marked "later" represent a game still to be played, scored at the tier shown in
-      <em>this</em> table.
+      A player marked <span class="demoted-badge" title="Moved out of a full-scoring slot after already playing day 1 - this genuinely halves the points they already earned, it is not a free/harmless move.">DEMOTED</span>
+      already played on day 1 in a Starter/6th-Man slot and is being moved to the bench here - that
+      <strong>halves the points they already earned</strong> playing day 1, it doesn't protect them. It's only
+      worth it because the incoming player below is projected (or, if day 1's results are already in, actually
+      scoring) higher than what this player just put up. A player marked
+      <span class="promoted-badge" title="Moved into a full-scoring slot from the bench - a pure gain, since they hadn't played yet, so there was no cost to moving them.">PROMOTED</span>
+      is the flip side: moved from the bench into a full slot before playing, a pure gain (half points to full,
+      no cost, since they hadn't played yet).
+      {% if used_day1_actuals %}
+        Day 1's actual results for this round have already been synced, so this swap plan is using their real
+        scores (not just projections) for anyone who's already played.
+      {% else %}
+        Day 1 hasn't been played yet (or its results aren't synced - see <a href="{{ url_for('sync_page') }}">Sync</a>),
+        so this plan is a pre-round best guess using projections for everyone - revisit it once day 1's actual
+        results are in, since an underperforming/overperforming day-1 starter can change the right call.
+      {% endif %}
     </p>
     <table>
       <thead>
@@ -109,28 +119,25 @@
       </thead>
       <tbody>
         {% for p in recommended.starters %}
-          {% set avail = availability_label(p, team_dates) %}
-          <tr class="{{ 'banked-row' if avail == 'day1' else '' }}">
-            <td>Starter{{ " (C)" if p.player_id == recommended.captain.player_id else "" }}{% if avail == "day1" %} <span class="banked-badge" title="Already played day 1 - see the Day 1 table above for their locked-in score.">BANKED</span>{% endif %}</td>
+          <tr>
+            <td>Starter{{ " (C)" if p.player_id == recommended.captain.player_id else "" }}{% if p.player_id not in initial_full_ids %} <span class="promoted-badge">PROMOTED</span>{% endif %}</td>
             <td>{{ p.position }}</td><td>{{ p.player_name }}</td><td>{{ p.team }}</td>
-            <td>{{ avail }}</td>
+            <td>{{ availability_label(p, team_dates) }}</td>
             <td>{{ "%.1f"|format(p.projected_pir_with_bonus) }}</td>
           </tr>
         {% endfor %}
-        {% set sixth_avail = availability_label(recommended.sixth_man, team_dates) %}
-        <tr class="{{ 'banked-row' if sixth_avail == 'day1' else '' }}">
-          <td title="Full points, but never captain-eligible.">6th Man{% if sixth_avail == "day1" %} <span class="banked-badge" title="Already played day 1 - see the Day 1 table above for their locked-in score.">BANKED</span>{% endif %}</td>
+        <tr>
+          <td title="Full points, but never captain-eligible.">6th Man{% if recommended.sixth_man.player_id not in initial_full_ids %} <span class="promoted-badge">PROMOTED</span>{% endif %}</td>
           <td>{{ recommended.sixth_man.position }}</td><td>{{ recommended.sixth_man.player_name }}</td>
           <td>{{ recommended.sixth_man.team }}</td>
-          <td>{{ sixth_avail }}</td>
+          <td>{{ availability_label(recommended.sixth_man, team_dates) }}</td>
           <td>{{ "%.1f"|format(recommended.sixth_man.projected_pir_with_bonus) }}</td>
         </tr>
         {% for p in recommended.bench %}
-          {% set avail = availability_label(p, team_dates) %}
-          <tr class="{{ 'banked-row' if avail == 'day1' else '' }}">
-            <td title="Scores at half points automatically - no swap needed to count.">Bench{% if avail == "day1" %} <span class="banked-badge" title="Already played day 1 - see the Day 1 table above for their locked-in score (not necessarily at half rate - depends what tier they held there).">BANKED</span>{% endif %}</td>
+          <tr class="{{ 'demoted-row' if p.player_id in initial_full_ids else '' }}">
+            <td title="Scores at half points automatically - no swap needed to count.">Bench{% if p.player_id in initial_full_ids %} <span class="demoted-badge">DEMOTED</span>{% endif %}</td>
             <td>{{ p.position }}</td><td>{{ p.player_name }}</td><td>{{ p.team }}</td>
-            <td>{{ avail }}</td>
+            <td>{{ availability_label(p, team_dates) }}</td>
             <td>{{ "%.1f"|format(p.projected_pir_with_bonus) }}</td>
           </tr>
         {% endfor %}

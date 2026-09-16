@@ -15,13 +15,26 @@ model that was wrong on several points):
 - The starting five must be one of exactly three valid formations (Guard,
   Forward, Center): (2,2,1), (2,1,2), (3,1,1) - confirmed by the user
   (minimum 2 Guards; Forward and Center each capped at 2, floored at 1).
-- A round spans 1-2 match days. Whatever a player earns while occupying a
-  full-scoring slot (starter or sixth-man) is banked permanently - so the
-  golden rule is still to fill those 6 full-scoring slots with day-1 players
-  first, then once day-1 is over, swap any now-finished slot for the best
-  same-position bench player who plays later. This is a straight upgrade
-  for that bench player too: left alone they'd only score at half rate for
-  their game, promoted into a full-scoring slot they score at full rate.
+- A round spans 1-2 match days. **Corrected 2026-09-16**: an earlier
+  assumption here - that a full-scoring slot's day-1 points were "banked
+  permanently," untouchable by a later swap - was wrong. The user confirmed
+  (against both the official rules and their own live experience) that
+  moving an already-played full-scoring-slot player DOWN to the bench
+  HALVES their score, exactly like it would have if they'd started on the
+  bench all along. So the swap window isn't a free upgrade: demoting a
+  slot's current occupant only pays off if the incoming replacement
+  outscores them - a straight value comparison, not "any positive value
+  beats leaving them on the bench" (see swap_after_day1). The golden rule
+  is still to fill your 6 full-scoring slots with day-1 players first at
+  the initial lock (see build_lineup) - before day-1 games happen you can't
+  yet know who'll turn out best, so reserving those slots for your best
+  day-1-projected players preserves the option to either keep or demote
+  them once actual results (or, pre-round, updated projections) are in.
+- Formation can also be changed at the swap window (also confirmed
+  2026-09-16, superseding an earlier "formation is locked at day-1"
+  assumption below) - swap_after_day1 does a full re-solve across all
+  three valid formations, not just a same-position patch to the day-1
+  lineup.
 
 Both the pre-round recommendation and the post-hoc "best possible" backtest
 benchmark reuse the exact same selection logic - they only differ in
@@ -35,12 +48,14 @@ they're easy to revisit):
   starter slot. ("the 6th player is just like any other player, he can be
   swapped into a started position or a fully benched position" was taken to
   mean the *role* moves between players, not that it's position-agnostic.)
-- The starting formation shape is chosen once at the initial (day-1) lock
-  and is not reshuffled at the swap window - only *who* fills an
-  already-typed slot can change, not the (G,F,C) shape itself.
 - Captain can only be one of the 5 starters, never the sixth man (matches
   how the user described it: "5 players are starters ... 1 of them is the
-  captain ... then there is a 6th player").
+  captain ... then there is a 6th player"). Per the 2026-09-16 correction
+  above, captain doubling - like every other tier - is governed entirely by
+  the FINAL lineup: there's no separate "day-1 captain's points stay
+  doubled regardless" carve-out (an earlier assumption, now also
+  superseded) - a demoted former captain loses the 2x along with their
+  full-rate slot, same as anyone else who gets demoted.
 
 Two ways to get the team_dates dict every function below needs:
 team_dates_for_round (from played box scores - historical/backtest use)
@@ -170,6 +185,33 @@ def _build_formation_starters(
     return starters
 
 
+def _build_formation_starters_by_value(
+    candidates: list[Projection],
+    formation: tuple[int, int, int],
+    value_fn: ValueFn,
+) -> list[Projection] | None:
+    """Same shape as _build_formation_starters, but ranks by value_fn alone
+    - no day-1-first tiebreak. Used only by swap_after_day1's final re-solve:
+    at that point there's no future swap window left to preserve optionality
+    for, so whoever has the higher value (day-1 actual-known or day-2
+    projected, whichever value_fn represents at call time) should simply
+    win the slot.
+    """
+    guards, forwards, centers = formation
+    requirements = [("Guard", guards), ("Forward", forwards), ("Center", centers)]
+    starters: list[Projection] = []
+
+    for position, count in requirements:
+        candidates_at_position = [p for p in candidates if p.position == position]
+        if len(candidates_at_position) < count:
+            return None  # this formation isn't feasible with this candidate pool
+
+        ranked = sorted(candidates_at_position, key=lambda p: -value_fn(p.player_id))
+        starters.extend(ranked[:count])
+
+    return starters
+
+
 def build_lineup(active_squad: ActiveSquad, team_dates: dict[str, str], value_fn: ValueFn) -> Lineup:
     """Choose the best of the three valid formations, fill it preferring
     day-1-eligible players first (the golden rule), then by value_fn
@@ -216,42 +258,61 @@ def build_lineup(active_squad: ActiveSquad, team_dates: dict[str, str], value_fn
 
 
 def swap_after_day1(lineup: Lineup, team_dates: dict[str, str], value_fn: ValueFn) -> Lineup:
-    """For every full-scoring slot (starter or sixth-man) whose occupant
-    already played day 1 (banked regardless), swap in the best same-position
-    bench player who plays later, if that's an improvement (value_fn > 0) -
-    promoting them from half points to full points for their still-upcoming
-    game. Captain is recomputed over the resulting five starters afterward
-    (sixth man is never captain-eligible).
+    """The day-2 decision: given the day-1 lock, re-solve for the best final
+    lineup now that both formation and full-slot occupants can change.
+
+    A day-1 player who started on the BENCH is locked there for good - the
+    real rules never let you swap in a player who's already played, so
+    promoting them now is never an option. Everyone else is "flexible": the
+    six day-1 full-scoring-slot players (each can be kept, at full rate, or
+    demoted to the bench at half rate) plus every day-2 player regardless of
+    where they were initially placed (they haven't played yet, so they're
+    free to end up anywhere). The final lineup is simply the best valid
+    formation + sixth man drawn from that flexible pool by value_fn alone -
+    no day-1-first tiebreak here, since this is the last decision point and
+    there's no future swap left to preserve optionality for.
+
+    This is equivalent to, but simpler than, an explicit per-slot "swap only
+    if the incoming player beats the outgoing one" comparison: picking the
+    flexible pool's best value per slot naturally keeps a day-1 occupant
+    when nothing beats them, and replaces them when something does - which
+    correctly prices in that demoting them costs half of what they'd have
+    kept by staying (see the module docstring's 2026-09-16 correction).
     """
     min_date = _min_date(team_dates)
-    full_slots = list(lineup.starters) + [lineup.sixth_man]
-    bench = list(lineup.bench)
 
-    for i, occupant in enumerate(full_slots):
-        if _availability_rank(occupant, team_dates, min_date) != 0:
-            continue  # only touch slots whose current occupant already played
+    day1_bench_locked_ids = {
+        p.player_id for p in lineup.bench if _availability_rank(p, team_dates, min_date) == 0
+    }
+    flexible = [p for p in _all_players(lineup) if p.player_id not in day1_bench_locked_ids]
+    day1_bench_locked = [p for p in lineup.bench if p.player_id in day1_bench_locked_ids]
 
-        same_position_pending = [
-            p
-            for p in bench
-            if p.position == occupant.position and _availability_rank(p, team_dates, min_date) == 1
-        ]
-        if not same_position_pending:
+    best_starters: list[Projection] | None = None
+    best_total: float | None = None
+
+    for formation in VALID_FORMATIONS:
+        starters = _build_formation_starters_by_value(flexible, formation, value_fn)
+        if starters is None:
             continue
 
-        best_bench = max(same_position_pending, key=lambda p: value_fn(p.player_id))
-        if value_fn(best_bench.player_id) <= 0:
-            continue  # not an improvement over leaving them at half points
+        total_value = sum(value_fn(p.player_id) for p in starters)
+        if best_total is None or total_value > best_total:
+            best_total = total_value
+            best_starters = starters
 
-        full_slots[i] = best_bench
-        bench.remove(best_bench)
-        bench.append(occupant)
+    if best_starters is None:
+        raise RuntimeError(
+            "No valid formation (2-2-1 / 2-1-2 / 3-1-1) could be filled from the flexible pool - "
+            "should be unreachable since the day-1 lineup's own 5 starters always remain flexible"
+        )
 
-    new_starters = full_slots[:5]
-    new_sixth_man = full_slots[5]
-    captain = max(new_starters, key=lambda p: value_fn(p.player_id))
+    starter_ids = {p.player_id for p in best_starters}
+    remaining_flexible = [p for p in flexible if p.player_id not in starter_ids]
+    sixth_man = max(remaining_flexible, key=lambda p: value_fn(p.player_id))
+    bench = [p for p in remaining_flexible if p.player_id != sixth_man.player_id] + day1_bench_locked
+    captain = max(best_starters, key=lambda p: value_fn(p.player_id))
 
-    return Lineup(starters=new_starters, sixth_man=new_sixth_man, bench=bench, captain=captain)
+    return Lineup(starters=best_starters, sixth_man=sixth_man, bench=bench, captain=captain)
 
 
 def choose_active_squad(roster: Roster, team_dates: dict[str, str], value_fn: ValueFn) -> ActiveSquad:
@@ -286,7 +347,7 @@ def choose_active_squad(roster: Roster, team_dates: dict[str, str], value_fn: Va
         initial = build_lineup(candidate, team_dates, value_fn)
         final = swap_after_day1(initial, team_dates, value_fn)
         projected_as_actual = {p.player_id: value_fn(p.player_id) for p in active}
-        score = compute_round_score(initial, final, team_dates, projected_as_actual)
+        score = compute_round_score(final, projected_as_actual)
 
         if best_score is None or score > best_score:
             best_score = score
@@ -298,40 +359,21 @@ def choose_active_squad(roster: Roster, team_dates: dict[str, str], value_fn: Va
     return best_squad
 
 
-def compute_round_score(
-    initial: Lineup,
-    final: Lineup,
-    team_dates: dict[str, str],
-    actual_pir: dict[str, float],
-) -> float:
-    """Round score across both match days, given real (or backtest
-    ground-truth) PIR per player.
+def compute_round_score(lineup: Lineup, actual_pir: dict[str, float]) -> float:
+    """Round score given real (or backtest ground-truth) PIR per player,
+    using ONLY the given lineup's own tier assignments (captain 2x,
+    starter/sixth-man full, bench half - see _tier_multiplier).
 
-    A full-scoring-slot player's points are banked when their game happens,
-    regardless of any later swap - so day-1 scoring comes from `initial`
-    (whoever occupied which tier when those games were actually played),
-    and day-2/later scoring comes from `final` (whoever ends up where once
-    the swap window has closed). Bench players score at
-    BENCH_SCORE_MULTIPLIER whether or not they were ever swapped in - that's
-    automatic, not conditional on being promoted. Captain doubling is per
-    stage: `initial.captain` for day-1 scoring, `final.captain` for day-2
-    scoring, so reassigning captain at the swap window only affects points
-    not yet banked.
+    Confirmed by the user (2026-09-16): a player's score is governed
+    entirely by whatever tier they hold in the lineup passed in here - there
+    is no separate "day-1 points are banked regardless of a later swap"
+    carve-out (an earlier, wrong assumption in this codebase - see the
+    module docstring). To score a round's real final outcome, pass the
+    post-swap_after_day1 lineup; to score the no-swap baseline for
+    comparison, pass the initial (pre-swap) lineup instead - either way,
+    this function itself doesn't need to know which day anyone played.
     """
-    min_date = _min_date(team_dates)
-    total = 0.0
-
-    for p in _all_players(initial):
-        if _availability_rank(p, team_dates, min_date) != 0:
-            continue  # didn't play day 1
-        total += actual_pir.get(p.player_id, 0.0) * _tier_multiplier(p, initial)
-
-    for p in _all_players(final):
-        if _availability_rank(p, team_dates, min_date) != 1:
-            continue  # only later-playing slots score here (day-1 handled above)
-        total += actual_pir.get(p.player_id, 0.0) * _tier_multiplier(p, final)
-
-    return total
+    return sum(actual_pir.get(p.player_id, 0.0) * _tier_multiplier(p, lineup) for p in _all_players(lineup))
 
 
 def availability_label(player: Projection, team_dates: dict[str, str]) -> str:

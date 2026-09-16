@@ -1592,3 +1592,138 @@ clarifying their score is already locked in from the Day-1 table above
 regardless of what slot they're shown in here. Confirmed via `app.py`'s
 test client against the live Test1/round-1 data (8 BANKED badges rendered,
 200 response).
+
+---
+
+## 2026-09-16 — Corrected the day-1/day-2 substitution rule (halving on demotion, formation reshuffle allowed)
+
+**What**: right after the sixth-man fix (previous entry), the user asked a
+follow-up about that fix's own example output - "why would I swap Montero
+for Larkin if Montero scores high?" - which led to checking the actual
+substitution mechanics against the official rules, and turned up a second,
+much bigger correction: this codebase's core assumption that a
+full-scoring slot's day-1 points are "banked permanently" (a later swap
+can't take them away) was **wrong**. The user confirmed, against both the
+official rules
+([euroleaguebasketball.net](https://www.euroleaguebasketball.net/euroleague/news/euroleague-fantasy-challenge-rules-deadlines-tips/))
+and their own experience playing the real game: **moving an already-played
+starter/6th-man down to the bench halves their already-earned points** -
+exactly like it would if they'd started on the bench all along. A
+secondary source (`fantaking.gitbook.io`, "Classic Mode" rules) was
+fetchable and corroborated this with an exact quote: *"The player that is
+moved from the field to the bench halves his score."* The same source also
+confirmed formation can be changed at the swap window (this codebase had
+separately assumed the day-1 formation shape was locked), and that captain
+can be reassigned to any starter who hasn't played yet.
+
+**Why this matters**: under the old (wrong) model, swapping was a strictly
+dominant, risk-free move - the day-1 occupant's points were safe no matter
+what, so promoting any positive-value bench player could only help. Under
+the corrected rule, swapping is a real trade: demoting a slot's occupant
+costs half of what they already earned, so it only pays off if the
+incoming replacement actually outscores them. This isn't just a threshold
+tweak - it changes the entire optimization problem the engine is solving.
+
+**Fix** (`engine/lineup.py`):
+1. `compute_round_score` simplified to a single pass: a player's score is
+   now governed entirely by whatever tier they hold in the ONE lineup
+   passed in (captain 2x / starter+6th-man 1x / bench 0.5x) - no more
+   separate day-1-uses-`initial`-tier / day-2-uses-`final`-tier split.
+2. `swap_after_day1` rewritten as a genuine re-solve rather than a
+   same-position patch: any day-1 player who started on the BENCH is
+   locked there for good (the rules never let you swap in someone who's
+   already played); everyone else - the day-1 full-slot occupants (keep or
+   demote) plus every day-2 player (fully flexible, never played yet) - is
+   "flexible" and competes for the best valid formation + sixth man by
+   value alone (no day-1-first tiebreak at this stage - there's no future
+   swap left to preserve optionality for). This single value-maximizing
+   re-solve elegantly subsumes the old "swap only if incoming beats
+   outgoing" comparison (proven algebraically: promoting a never-played
+   bench candidate is pure upside; demoting a played occupant costs exactly
+   half their value, so picking whoever has the higher value for the slot
+   is equivalent to that comparison) AND handles the newly-confirmed
+   formation reshuffle for free, since it searches all 3 valid formations
+   fresh from the flexible pool.
+3. `build_lineup`'s day-1-first "golden rule" for the INITIAL lock is
+   still correct and was kept unchanged - verified algebraically (a
+   single-slot dominance argument: starting your best-projected day-1
+   candidate and retaining the option to demote them later weakly
+   dominates benching them pre-round in favor of a day-2 candidate,
+   because the demote-later path can always fall back to keeping them if
+   they outperform, which the pre-round-bench path can never recover from).
+
+**A second, related bug this surfaced**: the backtest's swap *decision*
+was using pre-round projections for BOTH day-1 and day-2 candidates
+(matching how the live `/lineup` page works, since it's shown all at once
+before the round starts). Under the old banked-permanently model this was
+harmless (swapping was risk-free either way). Under the corrected model it
+is NOT harmless: a naive re-run of the standard backtest command
+(`--seasons E2023 E2024 E2025 --min-round 6 --trials-per-round 30 --seed
+1`) produced mean gain **+2.45 PIR** with the recommended lineup actually
+**losing to the no-swap baseline in 31% of trials** (worst single-trial
+deficit: 52.5 PIR) - because a day-1 player who outperformed their
+pre-round projection could get wrongly demoted, a real, costly mistake
+under the corrected halving rule. Fixed in `backtest_eval.py` and
+`poc_run.py`: the swap decision now uses each day-1 team's *actual* PIR
+(once their games are over) instead of their pre-round projection, and
+only day-2 teams still use projections - exactly the information a real
+manager has at the real decision point (made after day 1, not before it).
+Day-2 actuals are deliberately withheld from this lookup to avoid hindsight
+leakage into a decision that precedes them.
+
+**Result after both fixes (regular season only, 91 rounds/2730 trials,
+same seed as prior headlines)**:
+- mean gain (recommended - no-swap): **+11.11 PIR** (95% CI ±0.54)
+- beat-or-tie: 84% (74% beat, 10% tied, 16% lost)
+- mean best-possible ceiling: 149.46 (down from ~163 under the old, wrong
+  model - the ceiling itself was inflated by assuming demotion was free)
+- mean swap-upside captured: ~28% (down from ~72%, but now measured
+  against a correspondingly smaller, correct ceiling - not a
+  like-for-like regression)
+- structural invariant (no-swap <= best-possible) still holds with zero
+  violations across all 2730 trials.
+- **This supersedes the prior headline** (+29.67 PIR, 99% beat-or-tie,
+  ~72% captured) in `CLAUDE.md` and above in this log. The 16% loss rate is
+  expected/documented, not a bug - it's the real, now-correctly-modeled
+  risk of the swap mechanic itself (a wrongly-projected day-2 candidate can
+  now genuinely cost points, unlike under the old model where the
+  downside was structurally capped at zero).
+
+**Also fixed**:
+- `docs/game_rules.md`: replaced the "banked permanently" / "formation
+  locked at day-1" / "captain doubling is per-stage" claims with the
+  corrected mechanic and the source.
+- `templates/lineup.html` / `static/style.css`: the Day-2 table's earlier
+  "BANKED" badge (added in the sixth-man-fix session, before this
+  correction) was itself now wrong - replaced with DEMOTED (flags a player
+  who already played in a full slot and is being moved to the bench here,
+  with an explicit "this halves their already-earned points" warning) and
+  PROMOTED (a player moved from bench into a full slot before playing -
+  pure gain, no cost) badges instead.
+- `app.py`'s `/lineup` route now checks whether day-1's box scores for the
+  selected round have actually been synced (`player_game_stats` is
+  played-games-only, so presence = played) and uses real actual PIR for
+  the swap decision when available, falling back to projections
+  otherwise - mirroring the backtest fix above, live. A note under the
+  Day-2 table tells the user which mode is active. Not yet live-tested
+  against a real day-1-already-played round (E2026 hasn't started/synced
+  any rounds yet as of this writing) - the "projections only" fallback
+  path was confirmed rendering correctly; revisit once real E2026 day-1
+  results exist to sync.
+
+**Validation**:
+- Reproduced the corrected engine against Test1's real roster (round 1,
+  live E2026 schedule): confirmed the swap plan now correctly identifies a
+  real net-positive trade (Clyburn promoted, Hoard demoted, net
+  +0.75 projected PIR - matching the `0.5 * (incoming - outgoing)` formula
+  by hand) instead of blindly treating any positive-value bench candidate
+  as a free upgrade.
+- `poc_run.py` end-to-end smoke test (E2025, round 20): ran without
+  errors, formation correctly reshuffled from day-1's (3,1,1) to the
+  swap plan's (2,2,1), backtest scored no-swap=67.0 /
+  recommended=81.5 / best-possible=96.0 for that single real round -
+  sane, recommended beats no-swap as expected.
+- `app.py` test client: `/lineup?manager_id=13&round=1` returns 200 with
+  both DEMOTED and PROMOTED badges rendering and the correct
+  projections-only-fallback note showing (since E2026 has no synced
+  results yet).

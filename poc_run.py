@@ -135,27 +135,42 @@ def main() -> None:
     initial = build_lineup(active_squad, team_dates, projected_value)
     print_lineup(f"Initial lineup recommendation (round {args.cutoff_round}, pre-day-1)", initial, team_dates)
 
-    recommended = swap_after_day1(initial, team_dates, projected_value)
+    # The real swap decision happens AFTER day-1 concludes, with day-1's
+    # actual results already known - not just their pre-round projection
+    # (see engine.lineup's 2026-09-16 correction: demoting a day-1 player
+    # now genuinely halves their score, so the decision needs to weigh what
+    # they actually scored, not what they were expected to). This POC run
+    # covers a round that's already fully played (validate-rounds), so
+    # `actual` is available here to build that realistic decision input -
+    # day-1 teams use their actual PIR, day-2 teams still use projections
+    # (day-2 hasn't happened relative to the decision point; using their
+    # actuals here would be hindsight leakage).
+    actual = actual_pir_lookup(rows, args.cutoff_round)
+    min_date = min(team_dates.values()) if team_dates else None
+    day1_teams = {team for team, date in team_dates.items() if date == min_date}
+    day1_actual = {pid: pir for pid, pir in actual.items() if pid in projections and projections[pid].team in day1_teams}
+    decision_value = lambda pid: day1_actual[pid] if pid in day1_actual else projected_value(pid)  # noqa: E731
+
+    recommended = swap_after_day1(initial, team_dates, decision_value)
     print_lineup(f"Post-day-1 swap recommendation (round {args.cutoff_round})", recommended, team_dates)
 
     transfers = suggest_transfers(roster, projections)
     print_transfers(transfers)
 
     # --- Backtest: score initial (no-swap), recommended (with swap), and
-    # best-possible-hindsight lineups against what actually happened. Day-1
-    # points are banked from `initial` regardless of any later swap; day-2
-    # points come from whichever lineup was actually in place for that stage
-    # (see compute_round_score's docstring). Bench players score at half
-    # rate automatically, whether or not they were ever swapped in.
-    actual = actual_pir_lookup(rows, args.cutoff_round)
-
-    no_swap_score = compute_round_score(initial, initial, team_dates, actual)
-    recommended_score = compute_round_score(initial, recommended, team_dates, actual)
+    # best-possible-hindsight lineups against what actually happened. A
+    # player's score is governed entirely by whichever tier they hold in the
+    # lineup being scored (see compute_round_score's docstring) - demoting a
+    # played starter to the bench genuinely halves their score, it isn't
+    # banked regardless. Bench players score at half rate automatically,
+    # whether or not they were ever swapped in.
+    no_swap_score = compute_round_score(initial, actual)
+    recommended_score = compute_round_score(recommended, actual)
 
     hindsight_value = lambda pid: actual.get(pid, 0.0)  # noqa: E731
     hindsight_initial = build_lineup(active_squad, team_dates, hindsight_value)
     hindsight_best = swap_after_day1(hindsight_initial, team_dates, hindsight_value)
-    best_possible_score = compute_round_score(hindsight_initial, hindsight_best, team_dates, actual)
+    best_possible_score = compute_round_score(hindsight_best, actual)
 
     print(f"\n=== Backtest: round {args.cutoff_round} actual results ===")
     print(f"  No-swap score (ignored the golden rule):     {no_swap_score:6.1f}")
