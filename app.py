@@ -70,6 +70,37 @@ LOGS_DIR = BASE_DIR / "logs"
 app = Flask(__name__)
 app.secret_key = "euroleague-fantasy-local-dev"  # local single-user tool, not internet-facing
 
+
+@app.template_filter("player_initials")
+def player_initials(name: str) -> str:
+    """'SURNAME, FIRSTNAME' -> 'FS' monogram - the EuroLeague API's /people
+    endpoint returns an empty `images` object for every player (confirmed
+    live, E2026), so there are no real player photos to show; this is the
+    stand-in for the lineup pitch view's court avatars."""
+    if not name:
+        return "?"
+    surname, _, first = name.partition(",")
+    surname, first = surname.strip(), first.strip()
+    initials = (first[:1] + surname[:1]).upper()
+    return initials or name[:2].upper()
+
+
+@app.template_filter("player_surname")
+def player_surname(name: str) -> str:
+    """'SURNAME, FIRSTNAME' -> 'Surname' title case, for the pitch view's compact court labels."""
+    surname, _, _ = (name or "").partition(",")
+    return surname.strip().title() or name
+
+
+@app.template_filter("player_display_name")
+def player_display_name(name: str) -> str:
+    """'SURNAME, FIRSTNAME' -> 'Firstname Surname' title case, for the pitch view's bench list."""
+    surname, sep, first = (name or "").partition(",")
+    if not sep:
+        return name.title() if name else ""
+    return f"{first.strip().title()} {surname.strip().title()}"
+
+
 _projection_cache: dict[tuple, tuple[int, dict[str, Projection]]] = {}
 
 # --- Background data sync (sync_db.py / sync_rosters.py triggered from the UI) ---

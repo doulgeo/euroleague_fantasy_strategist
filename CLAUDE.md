@@ -266,6 +266,21 @@ Full context for a fresh session, in order of what to read:
   export" for the full write-up. Not yet tested against a real (non-mock)
   export from the friend's app — revisit if that shape turns out to
   differ from the mock export this was built against.
+- **"Pitch view" on `/lineup`**, as of 2026-09-16: a Biwenger-style court
+  graphic (5 starters positioned by role — Center/Forward/Guard — plus a
+  checkmarked bench column with the 6th man tagged) rendered above each of
+  the existing Day 1/Day 2 tables, via a new `templates/_pitch.html` macro
+  and matching CSS in `static/style.css`. Built here rather than on the
+  Managers tab (the user's other suggested spot) because it's a 1:1 visual
+  match for `/lineup`'s existing per-round `initial`/`recommended` lineup
+  objects, which the raw 13-man `/managers/<id>` roster has no equivalent
+  of. No real player photos: confirmed live that the EuroLeague `/people`
+  endpoint returns an empty `images: {}` for every player, so avatars are
+  initials-based monograms instead. See `docs/testing_log.md` → "'Pitch
+  view' visual on the lineup builder" for the full write-up, including the
+  one open item: this was verified structurally (curl + HTML assertions,
+  no headless-browser tooling available in this sandbox), not yet
+  eyeballed in an actual browser.
 
 **Explicitly NOT done yet (all deferred, not forgotten):**
 - The draft-tracking UI above is v1: no draft-credit/budget tracking

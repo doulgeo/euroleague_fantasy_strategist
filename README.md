@@ -30,6 +30,8 @@ for personal use among friends — never monetized or redistributed.
   starting lineup and captain, and the day-2 swap plan - auto-optimizing
   the starting formation (or force one manually) to maximize total
   projected score, shown in a totals box alongside the recommendation.
+  Each lineup also renders as a court "pitch view" (starters by position,
+  a checkmarked bench with the 6th man tagged) above the detail table.
 - **Roster sync** — current club rosters pulled directly from EuroLeague's
   data backend, so transfers and new signings are reflected without waiting
   for a player's first box score. Triggerable from the app itself (a

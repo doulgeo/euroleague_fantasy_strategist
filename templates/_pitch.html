@@ -1,0 +1,59 @@
+{# Court-style visual for a lineup: 5 starters positioned on a court by
+   position (Centers nearest the hoop, then Forwards, then Guards), plus a
+   bench column for the 6th man + rest of the active 10. No real player
+   photos exist in the data source (EuroLeague's /people endpoint returns an
+   empty `images` object for every player - confirmed live) so each player is
+   a monogram avatar instead. `initial_full_ids` is only passed for the day-2
+   pitch, to render the same PROMOTED/DEMOTED badges as the table above it. #}
+{% macro pitch(lineup, initial_full_ids=none) %}
+  {% set full_ids = initial_full_ids or [] %}
+  {% set centers = lineup.starters | selectattr('position', 'equalto', 'Center') | list %}
+  {% set forwards = lineup.starters | selectattr('position', 'equalto', 'Forward') | list %}
+  {% set guards = lineup.starters | selectattr('position', 'equalto', 'Guard') | list %}
+  <div class="pitch">
+    <div class="pitch-court">
+      <div class="pitch-hoop" aria-hidden="true"></div>
+      <div class="pitch-key" aria-hidden="true"></div>
+      <div class="pitch-circle" aria-hidden="true"></div>
+      {% for row in [centers, forwards, guards] %}
+        {% if row %}
+          <div class="pitch-row">
+            {% for p in row %}
+              <div class="pitch-player">
+                <div class="pitch-avatar{{ ' pitch-avatar-promoted' if (full_ids and p.player_id not in full_ids) else '' }}">
+                  {{ p.player_name | player_initials }}
+                  {% if p.player_id == lineup.captain.player_id %}
+                    <span class="pitch-tag-captain" data-tip="Captain - scores double">C</span>
+                  {% endif %}
+                </div>
+                <div class="pitch-name">{{ p.player_name | player_surname }}</div>
+              </div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endfor %}
+    </div>
+    <div class="pitch-bench">
+      <div class="pitch-bench-item{{ ' pitch-bench-promoted' if (full_ids and lineup.sixth_man.player_id not in full_ids) else '' }}">
+        <div class="pitch-bench-avatar">{{ lineup.sixth_man.player_name | player_initials }}</div>
+        <div class="pitch-bench-info">
+          <span class="pitch-tag pitch-tag-sixth" data-tip="6th man - full points, never captain-eligible">6th</span>
+          <span class="pitch-bench-name">{{ lineup.sixth_man.player_name | player_display_name }}</span>
+        </div>
+        <span class="pitch-check" aria-hidden="true">&#10003;</span>
+      </div>
+      {% for p in lineup.bench %}
+        <div class="pitch-bench-item{{ ' pitch-bench-demoted' if p.player_id in full_ids else '' }}">
+          <div class="pitch-bench-avatar">{{ p.player_name | player_initials }}</div>
+          <div class="pitch-bench-info">
+            <span class="pitch-bench-name">{{ p.player_name | player_display_name }}</span>
+            {% if p.player_id in full_ids %}
+              <span class="pitch-tag pitch-tag-demoted" data-tip="Demoted - halves the points already earned day 1">DEM</span>
+            {% endif %}
+          </div>
+          <span class="pitch-check" aria-hidden="true">&#10003;</span>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+{% endmacro %}

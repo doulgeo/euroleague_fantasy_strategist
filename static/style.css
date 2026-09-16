@@ -292,6 +292,82 @@ select:focus, input:focus { outline: 2px solid var(--orange-light); border-color
 .dropzone:hover { border-color: var(--orange); }
 .dropzone-active { border-color: var(--orange); background: var(--orange-wash); }
 
+/* ---- Lineup pitch view ---- */
+.pitch { display: flex; gap: 1.2rem; flex-wrap: wrap; margin: 0 0 1.5rem; align-items: flex-start; }
+
+.pitch-court {
+  flex: 1 1 320px; max-width: 420px; min-height: 380px;
+  background: linear-gradient(180deg, #e6a24f 0%, #d9731a 70%, #c56816 100%);
+  border: 3px solid var(--charcoal); border-radius: 10px;
+  padding: 1.6rem 0.8rem 1.1rem;
+  display: flex; flex-direction: column; justify-content: space-evenly; gap: 0.9rem;
+  position: relative; overflow: hidden;
+}
+.pitch-hoop {
+  position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+  width: 64px; height: 10px; background: #f3e9d6; border: 2px solid var(--charcoal);
+  border-top: none; border-radius: 0 0 6px 6px;
+}
+.pitch-key {
+  position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+  width: 128px; height: 96px; border: 2px solid rgba(255, 255, 255, 0.55); border-top: none;
+}
+.pitch-circle {
+  position: absolute; top: 56%; left: 50%; transform: translate(-50%, -50%);
+  width: 150px; height: 150px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.4);
+}
+.pitch-row { display: flex; justify-content: center; gap: 1.3rem; flex-wrap: wrap; z-index: 1; }
+
+.pitch-player { display: flex; flex-direction: column; align-items: center; width: 76px; }
+.pitch-avatar {
+  width: 50px; height: 50px; border-radius: 50%; flex: none;
+  background: var(--charcoal); color: #f3e9d6;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-display); font-weight: 600; font-size: 0.95rem;
+  border: 2px solid #fff; box-shadow: 0 2px 6px rgba(34, 26, 18, 0.3); position: relative;
+}
+.pitch-avatar-promoted { border-color: var(--green); box-shadow: 0 0 0 2px rgba(47, 125, 79, 0.35); }
+.pitch-tag-captain {
+  position: absolute; top: -5px; right: -5px; width: 18px; height: 18px; border-radius: 50%;
+  background: var(--orange-dark); color: #fff; border: 1px solid #fff;
+  font-family: var(--font-display); font-size: 0.6rem; font-weight: 700;
+  display: flex; align-items: center; justify-content: center; cursor: help;
+}
+.pitch-name {
+  margin-top: 0.3rem; font-size: 0.72rem; font-weight: 600; text-align: center; line-height: 1.15;
+  color: #fff; text-shadow: 0 1px 2px rgba(34, 26, 18, 0.5);
+}
+
+.pitch-bench {
+  flex: 1 1 220px; max-width: 260px; align-self: flex-start;
+  background: var(--surface); border: 1px solid var(--wood-line-soft); border-radius: 8px; overflow: hidden;
+}
+.pitch-bench-item {
+  display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--wood-line-soft);
+}
+.pitch-bench-item:last-child { border-bottom: none; }
+.pitch-bench-item:nth-child(even) { background: var(--orange-wash); }
+.pitch-bench-demoted { background: #f3e2df; }
+.pitch-bench-promoted { background: #e8f2ec; }
+.pitch-bench-avatar {
+  width: 32px; height: 32px; border-radius: 50%; flex: none;
+  background: var(--wood-line); color: var(--charcoal);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-display); font-weight: 600; font-size: 0.72rem;
+}
+.pitch-bench-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.15rem; }
+.pitch-bench-name { font-size: 0.82rem; font-weight: 500; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pitch-check { color: var(--green); font-weight: 700; flex: none; }
+
+.pitch-tag {
+  display: inline-block; width: fit-content; font-family: var(--font-display);
+  font-size: 0.58rem; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase;
+  padding: 0.05rem 0.35rem; border-radius: 3px;
+}
+.pitch-tag-sixth { background: var(--orange); color: #fff; }
+.pitch-tag-demoted { background: #a4544a; color: #fff; }
+
 button, input[type="submit"] {
   font-family: var(--font-display); text-transform: uppercase; letter-spacing: 0.03em;
   font-size: 0.78rem; font-weight: 600; color: #fff; background: var(--orange);

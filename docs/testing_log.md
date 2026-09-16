@@ -1796,3 +1796,67 @@ summary to `/lineup`.
   fell back to Auto instead of crashing. All other routes spot-checked
   (`/`, `/draft`, `/managers`, `/transfers`, `/sync`, `/how-it-works`) -
   still 200 after the import/signature changes.
+
+## 2026-09-16 — "Pitch view" visual on the lineup builder
+
+**Prompted by**: the user asked for a Biwenger-style graphic showing a
+manager's team on a basketball court (player photo cards positioned by
+role, plus a checkmarked bench list), and asked whether it belonged on the
+Managers tab or would work better on `/lineup` instead.
+
+**Why `/lineup`, not the Managers tab**: the reference image's shape - 5
+players on court + a bench column with a "6th man" tag and checkmarks -
+is exactly `/lineup`'s per-round output (`initial`/`recommended`:
+`.starters`, `.sixth_man`, `.bench`, `.captain`), which the raw 13-man
+`/managers/<id>` roster page has no equivalent of (no round, no
+active/excluded split, no captain - that's all decided per-round by
+`choose_active_squad`/`build_lineup`). Building it on the Managers tab
+would have meant re-running the lineup logic there for an implicit round,
+duplicating `/lineup`. Confirmed with the user that no real player photos
+are needed/available before building - checked first: the EuroLeague
+`/people` endpoint (`engine.data.EuroleagueClient.list_people`) returns an
+empty `images: {}` for every player on a live E2026 pull (players and
+coaches alike), unlike clubs, which do have a `crest` image. So every
+player renders as a monogram avatar instead of a photo.
+
+**Changes**:
+- Three tiny presentational Jinja filters in `app.py`
+  (`player_initials`/`player_surname`/`player_display_name`, all parsing
+  the `"SURNAME, FIRSTNAME"` format `Projection.player_name` is always in)
+  - deliberately kept out of `engine/` since they're pure display
+    formatting, not game logic.
+- New `templates/_pitch.html`: a `pitch(lineup, initial_full_ids=none)`
+  macro rendering a court (players grouped into rows by position - Centers
+  nearest the hoop, then Forwards, then Guards, adapting to whichever of
+  the 3 valid formations is in play) plus a bench column (6th man tagged,
+  then the rest of the active 10, each with a checkmark). Captain gets a
+  "C" badge; when `initial_full_ids` is passed (day-2 pitch only) it
+  reuses the exact same promoted/demoted comparison the table below it
+  already does, so the two never disagree.
+- `templates/lineup.html` imports the macro and renders one pitch under
+  each of the existing "Day 1: starting lineup" and "Day 2: swap plan"
+  headers, above the existing detail table (kept as-is - the pitch is a
+  complement, not a replacement, since it can't show projected values,
+  team, or availability).
+- ~90 lines of new CSS in `static/style.css` (`.pitch*`), matching the
+  existing "Courtside" theme tokens (hardwood/orange court, `--charcoal`
+  avatars, same badge style as the existing new/gone/demoted/promoted
+  badges) rather than introducing a new visual language.
+
+**Validation**: Flask app already running locally against the real
+E2026-seeded DB (test managers 13-24 from an earlier `/dev/randomize-draft`
+run). `curl /lineup?manager_id=13&round=1` → 200; verified in the raw HTML
+(no headless-browser tooling available in this sandbox - no `node`, no
+system `pip`/sudo to install one - so this was structural, not a visual,
+check): exactly 2 `.pitch` blocks (day-1 + day-2), 5 `.pitch-player` +
+5 `.pitch-bench-item` per block (10 = the active squad size), 3
+`.pitch-row`s per block (one per position group, none empty for this
+roster's 2-2-1 formation), exactly 1 captain badge and 1 sixth-man badge
+per block, and exactly 1 `DEM` badge total - correctly appearing only in
+the day-2 block (day-1's macro call passes no `initial_full_ids`, so it
+never renders promote/demote badges, matching the existing day-1 table's
+behavior). No Jinja tracebacks in the response. CSS brace-balance checked
+(101 open/101 close). Not yet confirmed by eye in an actual browser -
+worth a quick look next time the app is opened normally, since a headless
+sandbox check can't catch a purely visual misalignment (e.g. avatar
+overlap, text overflow on a long name) the way a real screenshot would.

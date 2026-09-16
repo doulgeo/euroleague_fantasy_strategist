@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_pitch.html" as pitch_macros %}
 {% block title %}Lineup Builder{% endblock %}
 {% block content %}
   <h1>Lineup Builder</h1>
@@ -79,6 +80,7 @@
     </table>
 
     <h2 title="Lock this in before the round starts.">Day 1: starting lineup</h2>
+    {{ pitch_macros.pitch(initial) }}
     <table>
       <thead>
         <tr>
@@ -133,6 +135,7 @@
         results are in, since an underperforming/overperforming day-1 starter can change the right call.
       {% endif %}
     </p>
+    {{ pitch_macros.pitch(recommended, initial_full_ids) }}
     <table>
       <thead>
         <tr>
