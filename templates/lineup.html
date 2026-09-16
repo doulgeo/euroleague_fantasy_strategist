@@ -91,6 +91,14 @@
     </table>
 
     <h2 title="Apply once day 1's games are finished.">Day 2: swap plan</h2>
+    <p>
+      This table shows where each player ends up after the swap, not a second scoring pass for everyone in it.
+      A player marked <span class="banked-badge" title="Already played day 1 - their score for that game is locked in at whatever tier they held in the Day 1 table above, unaffected by where they land here.">BANKED</span>
+      already played on day 1: their points for that game are locked in from the Day 1 table above (at that
+      table's tier - full or double for a starter/captain, half for bench) regardless of what slot they're shown
+      in here. Only rows still marked "later" represent a game still to be played, scored at the tier shown in
+      <em>this</em> table.
+    </p>
     <table>
       <thead>
         <tr>
@@ -101,25 +109,28 @@
       </thead>
       <tbody>
         {% for p in recommended.starters %}
-          <tr>
-            <td>Starter{{ " (C)" if p.player_id == recommended.captain.player_id else "" }}</td>
+          {% set avail = availability_label(p, team_dates) %}
+          <tr class="{{ 'banked-row' if avail == 'day1' else '' }}">
+            <td>Starter{{ " (C)" if p.player_id == recommended.captain.player_id else "" }}{% if avail == "day1" %} <span class="banked-badge" title="Already played day 1 - see the Day 1 table above for their locked-in score.">BANKED</span>{% endif %}</td>
             <td>{{ p.position }}</td><td>{{ p.player_name }}</td><td>{{ p.team }}</td>
-            <td>{{ availability_label(p, team_dates) }}</td>
+            <td>{{ avail }}</td>
             <td>{{ "%.1f"|format(p.projected_pir_with_bonus) }}</td>
           </tr>
         {% endfor %}
-        <tr>
-          <td title="Full points, but never captain-eligible.">6th Man</td>
+        {% set sixth_avail = availability_label(recommended.sixth_man, team_dates) %}
+        <tr class="{{ 'banked-row' if sixth_avail == 'day1' else '' }}">
+          <td title="Full points, but never captain-eligible.">6th Man{% if sixth_avail == "day1" %} <span class="banked-badge" title="Already played day 1 - see the Day 1 table above for their locked-in score.">BANKED</span>{% endif %}</td>
           <td>{{ recommended.sixth_man.position }}</td><td>{{ recommended.sixth_man.player_name }}</td>
           <td>{{ recommended.sixth_man.team }}</td>
-          <td>{{ availability_label(recommended.sixth_man, team_dates) }}</td>
+          <td>{{ sixth_avail }}</td>
           <td>{{ "%.1f"|format(recommended.sixth_man.projected_pir_with_bonus) }}</td>
         </tr>
         {% for p in recommended.bench %}
-          <tr>
-            <td title="Scores at half points automatically - no swap needed to count.">Bench</td>
+          {% set avail = availability_label(p, team_dates) %}
+          <tr class="{{ 'banked-row' if avail == 'day1' else '' }}">
+            <td title="Scores at half points automatically - no swap needed to count.">Bench{% if avail == "day1" %} <span class="banked-badge" title="Already played day 1 - see the Day 1 table above for their locked-in score (not necessarily at half rate - depends what tier they held there).">BANKED</span>{% endif %}</td>
             <td>{{ p.position }}</td><td>{{ p.player_name }}</td><td>{{ p.team }}</td>
-            <td>{{ availability_label(p, team_dates) }}</td>
+            <td>{{ avail }}</td>
             <td>{{ "%.1f"|format(p.projected_pir_with_bonus) }}</td>
           </tr>
         {% endfor %}

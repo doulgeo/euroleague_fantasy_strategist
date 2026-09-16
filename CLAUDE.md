@@ -58,19 +58,31 @@ Full context for a fresh session, in order of what to read:
   recommendation, rather than a greedy cut, so it accounts for a benched
   player's day-2 swap option value. **Current validated headline (regular
   season only, 91 rounds across E2023-E2025, 2730 trials, real exclusion
-  logic): beats or ties a no-swap baseline in 99% of trials (90% outright
-  beat), +24.06 PIR mean gain per round (95% CI ±0.68), captures ~73% of
+  logic): beats or ties a no-swap baseline in 99% of trials (92% outright
+  beat), +29.67 PIR mean gain per round (95% CI ±0.74), captures ~72% of
   the theoretical best-possible swap upside.** This supersedes the prior
-  headline (random exclusion: 96% beat-or-tie, +9.83 PIR, ~50% captured) —
-  real exclusion logic alone turned out to be a bigger lever than the
-  swap logic itself: it raised the no-swap *baseline* by +26.5 PIR and the
-  best-possible ceiling by +40.0 PIR before the swap does anything, simply
-  by not randomly benching good players. See `docs/testing_log.md` → "Full
-  backtest with real exclusion logic" for the full per-season table. The
-  ML-vs-heuristic comparison (below) was rerun under this same real
-  exclusion logic (2026-09-13) and the "no demonstrable win" conclusion
-  held against the much stronger new baseline too — see "ML-vs-heuristic
-  comparison rerun" in the testing log. Playoff rounds
+  headline (+24.06 PIR, 90% outright beat) — a 2026-09-16 fix made the
+  sixth-man slot follow the same day-1-first "golden rule" the 5 starters
+  already did (previously it picked by raw projected value alone, letting
+  a later-playing player grab that slot outright and forfeit its day-1
+  scoring opportunity entirely, while a real day-1 candidate sat wasted on
+  the bench) — see `docs/testing_log.md` → "Fixed sixth-man selection not
+  honoring the day-1-first golden rule" for the full writeup, including
+  why the theoretical best-possible ceiling also moved (it reuses the same
+  selection logic, so it was quietly capped by the same bug). Before that,
+  the prior headline (random exclusion: 96% beat-or-tie, +9.83 PIR, ~50%
+  captured) — real exclusion logic alone turned out to be a bigger lever
+  than the swap logic itself: it raised the no-swap *baseline* by +26.5
+  PIR and the best-possible ceiling by +40.0 PIR before the swap does
+  anything, simply by not randomly benching good players. See
+  `docs/testing_log.md` → "Full backtest with real exclusion logic" for
+  the full per-season table. The ML-vs-heuristic comparison (below) was
+  rerun under real exclusion logic (2026-09-13) and the "no demonstrable
+  win" conclusion held against that stronger baseline too — see
+  "ML-vs-heuristic comparison rerun" in the testing log; **note this
+  predates the 2026-09-16 sixth-man fix and hasn't been rerun against it**
+  — revisit if a precise ML-vs-heuristic number is needed again. Playoff
+  rounds
   are excluded by default from this evaluation — this POC's random
   league-wide roster *sampling* (the 13-man roster itself, not the
   exclusion within it — no real ownership data exists yet) doesn't account

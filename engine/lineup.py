@@ -173,8 +173,15 @@ def _build_formation_starters(
 def build_lineup(active_squad: ActiveSquad, team_dates: dict[str, str], value_fn: ValueFn) -> Lineup:
     """Choose the best of the three valid formations, fill it preferring
     day-1-eligible players first (the golden rule), then by value_fn
-    descending. Sixth man = best remaining player by value_fn (any
-    position). Captain = highest value_fn among the five starters.
+    descending. Sixth man = best remaining player under that same
+    day-1-first-then-value rule (any position) - it's a full-scoring slot
+    just like a starter slot, so it needs to follow the golden rule too:
+    otherwise a later-playing player can grab it outright (capturing only
+    their one game) while a day-1 player of real value gets stuck on the
+    half-scoring bench with no way to ever be upgraded, instead of banking
+    their day-1 game in this slot and then being swap_after_day1-upgraded
+    to the later player anyway. Captain = highest value_fn among the five
+    starters.
     """
     min_date = _min_date(team_dates)
     best_starters: list[Projection] | None = None
@@ -198,7 +205,10 @@ def build_lineup(active_squad: ActiveSquad, team_dates: dict[str, str], value_fn
 
     starter_ids = {p.player_id for p in best_starters}
     remaining = [p for p in active_squad.active if p.player_id not in starter_ids]
-    sixth_man = max(remaining, key=lambda p: value_fn(p.player_id))
+    sixth_man = min(
+        remaining,
+        key=lambda p: (_availability_rank(p, team_dates, min_date), -value_fn(p.player_id)),
+    )
     bench = [p for p in remaining if p.player_id != sixth_man.player_id]
     captain = max(best_starters, key=lambda p: value_fn(p.player_id))
 

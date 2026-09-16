@@ -1511,3 +1511,84 @@ tool (`/sync`) for a fresh full test league if needed.
 user's own sample export. Not yet tested against a real (non-mock,
 non-bot) draft export from the friend's app - the mock export's shape was
 assumed representative; revisit if a real export turns out to differ.
+
+---
+
+## 2026-09-16 — Fixed sixth-man selection not honoring the day-1-first "golden rule"
+
+**What**: the user spotted a real bug live in `/lineup` for manager Test1 -
+a day-1-playing Forward with a solid projection (Vezenkov, 17.4) was stuck
+on the bench (half points, no way to ever be upgraded) while a
+later-playing Forward with a higher raw projection (Clyburn, 19.3) was
+picked as the sixth man from the start - even though nothing had locked
+Clyburn in yet and his slot didn't capture any day-1 value at all.
+
+**Root cause**: `engine/lineup.py::build_lineup`'s starter selection
+(`_build_formation_starters`) correctly ranks candidates by
+`(_availability_rank, -value)` - day-1 players fill starter slots first
+(the documented "golden rule"), which sets up `swap_after_day1` to later
+promote the best same-position *pending* (later-playing) bench player into
+that now-finished slot, banking two games' worth of full-rate points from
+one slot across the round. But the sixth-man pick right below it just did
+`max(remaining, key=value_fn)` - pure value, ignoring availability
+entirely. A later-playing player could grab the sixth-man slot outright,
+forfeiting its day-1 scoring opportunity completely (that slot only ever
+captures the one later game), while a real day-1 candidate for that slot
+got stuck on the half-scoring bench with no swap ever able to reach them
+(swap only promotes bench players into slots whose *current* occupant
+already played - a day-1-availability bench player was never eligible in
+either direction).
+
+**Fix**: changed the sixth-man pick to use the identical
+`(_availability_rank, -value)` sort the starters use, so it participates
+in the same day1-lock-then-swap-upgrade path instead of being chosen by
+raw value alone.
+
+**Validation**:
+1. Reproduced against the real DB (Test1's actual roster, round 1 of the
+   live E2026 schedule) - confirmed Hoard (day1, Forward, 17.8, the best
+   remaining day-1 candidate) now correctly becomes the sixth man instead
+   of Clyburn (later, 19.3), matching the documented golden rule.
+2. Re-ran the full validated backtest (`--seasons E2023 E2024 E2025
+   --min-round 6 --trials-per-round 30 --seed 1`, same 91 rounds/2730
+   trials as the current headline) before and after the fix, same seed for
+   a direct comparison:
+   - **Before (buggy)**: mean gain +24.06 PIR (95% CI ±0.68), beat-or-tie
+     98% (90% beat/8% tied), 73% of swap upside captured.
+   - **After (fixed)**: mean gain **+29.67 PIR** (95% CI ±0.74),
+     beat-or-tie 99% (92% beat/7% tied), 72% of swap upside captured.
+   - The fix is a genuine, substantial improvement (+5.61 PIR/round mean
+     gain) confirming the bug was real and previously costing real value
+     in every recommendation - not just the one example the user noticed.
+     Both `build_lineup`'s output *and* the theoretical best-possible
+     ceiling used for backtesting reuse the same function (per the
+     module's own docstring), so the previous best-possible ceiling was
+     itself quietly capped by this same bug - the true ceiling was always
+     a bit higher than the old headline reported. **This supersedes the
+     prior headline** (91 rounds/2730 trials, +24.06 PIR, 99% beat-or-tie,
+     73% captured) in `CLAUDE.md` and above in this log.
+3. Structural invariant (recommended never worse than no-swap by more than
+   a projection-miss, never breaking the no-swap<=best-possible guarantee)
+   held after the fix - loss-case count and causes unchanged in character
+   (still attributed to projection-vs-actual misses, not logic bugs).
+
+**Also fixed** (found while investigating the user's follow-up question -
+"why would I swap Montero for Larkin if Montero scores high?"): this was
+*not* a second bug - Montero's day-1 points are banked the moment he plays,
+at whatever tier he held in the Day-1 table (captain/2x here), completely
+unaffected by where he lands in the Day-2 swap-plan table. The swap only
+decides who occupies that *slot* for the still-to-be-played half of the
+round, since Montero has no more games left to give it - moving Larkin in
+lets Larkin score at full rate for his later game instead of half on the
+bench, a pure upside pickup on top of Montero's already-locked-in score.
+But the `/lineup` page's "Day 2: swap plan" table displayed this
+misleadingly: an already-played former starter shown as "Bench / day1"
+was visually identical to a genuine bench player who'd been there since
+day 1 (half rate), with no way to tell "this already banked full/double
+points, this row is just bookkeeping" from "this scores half". Added a
+BANKED badge + explanatory paragraph (`templates/lineup.html`,
+`static/style.css`) to any Day-2-table row whose availability is "day1",
+clarifying their score is already locked in from the Day-1 table above
+regardless of what slot they're shown in here. Confirmed via `app.py`'s
+test client against the live Test1/round-1 data (8 BANKED badges rendered,
+200 response).
