@@ -1432,3 +1432,82 @@ closed, unrelated to this change; restarted cleanly with no errors).
 rosters; the underlying EuroLeague `/people` incompleteness for those two
 clubs remains (unfixable from this project's side) but no longer matters
 for roster composition, only as a secondary identity-resolution input.
+
+---
+
+## 2026-09-16 — Bulk draft import from a draft-room app's CSV export
+
+**What**: the user's real draft will happen inside a friend's draft-room
+app, which can export a CSV of the completed draft afterward - requested a
+way to bulk-import that instead of logging 156 picks one at a time via
+`/draft`. Built `engine/draft_import.py` (`parse_draft_csv`,
+`distinct_managers`, `resolve_manager_picks`) plus three new `app.py`
+routes (`/draft/import` upload page with a drag-and-drop zone + file
+picker, `/draft/import/preview` parses the upload and shows a
+manager-matching page, `/draft/import/commit` writes the picks) and two
+templates. Linked from the draft board header.
+
+The export format (one row per pick: `manager_id`/`manager` - the
+draft app's own identity, not this project's - `player`, `team`, `pos`,
+`overall_pick`, plus other columns this project doesn't need) is parsed by
+reading rows until one stops matching the header's column count or has a
+blank manager_id/non-numeric overall_pick - which cleanly stops before an
+optional "Final rosters" trailer section some exports append after a
+blank line, without ever needing to special-case that section. Player
+identity is resolved the same way as the existing Fantasy-sheet sync
+(`engine.fantasy_pool.resolve_pool_rows`, reused as-is): by normalized
+(team, surname, first name) against this season's synced roster, then
+against any historical player_id, falling back to the same synthetic-ID
+scheme on no match. The export's team codes were confirmed to exactly
+match the Fantasy sheet's own codes (`engine.fantasy_pool.TEAM_CODE_MAP`,
+reused unchanged) - both are downstream of the real EuroLeague Fantasy
+game. The full-name column (no separate first/surname like the sheet has)
+is split on the last whitespace token as the surname, which handles
+hyphenated surnames correctly since the hyphen isn't a space character.
+
+The commit step lets the user map each CSV manager name to one of this
+project's real managers (auto-suggested on an exact case-insensitive name
+match, editable) or skip it, with an optional "clear existing ownership
+first" checkbox (checked by default) for the initial-teams-import use
+case - reusing the same `DELETE FROM ownership` pattern as the existing
+randomize-draft dev tool. Picks are still logged as normal `draft`
+transactions via `engine.ownership.record_draft_pick`, so the transaction
+history stays honest.
+
+**How**: live-tested end-to-end against the real running app and DB
+(not just unit-level), using the exact sample CSV the user provided (a
+48-pick, 6-manager "mock draft — practice" export, including its
+"Final rosters" trailer section). `parse_draft_csv` correctly stopped at
+48 rows (not 49 - confirmed it did not pick up the trailer's first data
+row). `resolve_manager_picks` against the real local DB resolved all 48
+picks to real, existing player_ids with zero synthetic fallbacks,
+including tricky cases the split/match logic needed to get right: "Wade
+Baldwin" → `BALDWIN IV, WADE`, "Mckinley Wright" → `WRIGHT IV, MCKINLEY`,
+"Nigel Hayes-davis" → `HAYES-DAVIS, NIGEL`, "TJ Leaf" → `LEAF, TJ`, "Talen
+Horton-Tucker" → `HORTON TUCKER, TALEN`. Then drove the actual HTTP
+endpoints against the running dev server: `POST /draft/import/preview`
+with the real file (found all 6 CSV managers, 48 total picks), then
+`POST /draft/import/commit` mapping them to 6 of this DB's existing
+placeholder managers with `clear_existing=1` - confirmed the response
+flash ("Imported 48 pick(s) across 6 manager(s)", zero skipped), then
+verified directly against the DB (exactly 48 owned rows, 8 per mapped
+manager, previous 157 wiped) and against the app's own pages (`/managers/13`
+showed the right 8 players; `/draft` showed all 48 as drafted with the
+correct owner name in each row - confirming a CSV-imported player
+correctly disappears as a draft/transfer candidate for everyone else, the
+same core payoff validated for manual drafting in the original
+draft/ownership-tracking entry above).
+
+Note: the DB's pre-existing ownership state (157 players across 12
+placeholder `TestN` managers, evidently leftover ad-hoc test data from
+outside this session) was wiped by this test's `clear_existing=1` and
+replaced with the 48-pick mock import above - left as the new local state
+rather than restored, since it was disposable placeholder data to begin
+with (same `TestN` managers the existing roster-cap-validation entry above
+already found in an inconsistent state). Re-run the dev randomize-draft
+tool (`/sync`) for a fresh full test league if needed.
+
+**Result**: working and live-tested against the real app/DB with the
+user's own sample export. Not yet tested against a real (non-mock,
+non-bot) draft export from the friend's app - the mock export's shape was
+assumed representative; revisit if a real export turns out to differ.

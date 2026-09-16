@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Import Draft{% endblock %}
+{% block content %}
+  <h1>Import Draft From CSV</h1>
+  <p>Upload the pick-log CSV exported by a draft-room app once the draft is
+  over, instead of logging every pick by hand on the
+  <a href="{{ url_for('draft') }}">draft board</a>. The next step lets you
+  map each name in the file to one of this league's managers before
+  anything is written.</p>
+
+  <form id="import-form" method="post" action="{{ url_for('draft_import_preview') }}" enctype="multipart/form-data" class="stacked-form">
+    <div id="dropzone" class="dropzone">
+      <p id="dropzone-text">Drag a CSV file here, or click to choose one.</p>
+      <input type="file" id="csv_file" name="csv_file" accept=".csv,text/csv" required style="display:none;">
+    </div>
+    <button type="submit">Upload</button>
+  </form>
+
+  <script>
+    (function () {
+      var dropzone = document.getElementById('dropzone');
+      var text = document.getElementById('dropzone-text');
+      var input = document.getElementById('csv_file');
+
+      dropzone.addEventListener('click', function () { input.click(); });
+
+      input.addEventListener('change', function () {
+        if (input.files.length) {
+          text.textContent = 'Selected: ' + input.files[0].name;
+        }
+      });
+
+      ['dragenter', 'dragover'].forEach(function (evt) {
+        dropzone.addEventListener(evt, function (e) {
+          e.preventDefault();
+          dropzone.classList.add('dropzone-active');
+        });
+      });
+      ['dragleave', 'drop'].forEach(function (evt) {
+        dropzone.addEventListener(evt, function (e) {
+          e.preventDefault();
+          dropzone.classList.remove('dropzone-active');
+        });
+      });
+      dropzone.addEventListener('drop', function (e) {
+        var files = e.dataTransfer.files;
+        if (files.length) {
+          input.files = files;
+          text.textContent = 'Selected: ' + files[0].name;
+        }
+      });
+    })();
+  </script>
+{% endblock %}

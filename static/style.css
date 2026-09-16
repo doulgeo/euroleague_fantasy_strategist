@@ -246,6 +246,20 @@ select, input[type="text"], input[type="number"] {
 }
 select:focus, input:focus { outline: 2px solid var(--orange-light); border-color: var(--orange); }
 
+.dropzone {
+  border: 2px dashed var(--wood-line);
+  border-radius: 6px;
+  padding: 2rem 1rem;
+  text-align: center;
+  color: var(--ink-soft);
+  background: var(--court-bg);
+  cursor: pointer;
+  margin-bottom: 0.9rem;
+  transition: border-color 0.15s, background 0.15s;
+}
+.dropzone:hover { border-color: var(--orange); }
+.dropzone-active { border-color: var(--orange); background: var(--orange-wash); }
+
 button, input[type="submit"] {
   font-family: var(--font-display); text-transform: uppercase; letter-spacing: 0.03em;
   font-size: 0.78rem; font-weight: 600; color: #fff; background: var(--orange);

@@ -27,6 +27,7 @@ from flask import Flask, abort, flash, g, redirect, render_template, request, ur
 
 from draft_board import build_draft_board, replacement_values, tier_breaks
 from engine import ownership
+from engine.draft_import import DraftCsvError, distinct_managers, parse_draft_csv, resolve_manager_picks
 from engine.db import (
     DB_PATH,
     all_known_players,
@@ -408,6 +409,98 @@ def draft_pick():
     if request.form.get("hide_drafted"):
         redirect_args["hide_drafted"] = request.form["hide_drafted"]
     return redirect(url_for("draft", **redirect_args))
+
+
+@app.route("/draft/import", methods=["GET"])
+def draft_import():
+    return render_template("draft_import.html")
+
+
+@app.route("/draft/import/preview", methods=["POST"])
+def draft_import_preview():
+    file = request.files.get("csv_file")
+    if file is None or file.filename == "":
+        flash("Choose a CSV file to upload first.", "error")
+        return redirect(url_for("draft_import"))
+
+    try:
+        text = file.read().decode("utf-8-sig")
+    except UnicodeDecodeError:
+        flash("Could not read that file as text - is it really a CSV export?", "error")
+        return redirect(url_for("draft_import"))
+
+    try:
+        rows = parse_draft_csv(text)
+    except DraftCsvError as e:
+        flash(str(e), "error")
+        return redirect(url_for("draft_import"))
+
+    conn = get_db()
+    managers = ownership.list_managers(conn)
+    manager_by_lower_name = {m["name"].strip().lower(): m["manager_id"] for m in managers}
+
+    csv_managers = distinct_managers(rows)
+    for cm in csv_managers:
+        cm["suggested_manager_id"] = manager_by_lower_name.get(cm["manager_name"].strip().lower())
+
+    return render_template(
+        "draft_import_map.html",
+        csv_text=text,
+        csv_managers=csv_managers,
+        managers=managers,
+        total_picks=len(rows),
+    )
+
+
+@app.route("/draft/import/commit", methods=["POST"])
+def draft_import_commit():
+    conn = get_db()
+    text = request.form.get("csv_text", "")
+    try:
+        rows = parse_draft_csv(text)
+    except DraftCsvError as e:
+        flash(f"Could not re-read the uploaded data: {e}", "error")
+        return redirect(url_for("draft_import"))
+
+    csv_managers = distinct_managers(rows)
+    mapping: dict[str, int] = {}
+    for cm in csv_managers:
+        raw = request.form.get(f"manager_for_{cm['manager_key']}", "").strip()
+        if raw:
+            mapping[cm["manager_key"]] = int(raw)
+
+    if not mapping:
+        flash("No CSV managers were mapped to a league manager - nothing imported.", "error")
+        return redirect(url_for("draft_import"))
+
+    if request.form.get("clear_existing") == "1":
+        conn.execute("DELETE FROM ownership")
+        conn.commit()
+
+    roster_rows = load_roster(conn, CURRENT_SEASON)
+    historical_players = all_known_players(conn)
+
+    drafted = 0
+    skipped: list[str] = []
+    for manager_key, manager_id in mapping.items():
+        resolved, diag = resolve_manager_picks(rows, manager_key, roster_rows, historical_players)
+        skipped.extend(diag.get("skipped", []))
+        for r in resolved:
+            try:
+                ownership.record_draft_pick(conn, r["player_id"], manager_id, notes="csv import")
+                drafted += 1
+            except ValueError as e:
+                skipped.append(f"{r['player_name']}: {e}")
+
+    flash(
+        f"Imported {drafted} pick(s) across {len(mapping)} manager(s)."
+        + (f" {len(skipped)} skipped." if skipped else ""),
+        "success" if drafted else "error",
+    )
+    for s in skipped[:20]:
+        flash(s, "error")
+
+    return redirect(url_for("draft"))
 
 
 @app.route("/managers")

@@ -17,7 +17,12 @@ for personal use among friends — never monetized or redistributed.
   (scarcity-adjusted value) and tiering (where the drop-off to the next
   player actually matters).
 - **Draft & ownership tracking** — log real draft picks, trades, and
-  free-agent adds/drops for all 12 managers; see who owns whom.
+  free-agent adds/drops for all 12 managers; see who owns whom. A completed
+  draft can also be bulk-imported from a draft-room app's CSV export
+  (drag-and-drop or file picker on the draft board) instead of logging
+  every pick by hand — matches each drafted player to this project's own
+  data and lets you map the file's manager names to this league's managers
+  before anything is written.
 - **Transfer suggestions** — same-position upgrades from the actual
   unowned free-agent pool.
 - **Lineup builder** — for a chosen manager and round (including a round

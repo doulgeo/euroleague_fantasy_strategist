@@ -184,6 +184,33 @@ Full context for a fresh session, in order of what to read:
   end-to-end in the running app. Left in place afterward (unlike other test
   data this session) — populating a working league is this tool's actual
   purpose.
+- **Bulk draft import from a CSV export**, as of 2026-09-16: the user's
+  real draft will happen inside a friend's draft-room app, which exports a
+  CSV of the completed draft — `engine/draft_import.py`
+  (`parse_draft_csv`/`distinct_managers`/`resolve_manager_picks`) plus
+  three `app.py` routes (`/draft/import` upload page with drag-and-drop +
+  file picker, `/draft/import/preview` shows a manager-matching step,
+  `/draft/import/commit` writes the picks) let the user upload that export
+  instead of logging 156 picks by hand. Player identity is resolved by
+  reusing `engine.fantasy_pool.resolve_pool_rows` and `TEAM_CODE_MAP`
+  as-is (the export's team codes were confirmed to match the Fantasy
+  sheet's own codes exactly) — same normalized-name matching, same
+  synthetic-ID fallback for a genuinely unresolved player. The parser reads
+  the pick-log section of the export (one row per pick) and stops cleanly
+  before an optional "Final rosters" trailer some exports append, without
+  needing to special-case it. The commit step maps each CSV manager name
+  to a real manager (auto-suggested on exact name match, editable or
+  skippable) with an optional "clear existing ownership first" checkbox
+  for the initial-teams-import case. Live-tested end-to-end against the
+  real running app/DB using the user's own sample export (48 picks/6
+  managers): all 48 resolved to real player_ids with zero synthetic
+  fallbacks (including tricky cases like suffix/hyphenated-surname
+  matches), and the imported picks correctly showed up as drafted (with
+  the right owner) on the real `/draft` and `/managers/<id>` pages. See
+  `docs/testing_log.md` → "Bulk draft import from a draft-room app's CSV
+  export" for the full write-up. Not yet tested against a real (non-mock)
+  export from the friend's app — revisit if that shape turns out to
+  differ from the mock export this was built against.
 
 **Explicitly NOT done yet (all deferred, not forgotten):**
 - The draft-tracking UI above is v1: no draft-credit/budget tracking
