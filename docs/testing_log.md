@@ -1891,3 +1891,35 @@ section rewritten as a `<dl>` with one entry per decision step plus a
 **Validation**: `curl` on both `/lineup?manager_id=13&round=1` and
 `/how-it-works` → 200, no Jinja tracebacks; grepped for new content
 ("golden rule", "286 possible") landing on both pages as expected.
+
+## 2026-09-18 — "Clean the teams" dev button + manager natural-sort fix
+
+**Prompted by**: the user asked for a button to clear all teams (distinct
+from the existing "Randomize a full draft" tool, which clears ownership
+*and* immediately re-drafts everyone) - useful to reset to a clean slate
+without populating a new random league. In the same message, the user also
+flagged that managers were sorting wrong ("Test10" above "Test2").
+
+**Changes**:
+- `engine/ownership.py`: new `clear_all_ownership(conn)` - a plain `DELETE
+  FROM ownership` (same statement `dev_draft.randomize_draft` already runs
+  before re-drafting), returning the number of players freed. Deliberately
+  leaves `transactions` alone, same reasoning as the existing randomize
+  tool: that log records what happened, not current state.
+- `app.py`: new `POST /dev/clear-teams` route, flashes a count, redirects
+  to `/sync`.
+- `templates/sync.html`: second button in the existing "Developer tools"
+  section, next to "Randomize a full draft."
+- `engine/ownership.py::list_managers` was doing a plain SQL `ORDER BY
+  name`, i.e. lexicographic ("Test10" < "Test2" character-by-character).
+  Added `_natural_sort_key` (splits the name into text/number chunks,
+  compares the numeric chunks as ints) and sort in Python instead. This is
+  the single call site every manager-listing page uses (draft board,
+  managers list, lineup/transfers manager pickers, the sync-page count),
+  so the one fix covers all of them.
+
+**Validation**: `_natural_sort_key` unit-checked against
+`['Test10','Test2','Test1','Zed','test9']` → sorts to `['Test1', 'Test2',
+'test9', 'Test10', 'Zed']` (numeric chunks compared as ints, case-
+insensitive text chunks). `app.py` imports clean; `test_client().post('/dev
+/clear-teams')` → 302 to `/sync` against the real dev DB state.

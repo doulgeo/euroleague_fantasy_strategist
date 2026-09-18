@@ -110,4 +110,7 @@
   <form method="post" action="{{ url_for('dev_randomize_draft') }}" class="stacked-form">
     <button type="submit">Randomize a full draft (resets all rosters)</button>
   </form>
+  <form method="post" action="{{ url_for('dev_clear_teams') }}" class="stacked-form">
+    <button type="submit">Clean the teams (clears all rosters, no re-draft)</button>
+  </form>
 {% endblock %}

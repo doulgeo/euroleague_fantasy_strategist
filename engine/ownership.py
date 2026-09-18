@@ -23,6 +23,7 @@ from a partial write.
 
 from __future__ import annotations
 
+import re
 import sqlite3
 import uuid
 from datetime import datetime, timezone
@@ -39,9 +40,31 @@ def get_manager_id(conn: sqlite3.Connection, name: str) -> int | None:
     return row[0] if row else None
 
 
+def _natural_sort_key(name: str) -> list:
+    """Splits a name into text/number chunks so e.g. "Test2" sorts before
+    "Test10" - plain SQL/string ordering treats them character-by-character
+    ("1" < "2") and gets this backwards.
+    """
+    return [int(chunk) if chunk.isdigit() else chunk.lower() for chunk in re.split(r"(\d+)", name)]
+
+
 def list_managers(conn: sqlite3.Connection) -> list[dict]:
-    cur = conn.execute("SELECT manager_id, name FROM managers ORDER BY name")
-    return [{"manager_id": r[0], "name": r[1]} for r in cur.fetchall()]
+    cur = conn.execute("SELECT manager_id, name FROM managers")
+    rows = [{"manager_id": r[0], "name": r[1]} for r in cur.fetchall()]
+    rows.sort(key=lambda m: _natural_sort_key(m["name"]))
+    return rows
+
+
+def clear_all_ownership(conn: sqlite3.Connection) -> int:
+    """Wipes every manager's roster back to free agency - a real DELETE, not
+    a drop-by-drop log entry, same dev-reset spirit as engine.dev_draft's
+    randomize_draft (which does this same delete before re-drafting).
+    Doesn't touch `transactions` - that log stays a record of what actually
+    happened, not of current state. Returns the number of players freed.
+    """
+    cur = conn.execute("DELETE FROM ownership")
+    conn.commit()
+    return cur.rowcount
 
 
 def current_owner(conn: sqlite3.Connection, player_id: str) -> int | None:

@@ -315,6 +315,14 @@ def dev_randomize_draft():
     return redirect(url_for("sync_page"))
 
 
+@app.route("/dev/clear-teams", methods=["POST"])
+def dev_clear_teams():
+    conn = get_db()
+    freed = ownership.clear_all_ownership(conn)
+    flash(f"Cleared all teams: {freed} player(s) sent back to free agency.", "success")
+    return redirect(url_for("sync_page"))
+
+
 @app.route("/sync/db", methods=["POST"])
 def sync_db_trigger():
     seasons = [s for s in KNOWN_SEASONS if request.form.get(f"season_{s}") == "1"]
