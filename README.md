@@ -46,6 +46,13 @@ for personal use among friends — never monetized or redistributed.
 - **Dev tools** — a one-click "randomize a full draft" button (also on the
   Sync page) for populating a realistic 12-manager league while developing,
   without hand-drafting 156 players. Not for the real draft.
+- **Manual projection overrides** — for a player with zero EuroLeague
+  box-score history anywhere (a mid-season transfer from another league,
+  say), the projection is otherwise a flat 0.0. `set_manual_projection.py`
+  lets you set a researched estimate instead (marked with an `EST` badge on
+  the draft board and roster pages) — the intended workflow is to ask a
+  Claude Code session to look up the player first, then persist whatever
+  number you settle on.
 
 See the in-app **How this works** page (linked in the nav once the app is
 running) for the full mechanics — scoring model, projection method, what
@@ -91,6 +98,7 @@ sync_db.py           Refreshes box-score history (run after each gameweek)
 sync_rosters.py      Refreshes current club rosters (run before a draft / after transfer news)
 sync_fantasy_pool.py Refreshes the real Fantasy draft pool from a Google Sheet (run whenever the sheet changes)
 seed_league.py  One-time setup of the 12 managers
+set_manual_projection.py  Set/clear/list manual projection estimates for players with no box-score history
 docs/           Fuller technical notes, game rules, and a validation log
 ```
 

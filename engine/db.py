@@ -189,6 +189,28 @@ _SCHEDULE_COLUMNS = (
 )
 
 
+# --- Manual projection overrides (engine.rosters.merge_roster) ---
+#
+# A player with zero box-score history anywhere (E2023+) gets a flat 0.0
+# placeholder projection from merge_roster - there's no local data to base
+# a real one on, e.g. a mid-season NBA transfer with no EuroLeague games at
+# all. Rather than inventing a heuristic number for that case, this table
+# holds a human-entered (or Claude-researched, via web search on the
+# player's recent form/role - see set_manual_projection.py) estimate that
+# merge_roster substitutes in place of 0.0 when present. One row per
+# player - INSERT OR REPLACE keeps this idempotent to rerun/update.
+
+_CREATE_MANUAL_PROJECTIONS_SQL = """
+CREATE TABLE IF NOT EXISTS manual_projections (
+    player_id TEXT PRIMARY KEY,
+    player_name TEXT NOT NULL,
+    projected_pir REAL NOT NULL,
+    note TEXT,
+    set_at TEXT NOT NULL
+)
+"""
+
+
 def get_connection(db_path: Path | str = DB_PATH) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path)
     conn.execute(_CREATE_TABLE_SQL)
@@ -204,6 +226,7 @@ def get_connection(db_path: Path | str = DB_PATH) -> sqlite3.Connection:
     conn.execute(_CREATE_FANTASY_POOL_SQL)
     conn.execute(_CREATE_SCHEDULE_SQL)
     conn.execute(_CREATE_SCHEDULE_ROUND_INDEX_SQL)
+    conn.execute(_CREATE_MANUAL_PROJECTIONS_SQL)
     conn.commit()
     return conn
 
@@ -398,6 +421,31 @@ def known_player_ids(conn: sqlite3.Connection) -> set[str]:
     every EuroLeague season ever played)."""
     cur = conn.execute("SELECT DISTINCT player_id FROM player_game_stats")
     return {row[0] for row in cur.fetchall()}
+
+
+def set_manual_projection(conn: sqlite3.Connection, player_id: str, player_name: str, projected_pir: float, note: str | None = None) -> None:
+    conn.execute(
+        "INSERT OR REPLACE INTO manual_projections (player_id, player_name, projected_pir, note, set_at) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (player_id, player_name, projected_pir, note, datetime.now(timezone.utc).isoformat()),
+    )
+    conn.commit()
+
+
+def clear_manual_projection(conn: sqlite3.Connection, player_id: str) -> bool:
+    cur = conn.execute("DELETE FROM manual_projections WHERE player_id = ?", (player_id,))
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def load_manual_projections(conn: sqlite3.Connection) -> dict[str, dict]:
+    """player_id -> {player_name, projected_pir, note, set_at} for every
+    player with a manually-set projection override."""
+    cur = conn.execute("SELECT player_id, player_name, projected_pir, note, set_at FROM manual_projections")
+    return {
+        row[0]: {"player_name": row[1], "projected_pir": row[2], "note": row[3], "set_at": row[4]}
+        for row in cur.fetchall()
+    }
 
 
 def all_known_players(conn: sqlite3.Connection) -> list[dict]:

@@ -30,6 +30,14 @@ Three problems this solves that build_projections alone can't:
   anything draftable while still surfacing them (visibly marked) on a
   manager's roster if already owned - see app.py's /draft (filters these
   out) vs. manager_roster route (shows them greyed out, prompting a drop).
+- The zero-value placeholder above is honest but not always useful - e.g. a
+  mid-season NBA transfer with no EuroLeague history at all, where a flat
+  0.0 undersells them and there's no local data to compute anything better
+  from. `manual_projections` (engine.db.load_manual_projections,
+  set_manual_projection.py) lets that placeholder be a human/Claude-
+  researched estimate instead, flagged separately as `estimated_player_ids`
+  so the UI can distinguish "estimated from outside research" from "no
+  data, still 0.0."
 """
 
 from __future__ import annotations
@@ -43,8 +51,9 @@ def merge_roster(
     pool: dict[str, Projection],
     roster_rows: list[dict],
     known_player_ids: set[str],
-) -> tuple[dict[str, Projection], set[str], set[str]]:
-    """Returns (merged_pool, new_player_ids, gone_player_ids).
+    manual_projections: dict[str, dict] | None = None,
+) -> tuple[dict[str, Projection], set[str], set[str], set[str]]:
+    """Returns (merged_pool, new_player_ids, gone_player_ids, estimated_player_ids).
 
     new_player_ids = roster players absent from known_player_ids - i.e. no
     box-score history anywhere in the local DB (see engine.db.known_player_ids
@@ -55,10 +64,21 @@ def merge_roster(
     have box-score history) who are NOT on any club's roster this season
     (`roster_rows`) - no longer part of the competition at all, as far as
     the current roster sync can tell.
+
+    estimated_player_ids = players who'd otherwise get the flat 0.0
+    placeholder (no box-score history) but have a row in
+    `manual_projections` (engine.db.load_manual_projections -
+    set_manual_projection.py) - a human/Claude-researched estimate substituted
+    in its place. Distinct from new_player_ids: an estimated player is
+    usually also new, but the two are tracked separately since a future
+    multi-season fallback could make a player "new" without ever needing an
+    estimate, or vice versa.
     """
     merged = dict(pool)
     new_player_ids: set[str] = set()
+    estimated_player_ids: set[str] = set()
     roster_ids = {r["player_id"] for r in roster_rows}
+    manual_projections = manual_projections or {}
 
     for r in roster_rows:
         pid = r["player_id"]
@@ -68,17 +88,22 @@ def merge_roster(
             if existing.team != r["team"]:
                 merged[pid] = replace(existing, team=r["team"], position=existing.position or r["position"])
         else:
+            manual = manual_projections.get(pid)
+            pir = manual["projected_pir"] if manual else 0.0
+            if manual:
+                estimated_player_ids.add(pid)
+
             merged[pid] = Projection(
                 player_id=pid,
                 player_name=r["player_name"],
                 position=r["position"],
                 team=r["team"],
                 games_sampled=0,
-                projected_pir=0.0,
+                projected_pir=pir,
                 minutes_trend_seconds=0.0,
                 volatility=0.0,
                 team_win_rate=None,
-                projected_pir_with_bonus=0.0,
+                projected_pir_with_bonus=pir,
             )
 
         if pid not in known_player_ids:
@@ -86,4 +111,4 @@ def merge_roster(
 
     gone_player_ids = {pid for pid in pool if pid not in roster_ids}
 
-    return merged, new_player_ids, gone_player_ids
+    return merged, new_player_ids, gone_player_ids, estimated_player_ids

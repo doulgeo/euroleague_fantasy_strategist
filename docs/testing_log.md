@@ -1923,3 +1923,72 @@ flagged that managers were sorting wrong ("Test10" above "Test2").
 'test9', 'Test10', 'Zed']` (numeric chunks compared as ints, case-
 insensitive text chunks). `app.py` imports clean; `test_client().post('/dev
 /clear-teams')` → 302 to `/sync` against the real dev DB state.
+
+---
+
+## 2026-09-20 — Manual projection overrides for brand-new players
+
+**What**: the user asked for a "recalc projections" option so new players
+picked up by a roster sync get "assigned a score" instead of the flat 0.0
+placeholder. Investigated first (a fork-mapped `app.py`/`engine.rosters`)
+before building anything, since the premise needed checking:
+
+1. Projections already auto-recompute - `app.py`'s `_projection_cache` is
+   cleared unconditionally whenever any sync job finishes, and is also
+   invalidated by DB mtime, so the very next page load after a roster sync
+   already rebuilds from scratch. There was no staleness bug to fix.
+2. The actual complaint is that `engine.rosters.merge_roster` gives *any*
+   player missing from the current season's `build_projections` output a
+   flat 0.0 - which conflates two different cases: a player with real
+   history in an older season (mechanically fixable, deferred separately -
+   see CLAUDE.md's "known gap" note), and a genuinely brand-new player
+   with zero box-score history anywhere (E2023+) - a mid-season transfer
+   from another league being the concrete example the user raised, where
+   no local data exists to compute anything from.
+
+Asked the user how they wanted case 2 handled, since CLAUDE.md already
+flags this as a deliberately deferred decision. They proposed researching
+such players via news/other-league stats (an LLM-assisted "scouting" step)
+rather than a positional-average heuristic, and confirmed this should run
+on-demand through a Claude Code session (web search + judgment call), not
+as an automated in-app LLM call - no new API key/infra, consistent with
+this project's "no added complexity without a demonstrated need" pattern
+(see the ML-vs-heuristic and opponent-strength write-ups).
+
+**Built**:
+- `manual_projections` table (`engine/db.py`): `player_id` (PK),
+  `player_name`, `projected_pir`, `note`, `set_at`. Plus
+  `set_manual_projection`/`clear_manual_projection`/`load_manual_projections`.
+- `engine.rosters.merge_roster` gained a `manual_projections` param: a
+  player who'd otherwise get the 0.0 placeholder gets the manual value
+  instead (in both `projected_pir` and `projected_pir_with_bonus` - no
+  bonus computation basis without real games). Return signature grew a
+  4th set, `estimated_player_ids`, tracked separately from
+  `new_player_ids` (usually overlapping, not always - e.g. a future
+  multi-season fallback could make a player "new" without ever needing an
+  estimate). `app.py::get_pool` now returns a 4-tuple; all 7 call sites
+  updated.
+- `set_manual_projection.py`: a plain data-entry CLI (no research logic of
+  its own, by design - that's the Claude Code session's job) -
+  `python set_manual_projection.py "SURNAME, FIRST" <pir> --note "..."`,
+  plus `--clear` and `--list`. Player lookup is case-insensitive substring
+  match against this season's `rosters` + all historically-known
+  player_ids, listing candidates rather than guessing on ambiguity (same
+  "flag rather than silently guess" pattern as `engine.fantasy_pool`).
+- `templates/draft.html` / `manager_roster.html`: an `EST` badge next to
+  `NEW` when a player's projection came from a manual override, so it
+  reads distinctly from both a real computed value and an unestimated 0.0.
+
+**Validation**: `app.py` imports clean. Set a real test override
+(`MINAYA, JUSTIN`, 015142 - a real BAR roster player with zero local
+box-score history, 74 such players currently on E2026 rosters) to 9.5 via
+the CLI, confirmed via a Python `app.app_context()` probe that `get_pool`
+picked it up on the very next call with no server restart (DB-mtime cache
+invalidation working as expected) - `Projection(pir=9.5, +bonus=9.5, n=0)`,
+present in both `new_ids` and `estimated_ids`. Started the real dev server
+and curled `/draft`, `/managers`, `/managers/<id>`, `/transfers`,
+`/lineup`, `/transactions` - all 200, no template errors from the new
+4-tuple/`estimated_ids` threading. Re-set the override and grepped the
+live `/draft` HTML to confirm the `EST` badge actually renders next to
+`NEW`. Cleared the test override afterward (`--clear`), confirmed
+`--list` shows none remaining - DB left clean, no leftover test data.

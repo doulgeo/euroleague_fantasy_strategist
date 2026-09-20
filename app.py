@@ -36,6 +36,7 @@ from engine.db import (
     known_player_ids,
     latest_game_date,
     load_fantasy_pool,
+    load_manual_projections,
     load_roster,
     load_rows,
     load_schedule,
@@ -178,14 +179,14 @@ def _resolve_pool_source(conn: sqlite3.Connection) -> tuple[str, int]:
     return CURRENT_SEASON, max_round + 1
 
 
-def get_pool(conn: sqlite3.Connection) -> tuple[dict[str, Projection], set[str], set[str]]:
-    """(projections, new_player_ids, gone_player_ids) - the projection pool
-    merged with the current roster composition, so a transferred player
-    shows their real current team, a player with no box-score history yet
-    (new to the league) still appears flagged rather than being silently
-    absent, and a player no longer part of the current roster composition
-    is flagged rather than looking like a normal draftable/tradeable
-    player.
+def get_pool(conn: sqlite3.Connection) -> tuple[dict[str, Projection], set[str], set[str], set[str]]:
+    """(projections, new_player_ids, gone_player_ids, estimated_player_ids) -
+    the projection pool merged with the current roster composition, so a
+    transferred player shows their real current team, a player with no
+    box-score history yet (new to the league) still appears flagged rather
+    than being silently absent, and a player no longer part of the current
+    roster composition is flagged rather than looking like a normal
+    draftable/tradeable player.
 
     Roster composition source: the real EuroLeague Fantasy draft pool
     (engine.fantasy_pool, a user-maintained Google Sheet synced via
@@ -208,16 +209,17 @@ def get_pool(conn: sqlite3.Connection) -> tuple[dict[str, Projection], set[str],
 
     roster_rows = load_roster(conn, CURRENT_SEASON)
     seen = known_player_ids(conn)
+    manual = load_manual_projections(conn)
 
     fantasy_pool_rows = load_fantasy_pool(conn)
     if fantasy_pool_rows:
         historical_players = all_known_players(conn)
         resolved_rows, _diag = resolve_pool_rows(fantasy_pool_rows, roster_rows, historical_players)
-        projections, new_ids, gone_ids = merge_roster(projections, resolved_rows, seen)
+        projections, new_ids, gone_ids, estimated_ids = merge_roster(projections, resolved_rows, seen, manual)
     else:
-        projections, new_ids, gone_ids = merge_roster(projections, roster_rows, seen)
+        projections, new_ids, gone_ids, estimated_ids = merge_roster(projections, roster_rows, seen, manual)
 
-    result = (projections, new_ids, gone_ids)
+    result = (projections, new_ids, gone_ids, estimated_ids)
     _projection_cache[key] = (mtime_ns, result)
     return result
 
@@ -301,7 +303,7 @@ def dev_randomize_draft():
         flash("No managers seeded yet - run seed_league.py first.", "error")
         return redirect(url_for("sync_page"))
 
-    pool, _new_ids, gone_ids = get_pool(conn)
+    pool, _new_ids, gone_ids, _estimated_ids = get_pool(conn)
     draftable_pool = {pid: p for pid, p in pool.items() if pid not in gone_ids}
     manager_ids = [m["manager_id"] for m in managers]
 
@@ -359,7 +361,7 @@ def sync_fantasy_pool_trigger():
 @app.route("/draft")
 def draft():
     conn = get_db()
-    pool, new_ids, gone_ids = get_pool(conn)
+    pool, new_ids, gone_ids, estimated_ids = get_pool(conn)
     draftable_pool = {pid: p for pid, p in pool.items() if pid not in gone_ids}
     board = build_draft_board(draftable_pool)
     replacement = replacement_values(board)
@@ -405,6 +407,7 @@ def draft():
                 "owner_id": owner_id,
                 "tier_break_after": is_default_sort and p.player_id in tier_break_ids,
                 "is_new": p.player_id in new_ids,
+                "is_estimated": p.player_id in estimated_ids,
             })
         positions_out[position] = rows_out
 
@@ -563,7 +566,7 @@ def manager_roster(manager_id: int):
     if manager is None:
         abort(404)
 
-    pool, new_ids, gone_ids = get_pool(conn)
+    pool, new_ids, gone_ids, estimated_ids = get_pool(conn)
     player_ids = ownership.manager_roster_ids(conn, manager_id)
 
     by_position: dict[str, list[Projection]] = {position: [] for position in REQUIRED_COUNTS}
@@ -585,6 +588,7 @@ def manager_roster(manager_id: int):
         unresolved=unresolved,
         new_ids=new_ids,
         gone_ids=gone_ids,
+        estimated_ids=estimated_ids,
     )
 
 
@@ -593,7 +597,7 @@ def transactions():
     conn = get_db()
     managers = ownership.list_managers(conn)
     manager_names = {m["manager_id"]: m["name"] for m in managers}
-    pool, _new_ids, _gone_ids = get_pool(conn)
+    pool, _new_ids, _gone_ids, _estimated_ids = get_pool(conn)
     history = ownership.transaction_history(conn, limit=200)
     for t in history:
         p = pool.get(t["player_id"])
@@ -671,7 +675,7 @@ def transfers():
 
     if manager_id_raw:
         selected_manager_id = int(manager_id_raw)
-        pool, _new_ids, gone_ids = get_pool(conn)
+        pool, _new_ids, gone_ids, _estimated_ids = get_pool(conn)
         player_ids = ownership.manager_roster_ids(conn, selected_manager_id)
         players = [pool[pid] for pid in player_ids if pid in pool]
         unresolved = len(player_ids) - len(players)
@@ -734,7 +738,7 @@ def lineup():
     recommended_total = None
 
     if selected_manager_id and selected_round:
-        pool, _new_ids, _gone_ids = get_pool(conn)
+        pool, _new_ids, _gone_ids, _estimated_ids = get_pool(conn)
         player_ids = ownership.manager_roster_ids(conn, selected_manager_id)
         players = [pool[pid] for pid in player_ids if pid in pool]
         unresolved = len(player_ids) - len(players)

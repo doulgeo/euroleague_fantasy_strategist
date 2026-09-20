@@ -187,10 +187,12 @@ Full context for a fresh session, in order of what to read:
   `docs/testing_log.md` → "Roster sync + new-to-the-league marking" for the
   full write-up, including validation that an entire club (Baskonia, `BAS`)
   correctly came back 100% "new," consistent with being new to EuroLeague
-  this season rather than a join bug. Deliberately NOT built: any actual
-  projected value for new players (still 0.0/unranked, honestly reflecting
-  no data rather than a guess) — user is thinking through how to source
-  additional context for that.
+  this season rather than a join bug. Deliberately NOT built then: any
+  actual projected value for new players (still 0.0/unranked, honestly
+  reflecting no data rather than a guess) — user was thinking through how
+  to source additional context for that. Addressed 2026-09-20 via an
+  on-demand manual-override workflow rather than an automated heuristic —
+  see the "Manual projection overrides for brand-new players" entry below.
 - **Lineup builder** (`/lineup`), as of 2026-09-14: wires `engine.lineup`'s
   real logic (`choose_active_squad` → `build_lineup` → `swap_after_day1`)
   into the app for a chosen manager and round — the 3-of-13 exclusion,
@@ -266,6 +268,31 @@ Full context for a fresh session, in order of what to read:
   export" for the full write-up. Not yet tested against a real (non-mock)
   export from the friend's app — revisit if that shape turns out to
   differ from the mock export this was built against.
+- **Manual projection overrides for brand-new players**, as of 2026-09-20:
+  a player with zero box-score history anywhere (E2023+) — e.g. a
+  mid-season transfer from another league — previously got a flat 0.0
+  placeholder from `engine.rosters.merge_roster` with no way to give them a
+  real score, since there's no local data to compute one from. The user
+  proposed a workflow rather than an automated heuristic: ask a Claude Code
+  session to research such a player (web search on recent form/role/other-
+  league stats) and propose a projected PIR, then persist that number.
+  Built: a `manual_projections` table (`engine/db.py`:
+  `set_manual_projection`/`clear_manual_projection`/`load_manual_projections`),
+  `merge_roster` substitutes a manual value in place of 0.0 when present
+  (flagged separately as `estimated_player_ids`, distinct from
+  `new_player_ids`), and `set_manual_projection.py` is the plain CLI to set/
+  clear/list overrides — no research logic of its own, that's the Claude
+  session's job on request. `app.py::get_pool` is now a 4-tuple (all 7 call
+  sites updated); `draft.html`/`manager_roster.html` show an `EST` badge
+  next to `NEW` when a projection came from a manual override.
+  Deliberately NOT built: any automated in-app LLM call (would need an API
+  key + per-call cost, a real new piece of infrastructure the user declined
+  in favor of the on-demand workflow) and the separate multi-season-fallback
+  gap (a player with history in an *older* season, not this one — still the
+  open "known gap" below, unaffected by this change). See
+  `docs/testing_log.md` → "Manual projection overrides for brand-new
+  players" for the full write-up, including the live round-trip test
+  against a real E2026 roster player.
 - **"Pitch view" on `/lineup`**, as of 2026-09-16: a Biwenger-style court
   graphic (5 starters positioned by role — Center/Forward/Guard — plus a
   checkmarked bench column with the 6th man tagged) rendered above each of
@@ -367,11 +394,13 @@ over the network), never needs to be committed.
   after each gameweek" / "run before a draft or after transfer news") -
   automating either trigger (cron/scheduled task) is a small later step, not
   urgent given trades/rounds are infrequent in this league.
-- New-player valuation: once the user has an approach for sourcing
-  additional context on players with no local box-score history (see
-  "Current status" → roster sync entry), wire it into
-  `engine/rosters.py::merge_roster`'s placeholder `Projection` instead of
-  the current flat 0.0.
+- New-player valuation is done as an on-demand manual-override workflow
+  (see "Manual projection overrides for brand-new players" in "Current
+  status") rather than an automated heuristic — use it: when a NEW player
+  shows up, ask a Claude Code session to research them (web search on
+  recent form/role/other-league stats), then run `set_manual_projection.py`
+  with the agreed number. The separate multi-season-fallback gap (below)
+  is still open.
 - The lineup builder is live-recomputed only (no persistence of what a
   manager actually picks) — confirmed as the right v1 scope with the user,
   revisit only if that turns out to be missed in practice.
