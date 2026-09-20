@@ -64,7 +64,7 @@
         {% for row in rows %}
           <tr class="{{ 'drafted' if row.owner_id else '' }} {{ 'new-player' if row.is_new else '' }}">
             <td>{{ row.rank }}</td>
-            <td>{{ row.player.player_name }}{% if row.is_new %} <span class="new-badge" title="No EuroLeague box-score history in this project's data (E2023+) - new to the league, or a returning player not yet re-synced">NEW</span>{% endif %}{% if row.is_estimated %} <span class="new-badge" title="No box-score history, so the projection above is a manually-set estimate (see set_manual_projection.py), not computed from data.">EST</span>{% endif %}</td>
+            <td>{{ row.player.player_name }}{% if row.is_new %} <span class="new-badge" title="No EuroLeague box-score history in this project's data (E2023+) - new to the league, or a returning player not yet re-synced">NEW</span>{% endif %}{% if row.is_estimated %} <span class="new-badge" title="No box-score history, so the projection above is a manually-set estimate (see set_manual_projection.py), not computed from data.">EST</span>{% endif %}{% if row.injury %} <span class="injury-badge injury-badge-{{ row.injury.severity }}" title="basketnews injury report{% if row.injury.round_text %} ({{ row.injury.round_text }}){% endif %}{% if row.injury.comment %}: {{ row.injury.comment }}{% endif %}">{{ row.injury.status | upper }}</span>{% endif %}</td>
             <td>{{ row.player.team }}</td>
             <td>{{ "%.1f"|format(row.player.projected_pir_with_bonus) }}</td>
             <td>{{ "%+.1f"|format(row.vorp) }}</td>

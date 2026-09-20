@@ -2036,3 +2036,101 @@ Mills resolves to `Projection('MILLS, PATTY', Guard, ASV, pir=12.0,
 +bonus=12.0, n=0)` and is flagged in both `new_ids` and `estimated_ids` -
 matching how he'll render (`NEW` + `EST` badges) on `/draft` and
 `/managers/<id>`.
+
+## 2026-09-20: Injury report scraping (basketnews.com)
+
+User's idea: basketnews.com publishes a daily-updated EuroLeague injury
+report page (not part of the EuroLeague API); could it be scraped as a
+plain scheduled process (no LLM/agent needed) and used to mark
+injured/unavailable players, possibly feeding into projections?
+
+**Checked feasibility first**: fetched the real page
+(https://basketnews.com/news-212393-euroleague-injury-report-updated.html)
+directly with `curl` - confirmed it's plain server-rendered HTML (no JS
+required), a single `<table id="injury-reports-table">` with one header row
+per club (colspan=5, team name + link) followed by that club's player rows
+(position abbreviation, player name "First Last" order - unlike this
+project's own "SURNAME, FIRST" - status, round, free-text comment). Status
+is one of 7 fixed values via a `player-status__id-N` CSS class: Ready,
+Expected, Questionable, Game-time, Doubtful, Out, Uncertain.
+
+**Design agreed with the user**: no numeric PIR discount for soft statuses
+(Doubtful/Questionable/Uncertain/Game-time/Expected/Ready) - there's no
+defensible way to turn "50/50 game-time decision" into a specific point
+value, so these are informational badges only (draft board, manager
+roster, lineup builder tables). Only `Out` actually changes a decision.
+
+**Built**:
+- `engine/injuries.py` - `fetch_injury_report_html`/`parse_injury_report`
+  (BeautifulSoup, added as a new dependency - `beautifulsoup4>=4.12` in
+  requirements.txt, not previously needed), `BASKETNEWS_TEAM_TO_CODE` (the
+  20 real clubs' basketnews display name -> this project's team code,
+  confirmed by cross-checking against `rosters.team_name` - identical
+  strings except Fenerbahce, where the two sources disagree on the club's
+  current shirt sponsor), `resolve_injury_rows` (reuses
+  `engine.fantasy_pool.resolve_pool_rows` exactly as `engine.draft_import`
+  already does for the CSV import - team+surname match against this
+  season's roster, then historical-name fallback, synthetic ID if neither
+  hits). Like `fantasy_pool`, raw scraped rows are what's persisted
+  (`engine.db` `injuries` table, full delete-and-reinsert per sync, same
+  pattern as `replace_fantasy_pool`) - resolution to a player_id happens
+  live at read time, not persisted, so it self-heals as this project's own
+  identity data improves.
+- `sync_injuries.py` - the manual refresh command (same shape as
+  `sync_rosters.py`/`sync_fantasy_pool.py`), plus a matching "Injury report"
+  section + trigger button on `/sync` (`_sync_state`/`_start_sync` reused
+  unchanged, just a third `kind`).
+- `app.py::get_pool` is now a 5-tuple (all 6 call sites updated): the new
+  element, `injury_status` (player_id -> {status, team, round_text,
+  comment, severity}), is resolved the same way `fantasy_pool_rows` already
+  are, using the same `roster_rows`/`historical_players` already computed
+  in `get_pool` (the latter is now computed unconditionally rather than
+  only inside the `fantasy_pool_rows` branch, since injury resolution needs
+  it too).
+- **The actual lineup-builder effect**: in the `/lineup` route,
+  `projected_value` now returns 0.0 for any player whose current status is
+  `Out`, instead of their real projection - `engine.lineup.py` itself is
+  untouched. Chosen over a hard "must-exclude" constraint because it
+  degrades gracefully if more than 3 roster players are simultaneously
+  `Out` (they'd just fill the least-bad bench/excluded spots at a real 0,
+  which is what would actually happen) and because the existing brute-force
+  `choose_active_squad`/`build_lineup`/`swap_after_day1` search already
+  handles "this player is worth 0" correctly on its own - no new logic
+  needed in `engine.lineup`.
+- Badges: `.injury-badge` + `.injury-badge-{high,medium,low}` (new CSS,
+  reusing the existing badge visual language - `static/style.css`) on the
+  draft board (`draft.html`), a manager's roster (`manager_roster.html`),
+  and all three lineup-builder tables (Excluded/Day-1/Day-2 -
+  `templates/_pitch.html` gained a small shared `injury_badge` macro so
+  `lineup.html` doesn't repeat the same conditional six times). severity
+  bucket (`engine.injuries.STATUS_SEVERITY`) is display-only, never used in
+  the value math. `how_it_works.html` and `README.md` updated to document
+  the new badge and `sync_injuries.py`.
+
+**Live-tested end-to-end against the real page and the real E2026 DB**:
+- `sync_injuries.py --season E2026`: 30 players currently listed, 29/30
+  resolved to a real player_id (23 against this season's synced roster, 6
+  against historical data), 1 unresolved - "Jimmy Clark III" (Maccabi Tel
+  Aviv), a known/accepted edge case shared with `engine.draft_import`'s
+  identical name-splitter: "III" gets mistaken for the surname (the naive
+  "last whitespace token = surname" rule breaks on a generational suffix
+  that isn't nested inside `engine.fantasy_pool._normalize_name`'s
+  suffix-stripping, since that only runs *after* the split already
+  misassigned the token) - correctly flagged as unresolved rather than
+  silently wrong or silently dropped, not fixed (pre-existing, low-value
+  edge case, one player out of 30).
+- `/draft` and `/sync` both render correctly (`curl` + grep for the new
+  badge markup): confirmed real OUT/DOUBTFUL/UNCERTAIN/GAME-TIME badges
+  with the right severity CSS class and a hover tooltip showing the
+  report's round/comment text.
+- **The actual correctness payoff**, verified directly: used
+  `/dev/randomize-draft` to get a real 12-manager league, found a manager
+  who'd been dealt `HAYES-DAVIS, NIGEL` (Panathinaikos, real `Out` status -
+  "Fractured fourth metacarpal in his left hand") among their 13 - despite
+  an 11.0 raw projection, comfortably higher than two teammates projected
+  at 3.8 and 1.8, `/lineup` correctly placed him in the 3-player Excluded
+  group instead of them, with the OUT badge rendered next to his name -
+  confirming the zeroed decision value actually overrides raw projected
+  value in the real brute-force selection, not just in isolation. Cleaned
+  up the randomized test draft afterward (`/dev/clear-teams`) - back to 0
+  owned players, matching the state before this session's testing.

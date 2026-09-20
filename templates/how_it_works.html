@@ -104,6 +104,17 @@
       on a manager's own roster page if already owned, since their old team
       is now stale and they can't really be acquired. Treat a GONE player on
       your roster as a drop/trade candidate.</dd>
+      <dt><span class="injury-badge injury-badge-high">OUT</span> / <span class="injury-badge injury-badge-medium">DOUBTFUL</span> / <span class="injury-badge injury-badge-low">READY</span> badges</dt>
+      <dd>From <a href="https://basketnews.com/news-212393-euroleague-injury-report-updated.html" target="_blank" rel="noopener">basketnews.com's daily-updated EuroLeague injury report</a>
+      (a third-party page, not the EuroLeague API - treat it as best-effort,
+      see <code>sync_injuries.py</code> below). Hover the badge for the
+      round/comment the report gives. Only <strong>OUT</strong> actually
+      changes anything: that player's value is treated as 0 in the
+      <a href="{{ url_for('lineup') }}">lineup builder</a>'s decision, since
+      they genuinely can't score - every other status (Doubtful/
+      Questionable/Uncertain/Game-time/Expected/Ready) is informational
+      only, since there's no defensible way to turn a "50/50 game-time
+      decision" into a specific point discount.</dd>
       <dt>Filter and sort</dt>
       <dd>Filter by position and/or team, and sort by any column (value,
       VORP, games sampled, name, or team), ascending or descending.</dd>
@@ -223,6 +234,11 @@
       Google Sheet (run whenever the sheet changes - it's meant to be kept
       current). This is the primary source of who's on which roster; see
       "Roster composition source" above.</dd>
+      <dt><code>sync_injuries.py</code></dt>
+      <dd>Refreshes the basketnews.com injury report (run whenever you want
+      current availability info - no fixed cadence, but daily-ish is
+      reasonable since the source itself updates daily). See the
+      OUT/Doubtful/etc. badges above.</dd>
     </dl>
     <p>If the draft board looks stale (wrong teams, missing new signings, or
     projections not reflecting recent games), that's the fix.</p>

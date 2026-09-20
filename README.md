@@ -53,6 +53,12 @@ for personal use among friends — never monetized or redistributed.
   the draft board and roster pages) — the intended workflow is to ask a
   Claude Code session to look up the player first, then persist whatever
   number you settle on.
+- **Injury report** — scraped daily from basketnews.com's EuroLeague injury
+  report (`sync_injuries.py`, also triggerable from the Sync page) and shown
+  as a status badge (Out/Doubtful/Questionable/Uncertain/Game-time/Expected/
+  Ready) on the draft board and roster pages. An `Out` player's value is
+  also treated as 0 in the lineup builder's recommendation, since they
+  genuinely can't score that round.
 
 See the in-app **How this works** page (linked in the nav once the app is
 running) for the full mechanics — scoring model, projection method, what
@@ -80,6 +86,7 @@ since that's a longer-running fetch):
 .venv/bin/python3 sync_db.py --seasons E2023 E2024 E2025 E2026
 .venv/bin/python3 sync_rosters.py --season E2026
 .venv/bin/python3 sync_fantasy_pool.py --season E2026
+.venv/bin/python3 sync_injuries.py --season E2026
 ```
 
 A standalone pre-draft cheat sheet (no server needed) is also available:
@@ -97,6 +104,7 @@ draft_board.py  Standalone CLI draft cheat sheet
 sync_db.py           Refreshes box-score history (run after each gameweek)
 sync_rosters.py      Refreshes current club rosters (run before a draft / after transfer news)
 sync_fantasy_pool.py Refreshes the real Fantasy draft pool from a Google Sheet (run whenever the sheet changes)
+sync_injuries.py     Refreshes the basketnews.com injury report (run whenever you want current availability)
 seed_league.py  One-time setup of the 12 managers
 set_manual_projection.py  Set/clear/list manual projection estimates for players with no box-score history
 docs/           Fuller technical notes, game rules, and a validation log

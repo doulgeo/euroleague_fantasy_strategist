@@ -95,6 +95,31 @@
     <details><summary>Fantasy pool sync log (includes match-quality counts)</summary><pre>{{ logs.fantasy_pool }}</pre></details>
   {% endif %}
 
+  <h2>Injury report</h2>
+  <p>Scraped from <a href="https://basketnews.com/news-212393-euroleague-injury-report-updated.html" target="_blank" rel="noopener">basketnews.com's daily-updated EuroLeague injury report</a>
+  - a third-party page, not the EuroLeague API, so treat it as best-effort.
+  An <strong>OUT</strong> status is the only one that actually affects the
+  <a href="{{ url_for('lineup') }}">lineup builder</a>'s recommendation
+  (that player's projected value is treated as 0, since they genuinely can't
+  score); every other status (Doubtful/Questionable/Uncertain/Game-time/
+  Expected/Ready) is shown as an informational badge only, on the
+  <a href="{{ url_for('draft') }}">draft board</a> and a manager's roster.</p>
+  <p>
+    <strong>{{ injuries_info.count }}</strong> players currently listed{% if injuries_info.synced_at %},
+    last synced {{ injuries_info.synced_at[:19] }} UTC{% else %} (never synced yet){% endif %}.
+  </p>
+  <form method="post" action="{{ url_for('sync_injuries_trigger') }}" class="stacked-form">
+    <button type="submit" {% if state.injuries.running %}disabled{% endif %}>
+      {% if state.injuries.running %}Syncing...{% else %}Sync injury report{% endif %}
+    </button>
+  </form>
+  {% if state.injuries.finished_at and not state.injuries.running %}
+    <p><em>Last run finished {{ state.injuries.finished_at[:19] }} UTC (exit code {{ state.injuries.returncode }}).</em></p>
+  {% endif %}
+  {% if logs.injuries %}
+    <details><summary>Injury report sync log (includes match-quality counts)</summary><pre>{{ logs.injuries }}</pre></details>
+  {% endif %}
+
   <h2>Developer tools</h2>
   <p class="note">Dev/testing only - <strong>not for the real draft</strong>.
     This wipes ALL current ownership (every manager's roster, back to free

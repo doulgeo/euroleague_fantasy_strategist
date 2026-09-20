@@ -308,6 +308,31 @@ Full context for a fresh session, in order of what to read:
   one open item: this was verified structurally (curl + HTML assertions,
   no headless-browser tooling available in this sandbox), not yet
   eyeballed in an actual browser.
+- **Injury report scraping (basketnews.com)**, as of 2026-09-20: the user's
+  idea — `engine/injuries.py` scrapes basketnews.com's daily-updated
+  EuroLeague injury report (plain server-rendered HTML, confirmed live —
+  not part of the EuroLeague API, so treated as best-effort) into a new
+  `injuries` table (`sync_injuries.py`, same "full snapshot replace, resolve
+  player_id live at read time" pattern as `engine.fantasy_pool`, reusing
+  `resolve_pool_rows` exactly as `engine.draft_import` does). Only the
+  `Out` status actually changes anything: `app.py`'s `/lineup` route zeroes
+  that player's decision value rather than hard-excluding them (degrades
+  gracefully if more than 3 roster players are `Out` at once, and needed no
+  changes to `engine/lineup.py` itself, since the existing brute-force
+  search already handles "worth 0" correctly on its own) — every other
+  status (Doubtful/Questionable/Uncertain/Game-time/Expected/Ready) is
+  shown as an informational badge only (draft board, manager roster, all
+  three lineup-builder tables), deliberately not turned into a numeric PIR
+  discount. `app.py::get_pool` is now a 5-tuple (all 6 call sites updated).
+  Live-tested against the real page and the real E2026 DB: 30/30 players
+  scraped, 29 resolved to a real player_id (1 unresolved — "Jimmy Clark
+  III", a known suffix-splitting edge case shared with
+  `engine.draft_import`, not fixed), and — the actual payoff — a real
+  manager's real 11.0-projected `Out` player (fractured hand) correctly got
+  excluded by `/lineup` ahead of two teammates projected at 3.8 and 1.8,
+  confirming the zeroed value overrides raw projection in the real
+  brute-force selection, not just in isolation. See `docs/testing_log.md` →
+  "Injury report scraping (basketnews.com)" for the full write-up.
 
 **Explicitly NOT done yet (all deferred, not forgotten):**
 - The draft-tracking UI above is v1: no draft-credit/budget tracking

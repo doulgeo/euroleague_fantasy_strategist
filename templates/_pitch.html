@@ -5,6 +5,14 @@
    empty `images` object for every player - confirmed live) so each player is
    a monogram avatar instead. `initial_full_ids` is only passed for the day-2
    pitch, to render the same PROMOTED/DEMOTED badges as the table above it. #}
+{# Small inline injury badge for a lineup-builder table row - same
+   engine.injuries data as the draft board/manager roster badges, just
+   without the wrapping <span> classes those templates build directly since
+   this one is shared across several tables here. #}
+{% macro injury_badge(player, injury_status) %}
+  {% set injury = injury_status.get(player.player_id) if injury_status else none %}
+  {% if injury %} <span class="injury-badge injury-badge-{{ injury.severity }}" title="basketnews injury report{% if injury.round_text %} ({{ injury.round_text }}){% endif %}{% if injury.comment %}: {{ injury.comment }}{% endif %}">{{ injury.status | upper }}</span>{% endif %}
+{% endmacro %}
 {% macro pitch(lineup, initial_full_ids=none) %}
   {% set full_ids = initial_full_ids or [] %}
   {% set centers = lineup.starters | selectattr('position', 'equalto', 'Center') | list %}

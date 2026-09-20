@@ -211,6 +211,33 @@ CREATE TABLE IF NOT EXISTS manual_projections (
 """
 
 
+# --- Injury report (engine.injuries / sync_injuries.py) ---
+#
+# Scraped from basketnews.com's EuroLeague injury report - a third-party
+# page, not the EuroLeague API, with no stable row ID. Same "replace per
+# sync" pattern as `fantasy_pool`: a full snapshot each run, since a
+# cleared/no-longer-listed player should stop appearing rather than linger
+# with a stale status. Rows are stored raw (as scraped); resolving each one
+# to this project's own player_id happens live at read time
+# (engine.injuries.resolve_injury_rows), not persisted here - see that
+# module's docstring for why.
+
+_CREATE_INJURIES_SQL = """
+CREATE TABLE IF NOT EXISTS injuries (
+    team_name TEXT NOT NULL,
+    team TEXT,
+    position TEXT,
+    player_name TEXT NOT NULL,
+    status TEXT NOT NULL,
+    round_text TEXT,
+    comment TEXT,
+    synced_at TEXT NOT NULL
+)
+"""
+
+_INJURY_COLUMNS = ("team_name", "team", "position", "player_name", "status", "round_text", "comment", "synced_at")
+
+
 def get_connection(db_path: Path | str = DB_PATH) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path)
     conn.execute(_CREATE_TABLE_SQL)
@@ -227,6 +254,7 @@ def get_connection(db_path: Path | str = DB_PATH) -> sqlite3.Connection:
     conn.execute(_CREATE_SCHEDULE_SQL)
     conn.execute(_CREATE_SCHEDULE_ROUND_INDEX_SQL)
     conn.execute(_CREATE_MANUAL_PROJECTIONS_SQL)
+    conn.execute(_CREATE_INJURIES_SQL)
     conn.commit()
     return conn
 
@@ -446,6 +474,35 @@ def load_manual_projections(conn: sqlite3.Connection) -> dict[str, dict]:
         row[0]: {"player_name": row[1], "projected_pir": row[2], "note": row[3], "set_at": row[4]}
         for row in cur.fetchall()
     }
+
+
+def replace_injuries(conn: sqlite3.Connection, rows: list[dict]) -> int:
+    """Full snapshot refresh, like replace_fantasy_pool - the page has no
+    stable row ID, and a player no longer listed (cleared, or dropped from
+    the report entirely) should stop appearing rather than linger as a
+    stale row."""
+    synced_at = datetime.now(timezone.utc).isoformat()
+    conn.execute("DELETE FROM injuries")
+    if rows:
+        prepared = [{**r, "synced_at": synced_at} for r in rows]
+        placeholders = ", ".join(f":{c}" for c in _INJURY_COLUMNS)
+        conn.executemany(
+            f"INSERT INTO injuries ({', '.join(_INJURY_COLUMNS)}) VALUES ({placeholders})",
+            prepared,
+        )
+    conn.commit()
+    return len(rows)
+
+
+def load_injuries(conn: sqlite3.Connection) -> list[dict]:
+    cur = conn.execute("SELECT * FROM injuries")
+    cols = [d[0] for d in cur.description]
+    return [dict(zip(cols, record)) for record in cur.fetchall()]
+
+
+def injuries_synced_at(conn: sqlite3.Connection) -> str | None:
+    row = conn.execute("SELECT MAX(synced_at) FROM injuries").fetchone()
+    return row[0] if row else None
 
 
 def all_known_players(conn: sqlite3.Connection) -> list[dict]:

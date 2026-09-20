@@ -33,9 +33,11 @@ from engine.db import (
     all_known_players,
     fantasy_pool_synced_at,
     get_connection,
+    injuries_synced_at,
     known_player_ids,
     latest_game_date,
     load_fantasy_pool,
+    load_injuries,
     load_manual_projections,
     load_roster,
     load_rows,
@@ -45,6 +47,7 @@ from engine.db import (
     row_count,
 )
 from engine.fantasy_pool import resolve_pool_rows
+from engine.injuries import EXCLUDING_STATUSES, resolve_injury_rows
 from engine.lineup import (
     VALID_FORMATIONS,
     availability_label,
@@ -120,6 +123,7 @@ _sync_state: dict[str, dict] = {
     "db": {"running": False, "log_path": None, "started_at": None, "finished_at": None, "returncode": None, "seasons": []},
     "rosters": {"running": False, "log_path": None, "started_at": None, "finished_at": None, "returncode": None, "seasons": []},
     "fantasy_pool": {"running": False, "log_path": None, "started_at": None, "finished_at": None, "returncode": None, "seasons": []},
+    "injuries": {"running": False, "log_path": None, "started_at": None, "finished_at": None, "returncode": None, "seasons": []},
 }
 
 
@@ -179,14 +183,16 @@ def _resolve_pool_source(conn: sqlite3.Connection) -> tuple[str, int]:
     return CURRENT_SEASON, max_round + 1
 
 
-def get_pool(conn: sqlite3.Connection) -> tuple[dict[str, Projection], set[str], set[str], set[str]]:
-    """(projections, new_player_ids, gone_player_ids, estimated_player_ids) -
-    the projection pool merged with the current roster composition, so a
-    transferred player shows their real current team, a player with no
-    box-score history yet (new to the league) still appears flagged rather
-    than being silently absent, and a player no longer part of the current
-    roster composition is flagged rather than looking like a normal
-    draftable/tradeable player.
+def get_pool(
+    conn: sqlite3.Connection,
+) -> tuple[dict[str, Projection], set[str], set[str], set[str], dict[str, dict]]:
+    """(projections, new_player_ids, gone_player_ids, estimated_player_ids,
+    injury_status) - the projection pool merged with the current roster
+    composition, so a transferred player shows their real current team, a
+    player with no box-score history yet (new to the league) still appears
+    flagged rather than being silently absent, and a player no longer part
+    of the current roster composition is flagged rather than looking like a
+    normal draftable/tradeable player.
 
     Roster composition source: the real EuroLeague Fantasy draft pool
     (engine.fantasy_pool, a user-maintained Google Sheet synced via
@@ -195,7 +201,14 @@ def get_pool(conn: sqlite3.Connection) -> tuple[dict[str, Projection], set[str],
     /people endpoint, which was significantly incomplete pre-season for
     some clubs (ASVEL, Barcelona). Falls back to /people
     (engine.db `rosters`, via sync_rosters.py) if the Fantasy pool hasn't
-    been synced yet - never blocks on missing data."""
+    been synced yet - never blocks on missing data.
+
+    injury_status: player_id -> {status, team, round_text, comment,
+    severity} from the basketnews injury report (engine.injuries), synced
+    via sync_injuries.py. Best-effort/informational (see that module's
+    docstring) - callers that care about availability (draft board, manager
+    roster, lineup builder) use it for a badge; the lineup builder also
+    zeroes an "Out" player's decision value (see the /lineup route)."""
     season_code, as_of_round = _resolve_pool_source(conn)
     key = (season_code, as_of_round)
     mtime_ns = DB_PATH.stat().st_mtime_ns
@@ -210,16 +223,20 @@ def get_pool(conn: sqlite3.Connection) -> tuple[dict[str, Projection], set[str],
     roster_rows = load_roster(conn, CURRENT_SEASON)
     seen = known_player_ids(conn)
     manual = load_manual_projections(conn)
+    historical_players = all_known_players(conn)
 
     fantasy_pool_rows = load_fantasy_pool(conn)
     if fantasy_pool_rows:
-        historical_players = all_known_players(conn)
         resolved_rows, _diag = resolve_pool_rows(fantasy_pool_rows, roster_rows, historical_players)
         projections, new_ids, gone_ids, estimated_ids = merge_roster(projections, resolved_rows, seen, manual)
     else:
         projections, new_ids, gone_ids, estimated_ids = merge_roster(projections, roster_rows, seen, manual)
 
-    result = (projections, new_ids, gone_ids, estimated_ids)
+    injury_rows = load_injuries(conn)
+    resolved_injuries, _inj_diag = resolve_injury_rows(injury_rows, roster_rows, historical_players)
+    injury_status = {r["player_id"]: r for r in resolved_injuries}
+
+    result = (projections, new_ids, gone_ids, estimated_ids, injury_status)
     _projection_cache[key] = (mtime_ns, result)
     return result
 
@@ -269,6 +286,10 @@ def sync_page():
         "count": len(load_fantasy_pool(conn)),
         "synced_at": fantasy_pool_synced_at(conn),
     }
+    injuries_info = {
+        "count": len(load_injuries(conn)),
+        "synced_at": injuries_synced_at(conn),
+    }
     manager_count = len(ownership.list_managers(conn))
     owned_count = len(ownership.all_owned_ids(conn))
 
@@ -285,6 +306,7 @@ def sync_page():
         season_info=season_info,
         roster_info=roster_info,
         fantasy_pool_info=fantasy_pool_info,
+        injuries_info=injuries_info,
         state=state,
         logs=logs,
         running_any=running_any,
@@ -303,7 +325,7 @@ def dev_randomize_draft():
         flash("No managers seeded yet - run seed_league.py first.", "error")
         return redirect(url_for("sync_page"))
 
-    pool, _new_ids, gone_ids, _estimated_ids = get_pool(conn)
+    pool, _new_ids, gone_ids, _estimated_ids, _injury_status = get_pool(conn)
     draftable_pool = {pid: p for pid, p in pool.items() if pid not in gone_ids}
     manager_ids = [m["manager_id"] for m in managers]
 
@@ -358,10 +380,20 @@ def sync_fantasy_pool_trigger():
     return redirect(url_for("sync_page"))
 
 
+@app.route("/sync/injuries", methods=["POST"])
+def sync_injuries_trigger():
+    cmd = [sys.executable, "sync_injuries.py", "--season", CURRENT_SEASON]
+    if _start_sync("injuries", cmd, [CURRENT_SEASON]):
+        flash("Started syncing the injury report in the background.", "success")
+    else:
+        flash("An injury report sync is already running - wait for it to finish.", "error")
+    return redirect(url_for("sync_page"))
+
+
 @app.route("/draft")
 def draft():
     conn = get_db()
-    pool, new_ids, gone_ids, estimated_ids = get_pool(conn)
+    pool, new_ids, gone_ids, estimated_ids, injury_status = get_pool(conn)
     draftable_pool = {pid: p for pid, p in pool.items() if pid not in gone_ids}
     board = build_draft_board(draftable_pool)
     replacement = replacement_values(board)
@@ -408,6 +440,7 @@ def draft():
                 "tier_break_after": is_default_sort and p.player_id in tier_break_ids,
                 "is_new": p.player_id in new_ids,
                 "is_estimated": p.player_id in estimated_ids,
+                "injury": injury_status.get(p.player_id),
             })
         positions_out[position] = rows_out
 
@@ -566,7 +599,7 @@ def manager_roster(manager_id: int):
     if manager is None:
         abort(404)
 
-    pool, new_ids, gone_ids, estimated_ids = get_pool(conn)
+    pool, new_ids, gone_ids, estimated_ids, injury_status = get_pool(conn)
     player_ids = ownership.manager_roster_ids(conn, manager_id)
 
     by_position: dict[str, list[Projection]] = {position: [] for position in REQUIRED_COUNTS}
@@ -589,6 +622,7 @@ def manager_roster(manager_id: int):
         new_ids=new_ids,
         gone_ids=gone_ids,
         estimated_ids=estimated_ids,
+        injury_status=injury_status,
     )
 
 
@@ -597,7 +631,7 @@ def transactions():
     conn = get_db()
     managers = ownership.list_managers(conn)
     manager_names = {m["manager_id"]: m["name"] for m in managers}
-    pool, _new_ids, _gone_ids, _estimated_ids = get_pool(conn)
+    pool, _new_ids, _gone_ids, _estimated_ids, _injury_status = get_pool(conn)
     history = ownership.transaction_history(conn, limit=200)
     for t in history:
         p = pool.get(t["player_id"])
@@ -675,7 +709,7 @@ def transfers():
 
     if manager_id_raw:
         selected_manager_id = int(manager_id_raw)
-        pool, _new_ids, gone_ids, _estimated_ids = get_pool(conn)
+        pool, _new_ids, gone_ids, _estimated_ids, _injury_status = get_pool(conn)
         player_ids = ownership.manager_roster_ids(conn, selected_manager_id)
         players = [pool[pid] for pid in player_ids if pid in pool]
         unresolved = len(player_ids) - len(players)
@@ -738,7 +772,8 @@ def lineup():
     recommended_total = None
 
     if selected_manager_id and selected_round:
-        pool, _new_ids, _gone_ids, _estimated_ids = get_pool(conn)
+        pool, _new_ids, _gone_ids, _estimated_ids, injury_status = get_pool(conn)
+        out_ids = {pid for pid, inj in injury_status.items() if inj["status"] in EXCLUDING_STATUSES}
         player_ids = ownership.manager_roster_ids(conn, selected_manager_id)
         players = [pool[pid] for pid in player_ids if pid in pool]
         unresolved = len(player_ids) - len(players)
@@ -759,7 +794,16 @@ def lineup():
                     f"has no games - try a different round."
                 )
             else:
-                projected_value = lambda pid: pool[pid].projected_pir_with_bonus  # noqa: E731
+                # An "Out" player (basketnews injury report - see
+                # engine.injuries) is zeroed here rather than hard-excluded:
+                # they genuinely can't outscore anyone, so choose_active_squad's
+                # brute-force search naturally benches/excludes them on its
+                # own merit - including gracefully handling more "Out"
+                # players than there are exclusion slots (they'd just fill
+                # the least-bad bench spots at a real 0, correctly modeled).
+                projected_value = (
+                    lambda pid: 0.0 if pid in out_ids else pool[pid].projected_pir_with_bonus
+                )  # noqa: E731
                 try:
                     active_squad = choose_active_squad(roster, team_dates, projected_value, formation=selected_formation)
                     initial = build_lineup(active_squad, team_dates, projected_value, formation=selected_formation)
@@ -824,6 +868,7 @@ def lineup():
         selected_formation=selected_formation,
         no_swap_total=no_swap_total,
         recommended_total=recommended_total,
+        injury_status=injury_status if (selected_manager_id and selected_round) else {},
     )
 
 
