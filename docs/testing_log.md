@@ -1992,3 +1992,47 @@ and curled `/draft`, `/managers`, `/managers/<id>`, `/transfers`,
 live `/draft` HTML to confirm the `EST` badge actually renders next to
 `NEW`. Cleared the test override afterward (`--clear`), confirmed
 `--list` shows none remaining - DB left clean, no leftover test data.
+
+## Fixed set_manual_projection.py's lookup gap, set a real override (Patty Mills)
+
+User asked to set a manual projection for Patty Mills. He resolved via web
+search: signed with LDLC ASVEL Villeurbanne for EuroLeague 2026-27
+(reuniting with ex-Spurs teammate/now-HC Tony Parker), after a late-season
+2025-26 Liga ACB stint at La Laguna Tenerife (18.1 ppg over 17 games,
+including a 36pt playoff game vs. Barcelona), first-ever EuroLeague season
+at 38.
+
+`set_manual_projection.py "MILLS"` initially found nothing, which traced to
+a real gap rather than missing data: the script's `find_candidates` only
+searched `rosters` (EuroLeague's own `/people` endpoint) and historical
+`player_game_stats` - it was never updated for the 2026-09-15 change (see
+`engine/fantasy_pool.py`) that made the user-maintained Fantasy sheet the
+*primary* pool source specifically because `/people` runs incomplete
+pre-season (ASVEL had only 1 of ~15-20 real players registered there as of
+this session, confirmed via a fresh `sync_rosters.py` re-run). Mills was
+already in `fantasy_pool` (synced from the sheet) and already visible on
+the live `/draft` page, resolved to a synthetic `sheet:asv:mills:patty` ID
+by `engine.fantasy_pool.resolve_pool_rows` (no match in `rosters` or
+history) - but that resolution path wasn't one `find_candidates` searched,
+so the CLI couldn't attach an override to the ID actually driving the app.
+
+**Fixed**: `find_candidates` now also resolves the locally-synced
+`fantasy_pool` table (`load_fantasy_pool`, no network call) via the same
+`engine.fantasy_pool.resolve_pool_rows` the app itself uses, so it finds a
+sheet-only/synthetic-ID player exactly as `/draft` would show them.
+
+**Set**: `MILLS, PATTY` (`sheet:asv:mills:patty`) → 12.0 PIR. Reasoning:
+career profile is a scoring-specialist/instant-offense combo guard with
+modest reb/ast/defensive box-score, so PIR runs well below what his raw
+scoring rate suggests; likely a change-of-pace bench role at ASVEL under a
+first-time HC, not a guaranteed high-minutes starter; no track record at
+EuroLeague's level of competition. Calibrated against E2025 backup/role
+guard comps in the local DB (De Colo 13.3, Punter 13.3, Dorsey 13.7, Watson
+12.5), placed at the low end of that band given age and role/competition-
+level uncertainty.
+
+**Validation**: confirmed via a direct `app.get_pool(conn)` probe that
+Mills resolves to `Projection('MILLS, PATTY', Guard, ASV, pir=12.0,
++bonus=12.0, n=0)` and is flagged in both `new_ids` and `estimated_ids` -
+matching how he'll render (`NEW` + `EST` badges) on `/draft` and
+`/managers/<id>`.

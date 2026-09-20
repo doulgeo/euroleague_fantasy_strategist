@@ -14,12 +14,18 @@ whatever number you settle on. It's a plain data-entry tool - it has no
 research logic of its own.
 
 Player lookup matches by case-insensitive substring against player_name in
-this season's synced roster (`rosters`, sync_rosters.py) and any
-historically-known player_id (player_game_stats) - the same identity
-sources engine.rosters.merge_roster itself draws on. An ambiguous or
-no-match query lists what it found and exits without writing anything,
-consistent with this project's "flag rather than silently guess" approach
-to player identity.
+this season's synced roster (`rosters`, sync_rosters.py), any
+historically-known player_id (player_game_stats), and the locally-synced
+Fantasy sheet pool (`fantasy_pool`, sync_fantasy_pool.py) resolved the same
+way engine.rosters.merge_roster/app.py's get_pool do
+(engine.fantasy_pool.resolve_pool_rows) - this last source is what actually
+drives the live draft board/app pool as of 2026-09-15 (see
+engine/fantasy_pool.py), and is often ahead of EuroLeague's own /people
+endpoint for a brand-new signing, so a player can resolve here (often to a
+synthetic sheet:team:surname:first ID) before `rosters` has them at all. An
+ambiguous or no-match query lists what it found and exits without writing
+anything, consistent with this project's "flag rather than silently guess"
+approach to player identity.
 
 Usage:
     python set_manual_projection.py "PAVLOVIC, DUSAN" 14.5 --note "Averaged 16 PIR/36min in the Turkish league before mid-season EuroLeague move; projecting a discount for the role/system change (sourced 2026-09-20)."
@@ -36,10 +42,12 @@ from engine.db import (
     all_known_players,
     clear_manual_projection,
     get_connection,
+    load_fantasy_pool,
     load_manual_projections,
     load_roster,
     set_manual_projection,
 )
+from engine.fantasy_pool import resolve_pool_rows
 
 CURRENT_SEASON = "E2026"
 
@@ -48,13 +56,23 @@ def find_candidates(conn, query: str) -> list[dict]:
     q = query.strip().lower()
     by_id: dict[str, dict] = {}
 
-    for r in load_roster(conn, CURRENT_SEASON):
+    roster_rows = load_roster(conn, CURRENT_SEASON)
+    historical_players = all_known_players(conn)
+
+    for r in roster_rows:
         if q in r["player_name"].lower():
             by_id[r["player_id"]] = {"player_id": r["player_id"], "player_name": r["player_name"], "team": r.get("team")}
 
-    for r in all_known_players(conn):
+    for r in historical_players:
         if q in r["player_name"].lower() and r["player_id"] not in by_id:
             by_id[r["player_id"]] = {"player_id": r["player_id"], "player_name": r["player_name"], "team": None}
+
+    pool_rows = load_fantasy_pool(conn)
+    if pool_rows:
+        resolved, _diag = resolve_pool_rows(pool_rows, roster_rows, historical_players)
+        for r in resolved:
+            if q in r["player_name"].lower() and r["player_id"] not in by_id:
+                by_id[r["player_id"]] = {"player_id": r["player_id"], "player_name": r["player_name"], "team": r.get("team")}
 
     return sorted(by_id.values(), key=lambda r: r["player_name"])
 
