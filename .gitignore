@@ -5,3 +5,5 @@ raw/
 *.log
 *.db
 .venv/
+proj/cache/
+.pytest_cache/

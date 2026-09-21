@@ -2181,3 +2181,32 @@ findings:
   (2026-09-14) and found to have no demonstrable predictive value -
   surfaced this so the new, more rigorous version is understood as a
   second attempt with real project history behind it, not a blank slate.
+
+---
+
+## 2026-09-21 — Minutes-projection backtest harness + baselines (Milestone 2)
+
+**What**: built and ran `proj/data.py` (per-season player-stint tables
+from `euroleague.db`) and `proj/backtest.py` (the 2-fold backtest harness
+plus three baselines B0/B1/B2) against real E2023-E2025 data, per the
+spec's own ordering - baselines before any modeling. Also added
+`tests/test_data.py` (5 tests: crosswalk integrity, PIR recomputation,
+transfer-stint separation, leakage-date assertion, determinism) and wired
+`python -m proj.run` as the CLI entrypoint, caching intermediates to
+`proj/cache/*.parquet`.
+
+**How**: `python -m proj.run --config config.yaml`, then `pytest tests/`.
+
+**Result**: 5/5 tests pass. Full numbers and discussion in
+`reports/milestone2_backtest_baselines.md`; headline: B0 (last season's
+own rate) and B1 (weighted 3-season prior) are close to each other and
+both clearly beat B2 (position+tier mean) on every segment except
+newcomers, where B0/B1 have zero coverage by construction (no player
+history to work from). The most useful finding: B0/B1 systematically
+under-predict players who become real-season starters (bias ~-1.5 to -1.7
+min) and over-predict players who become bench (bias ~+2.6 to +3.3 min) -
+this is the specific pattern milestone 3's ridge correction
+(team_changed/start_share/age features) needs to close, not just move
+overall MAE. Team-total sanity deliberately not computed yet - none of
+these three baselines model roster allocation, so it isn't a meaningful
+check until §3.5's allocator exists.

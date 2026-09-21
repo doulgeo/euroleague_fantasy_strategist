@@ -1,0 +1,65 @@
+# Config for proj/ (projected-minutes + team-strength features).
+# Every tunable in the spec lives here so a hyperparameter choice is a
+# one-line diff, not a code change. See reports/ for how each was chosen.
+
+seasons:
+  # Chronological order matters - fold definitions in proj/backtest.py walk
+  # this list forward. Only 3 seasons exist locally (E2023-E2025), so only
+  # 2 season-to-season transitions can ever be validated on.
+  all: ["E2023", "E2024", "E2025"]
+
+db_path: euroleague.db
+cache_dir: proj/cache
+reports_dir: reports
+random_seed: 1
+
+minutes:
+  availability:
+    k: 15  # Bayesian pseudo-count in p_active's shrinkage toward position rate
+    p_active_min: 0.55
+    p_active_max: 0.98
+    injury_run_min_games: 3       # consecutive 0-minute team-games -> injury-like
+    coach_decision_run_max_games: 2
+    return_game_downweight: 0.5   # weight applied to the first 2 games back from an injury-like run
+  prior:
+    season_weights: [0.6, 0.3, 0.1]  # last, previous, 2-ago season
+    shrink_games: 8                   # r_s = games_active_s / (games_active_s + shrink_games)
+  ridge_correction:
+    alpha_grid: [0.01, 0.1, 0.3, 1.0, 3.0, 10.0, 30.0]
+    cv: leave-one-team-out
+  newcomer:
+    role_fallback_multiplier: 0.7   # position-group median x this, when role class is unknown
+  allocation:
+    cap_percentile: 99
+    max_iterations: 50
+    monte_carlo_draws: 2000
+  coach_concentration:
+    tau_min: 0.7
+    tau_max: 1.5
+    tau_search_steps: 25
+  preseason_update:
+    enabled: false          # off by default per spec 3.7 - the one leakage exception
+    max_weight: 0.15
+    min_rotation_absent_to_skip: 3
+
+team_strength:
+  possessions:
+    ft_coefficient: 0.44
+  adjusted_ratings:
+    ridge_lambda_grid: [0.1, 0.3, 1.0, 3.0, 10.0, 30.0, 100.0]
+    cv: leave-one-round-out
+    recency_half_life_games: 12
+    recency_weighting: false  # off by default; spec marks it optional
+    bootstrap_resamples: 200
+  preseason_projection:
+    ridge_lambda_grid: [0.1, 0.3, 1.0, 3.0, 10.0, 30.0]
+    cv: leave-one-team-out
+    value_shrink_minutes: 600   # k in the shrunk PIR/40-above-position-average formula
+    new_team_net_sd_inflation: 1.25
+  matchup_multiplier:
+    enabled: false   # spec 4.6: only enabled if it demonstrably improves OOS PIR prediction
+    shrink_games: 10
+
+integration:
+  use_new_features: false  # spec 5: with this off, proj outputs must equal the current heuristic exactly
+  use_matchup_multiplier: false
