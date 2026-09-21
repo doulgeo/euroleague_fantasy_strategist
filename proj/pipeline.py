@@ -42,6 +42,7 @@ def build_minutes_projection(
     roster: pd.DataFrame,  # player_id, team, pos_group (opening_day_roster or actual test-season roster)
     cfg: dict,
     ridge_from_to: tuple[str, str] | None = None,
+    ridge_feature_cols: list[str] | None = None,
 ) -> tuple[pd.DataFrame, dict]:
     """Returns (minutes_proj DataFrame, diagnostics dict) - diagnostics
     carries the ridge fit, tau solves per team, and position-group sanity
@@ -63,7 +64,7 @@ def build_minutes_projection(
             games, stint_tables, bio, coach_by_season, season_start_dates,
             ridge_from_to[0], ridge_from_to[1], downweight, injury_run_min_games, n_flag,
         )
-        ridge = fit_ridge_correction(pairs, mcfg["ridge_correction"]["alpha_grid"])
+        ridge = fit_ridge_correction(pairs, mcfg["ridge_correction"]["alpha_grid"], ridge_feature_cols)
 
     p_active_slope, p_active_age_ref = fit_age_slope(stint_tables, bio, train_seasons, season_start_dates)
 

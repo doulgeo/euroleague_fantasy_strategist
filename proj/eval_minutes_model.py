@@ -25,7 +25,7 @@ warnings.filterwarnings("ignore")
 SEASON_START_DATES = {"E2023": "2023-09-28", "E2024": "2024-09-26", "E2025": "2025-09-30"}
 
 
-def run() -> tuple[pd.DataFrame, pd.DataFrame, dict]:
+def run(ridge_feature_cols: list[str] | None = None) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
     cfg = load_config()
     seasons = cfg["seasons"]["all"]
     games = load_games(cfg["db_path"], seasons)
@@ -44,7 +44,8 @@ def run() -> tuple[pd.DataFrame, pd.DataFrame, dict]:
 
         roster = opening_day_roster(games, test)
         proj_df, diag = build_minutes_projection(
-            games, stints, bio, coach_by_season, SEASON_START_DATES, train, test, roster, cfg, ridge_from_to
+            games, stints, bio, coach_by_season, SEASON_START_DATES, train, test, roster, cfg,
+            ridge_from_to, ridge_feature_cols,
         )
 
         # deterministic single-allocation variant (no Monte Carlo / p_active) - diagnostic, kept in the report

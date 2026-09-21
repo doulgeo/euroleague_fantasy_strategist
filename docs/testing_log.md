@@ -2253,3 +2253,29 @@ per-player error rather than being able to correct it. Per the spec's own
 `config.yaml`'s `integration.use_new_features` stays `false`, consistent
 with this project's established discipline of not wiring in anything that
 doesn't demonstrably beat baseline.
+
+---
+
+## 2026-09-21 — Milestone 3 follow-up: dropping `start_share` from the ridge feature set
+
+**What**: the user asked for one bounded follow-up experiment on
+milestone 3's honest negative result - `fit_ridge_correction` gained a
+`feature_cols` parameter so `start_share` (the coefficient whose fitted
+sign didn't survive a sanity check) could be dropped and the E2025-fold
+ridge refit without it, to test whether that specific coefficient was the
+cause of the `starters`-segment regression.
+
+**How**: `proj.eval_minutes_model.run(ridge_feature_cols=[...])` with and
+without `start_share`, same 2-fold/6-segment comparison as the original
+milestone-3 evaluation.
+
+**Result**: disconfirmed. Dropping `start_share` left the `starters`
+segment's bias statistically unchanged (−4.70 → −4.72 MAE bias) and
+slightly *worsened* the one genuine win (`team_changers`: 3.84 → 3.93
+MAE). Conclusion: the regression isn't a fixable feature-set bug - it's
+structural, since `mpg_prior` (ridge coefficient only 0.67-0.79, i.e.
+*more* conservative than the raw prior) is a backward-looking average
+that will always underpredict a genuine forward-looking role change,
+regardless of which secondary features sit alongside it. Full writeup
+appended to `reports/milestone3_minutes.md`. Stopped here per the "stop
+tuning" ground rule - not pursuing further feature-set variations.

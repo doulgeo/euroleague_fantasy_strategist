@@ -128,11 +128,13 @@ class RidgeCorrection:
     coefficients: dict[str, float]
     cv_mse_by_alpha: dict[float, float]
     n_training_pairs: int
+    feature_cols: list[str] = None
 
     def predict(self, features: dict[str, float]) -> float:
         if self.model is None:
             return features["mpg_prior"]
-        x = np.array([[features[c] for c in FEATURE_ORDER]])
+        cols = self.feature_cols or FEATURE_ORDER
+        x = np.array([[features[c] for c in cols]])
         return float(self.model.predict(x)[0])
 
 
@@ -204,16 +206,23 @@ def build_training_pairs(
     return pd.DataFrame(rows)
 
 
-def fit_ridge_correction(training_pairs: pd.DataFrame, alpha_grid: list[float]) -> RidgeCorrection:
+def fit_ridge_correction(training_pairs: pd.DataFrame, alpha_grid: list[float], feature_cols: list[str] | None = None) -> RidgeCorrection:
     """Leave-one-team-out CV over `alpha_grid`. Returns a RidgeCorrection
     with model=None (predict() then just returns mpg_prior unchanged) if
     there isn't enough data to fit anything meaningful - honest fallback
-    for fold 1, not a crash."""
+    for fold 1, not a crash.
+
+    `feature_cols` defaults to FEATURE_ORDER (all 5 spec §3.3 features);
+    pass a subset to test dropping one - see reports/milestone3_minutes.md
+    "start_share dropped" follow-up, which is why this is a parameter and
+    not just the module-level constant.
+    """
+    feature_cols = feature_cols or FEATURE_ORDER
     n = len(training_pairs)
     if n < 30:
-        return RidgeCorrection(model=None, alpha=None, coefficients={}, cv_mse_by_alpha={}, n_training_pairs=n)
+        return RidgeCorrection(model=None, alpha=None, coefficients={}, cv_mse_by_alpha={}, n_training_pairs=n, feature_cols=feature_cols)
 
-    X = training_pairs[FEATURE_ORDER].to_numpy(dtype=float)
+    X = training_pairs[feature_cols].to_numpy(dtype=float)
     y = training_pairs["mpg_next"].to_numpy(dtype=float)
     w = training_pairs["weight"].clip(lower=1).to_numpy(dtype=float)
     teams = training_pairs["team"].to_numpy()
@@ -236,12 +245,12 @@ def fit_ridge_correction(training_pairs: pd.DataFrame, alpha_grid: list[float]) 
     best_alpha = min(cv_mse, key=cv_mse.get)
     final_model = Ridge(alpha=best_alpha)
     final_model.fit(X, y, sample_weight=w)
-    coefficients = dict(zip(FEATURE_ORDER, final_model.coef_.tolist()))
+    coefficients = dict(zip(feature_cols, final_model.coef_.tolist()))
     coefficients["intercept"] = float(final_model.intercept_)
 
     return RidgeCorrection(
         model=final_model, alpha=best_alpha, coefficients=coefficients,
-        cv_mse_by_alpha=cv_mse, n_training_pairs=n,
+        cv_mse_by_alpha=cv_mse, n_training_pairs=n, feature_cols=feature_cols,
     )
 
 

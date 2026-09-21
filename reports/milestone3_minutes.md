@@ -167,6 +167,36 @@ internally (from `mpg_active_pred`, not hindsight), but
 evaluation frame's actual-tier column for convenience. Worth fixing
 before this file is used for anything beyond this report.
 
+## Follow-up experiment: dropping `start_share`
+
+Tried, as the one targeted, bounded fix for the `starters`-segment
+regression (per the user's direction - not open-ended tuning). Refit the
+E2025-fold ridge with `start_share` removed from the feature set
+(`mpg_prior, age_bucket, team_changed, coach_changed` only,
+`fit_ridge_correction`'s now-configurable `feature_cols` parameter):
+
+| Segment | 5-feature MAE / bias | 4-feature (no start_share) MAE / bias |
+|---|---|---|
+| starters | 4.93 / −4.70 | **4.97 / −4.72** (no improvement) |
+| team_changers | **3.84** / +0.29 | 3.93 / +0.42 (slightly worse) |
+| stayers | 3.10 / −0.17 | 3.03 / −0.29 |
+| all | 4.31 / −1.65 | 4.30 / −1.68 |
+
+**Result: dropping `start_share` does not fix the starters-segment
+regression** - bias is statistically unchanged (−4.70 → −4.72), and it
+makes the one genuine win (`team_changers`) slightly worse. This
+disconfirms the "one bad coefficient" hypothesis and points to a more
+fundamental cause: `mpg_prior` itself is a backward-looking weighted
+average of past seasons' rates (ridge's own fitted coefficient on it is
+only 0.67-0.79, i.e. even *more* conservative than the raw prior), so a
+player having a genuine breakout/role-increase season will be
+underpredicted by construction, regardless of which secondary features
+sit alongside `mpg_prior` in a linear correction - no linear
+feature-engineering on top of a backward-looking prior can fix a
+forward-looking role change. Confirmed via one bounded experiment, not
+pursued further (multiple rounds of speculative feature removal would be
+exactly the "endless tuning" the ground rules warn against).
+
 ## Recommendation
 
 Do not wire this into `engine/`/`app.py` (`config.yaml`'s
@@ -176,11 +206,15 @@ original `team_strength.py` were both shipped-if-it-wins, and both
 didn't, so neither is wired in either). If this is revisited:
 - The `team_changers` win is real and worth keeping - it's isolated to
   the ridge correction's `team_changed` feature specifically, not
-  entangled with the other problems.
-- Dropping `start_share` from the ridge feature set (or fitting it with
-  a monotonicity constraint) is the most targeted next experiment for
-  the `starters`-segment regression, since it's the one coefficient with
-  a sign that doesn't survive a sanity check.
+  entangled with the other problems, and the follow-up experiment above
+  shows it's fragile to feature-set changes (worth protecting, not
+  casually dropping other features around it).
+- The `starters`-segment regression is **not** a fixable feature-set bug
+  (see follow-up above) - it's structural to predicting a backward-
+  looking average forward across a role change. A genuine fix would need
+  a different kind of signal entirely (e.g. actual preseason role/
+  depth-chart information, which this project doesn't have - see
+  `reports/data_audit.md` §2), not a different linear model.
 - The newcomer gap has no data-driven fix available in this project
   today - it would need an external depth-chart input, not a modeling
   change.
