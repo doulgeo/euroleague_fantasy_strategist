@@ -138,4 +138,13 @@
   <form method="post" action="{{ url_for('dev_clear_teams') }}" class="stacked-form">
     <button type="submit">Clean the teams (clears all rosters, no re-draft)</button>
   </form>
+  <p class="note">Deleting the managers themselves is more destructive than
+    the two buttons above - it also erases the transaction history (there's
+    no manager left for it to refer to), not just current ownership.
+    You'll need to run <code>seed_league.py</code> again afterward before
+    drafting.</p>
+  <form method="post" action="{{ url_for('dev_clear_managers') }}" class="stacked-form"
+        onsubmit="return confirm('Delete ALL {{ manager_count }} manager(s), plus all ownership and transaction history? This cannot be undone.');">
+    <button type="submit">Clean the managers (deletes all managers)</button>
+  </form>
 {% endblock %}

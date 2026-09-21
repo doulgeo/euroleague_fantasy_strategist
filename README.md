@@ -43,9 +43,12 @@ for personal use among friends — never monetized or redistributed.
   EuroLeague's own official roster data, especially pre-season. Falls back
   to EuroLeague's own roster data if the sheet hasn't been synced yet. Also
   triggerable from the **Sync** page.
-- **Dev tools** — a one-click "randomize a full draft" button (also on the
-  Sync page) for populating a realistic 12-manager league while developing,
-  without hand-drafting 156 players. Not for the real draft.
+- **Dev tools** (on the Sync page) — a one-click "randomize a full draft"
+  button for populating a realistic 12-manager league while developing,
+  without hand-drafting 156 players; "clean the teams" to wipe all rosters
+  back to free agency without a re-draft; and "clean the managers" for a
+  full league reset (deletes managers, ownership, and transaction history —
+  re-seed with `seed_league.py` afterward). Not for the real draft.
 - **Manual projection overrides** — for a player with zero EuroLeague
   box-score history anywhere (a mid-season transfer from another league,
   say), the projection is otherwise a flat 0.0. `set_manual_projection.py`

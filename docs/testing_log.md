@@ -2321,3 +2321,25 @@ year, alongside milestone 3's finding of 44-50% coach turnover - a league
 with this much personnel/coaching churn plausibly has genuinely weak
 net-rating persistence, not just a small-sample artifact. Not wired in;
 `config.yaml`'s `integration.use_new_features` stays `false`.
+
+---
+
+## 2026-09-21 — "Clean the managers" dev reset button
+
+**What**: added a third Developer-tools button on `/sync` -
+`engine.ownership.clear_all_managers` deletes every row in `managers`,
+`ownership`, and `transactions` (a full league reset), distinct from the
+existing "Clean the teams" button (`clear_all_ownership`), which only wipes
+current ownership and deliberately keeps `transactions` as a historical
+record since the managers themselves still exist. Wired into `app.py` as
+`/dev/clear-managers`, with a JS `confirm()` on the form and a note in
+`sync.html` warning that transaction history goes with it and
+`seed_league.py` needs to be rerun afterward.
+
+**How**: `test_client().get('/sync')` confirmed the button renders. Ran the
+actual reset against a scratch copy of the real `euroleague.db` (not the
+real file): before had 12 managers / 813 transaction rows, after had 0/0 -
+confirmed managers, ownership, and transactions all cleared together.
+
+**Result**: works as intended. Real `euroleague.db` was not touched by this
+test (all_managers/12 currently seeded there was left alone).

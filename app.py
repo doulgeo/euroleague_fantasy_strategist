@@ -347,6 +347,18 @@ def dev_clear_teams():
     return redirect(url_for("sync_page"))
 
 
+@app.route("/dev/clear-managers", methods=["POST"])
+def dev_clear_managers():
+    conn = get_db()
+    removed = ownership.clear_all_managers(conn)
+    flash(
+        f"Cleared all managers: {removed} manager(s) deleted, along with all ownership and "
+        "transaction history. Re-seed with seed_league.py before drafting.",
+        "success",
+    )
+    return redirect(url_for("sync_page"))
+
+
 @app.route("/sync/db", methods=["POST"])
 def sync_db_trigger():
     seasons = [s for s in KNOWN_SEASONS if request.form.get(f"season_{s}") == "1"]

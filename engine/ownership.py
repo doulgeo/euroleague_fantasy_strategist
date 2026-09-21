@@ -67,6 +67,23 @@ def clear_all_ownership(conn: sqlite3.Connection) -> int:
     return cur.rowcount
 
 
+def clear_all_managers(conn: sqlite3.Connection) -> int:
+    """Full league reset: deletes every row in `managers`, plus `ownership`
+    and `transactions` (both reference manager_id, and there's no real
+    "history" left to preserve once the managers themselves are gone - unlike
+    clear_all_ownership, which keeps `transactions` because the managers
+    still exist). Dev/testing reset, same spirit as clear_all_ownership and
+    engine.dev_draft.randomize_draft - not something the real league ever
+    does mid-season. Re-seed with seed_league.py afterward. Returns the
+    number of managers removed.
+    """
+    with conn:
+        conn.execute("DELETE FROM transactions")
+        conn.execute("DELETE FROM ownership")
+        cur = conn.execute("DELETE FROM managers")
+    return cur.rowcount
+
+
 def current_owner(conn: sqlite3.Connection, player_id: str) -> int | None:
     row = conn.execute("SELECT manager_id FROM ownership WHERE player_id = ?", (player_id,)).fetchone()
     return row[0] if row else None
