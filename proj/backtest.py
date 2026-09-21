@@ -199,14 +199,14 @@ SEGMENTS = {
 }
 
 
-def summarize_fold(fold_df: pd.DataFrame) -> pd.DataFrame:
+def summarize_fold(fold_df: pd.DataFrame, pred_cols: tuple[str, ...] = ("b0", "b1", "b2")) -> pd.DataFrame:
     rows = []
     for seg_name, seg_fn in SEGMENTS.items():
         seg = seg_fn(fold_df)
         if seg.empty:
             continue
         row = {"segment": seg_name, "n": len(seg)}
-        for pred in ("b0", "b1", "b2"):
+        for pred in pred_cols:
             row[f"{pred}_mae"] = weighted_mae(seg, pred)
             row[f"{pred}_bias"] = weighted_bias(seg, pred)
             row[f"{pred}_coverage"] = float(seg[pred].notna().mean())

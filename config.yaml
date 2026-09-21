@@ -25,7 +25,10 @@ minutes:
     season_weights: [0.6, 0.3, 0.1]  # last, previous, 2-ago season
     shrink_games: 8                   # r_s = games_active_s / (games_active_s + shrink_games)
   ridge_correction:
-    alpha_grid: [0.01, 0.1, 0.3, 1.0, 3.0, 10.0, 30.0]
+    # Widened after the first fit landed at the grid's edge (see
+    # reports/milestone3_minutes.md) - re-run confirmed an interior
+    # minimum at alpha=100, not a boundary artifact.
+    alpha_grid: [0.01, 0.1, 0.3, 1.0, 3.0, 10.0, 30.0, 100.0, 300.0, 1000.0, 3000.0]
     cv: leave-one-team-out
   newcomer:
     role_fallback_multiplier: 0.7   # position-group median x this, when role class is unknown

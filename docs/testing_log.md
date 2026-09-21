@@ -2210,3 +2210,46 @@ this is the specific pattern milestone 3's ridge correction
 overall MAE. Team-total sanity deliberately not computed yet - none of
 these three baselines model roster allocation, so it isn't a meaningful
 check until §3.5's allocator exists.
+
+---
+
+## 2026-09-21 — Availability, minutes prior/ridge correction, team allocation (Milestone 3)
+
+**What**: built every module spec §3 describes (`proj/bio.py`,
+`proj/coaches.py`, `proj/availability.py`, `proj/minutes.py`,
+`proj/allocation.py`, `proj/pipeline.py`) and ran the full pipeline
+end-to-end against real E2023-E2025 data, evaluated on the same 2-fold /
+6-segment framework as milestone 2 for a fair comparison. Added 8 tests
+(`tests/test_allocation.py`, `tests/test_minutes_pipeline.py`): allocation
+sum-to-total/cap-respect/infeasibility/monotonicity/position-group-
+teammate-effect, Monte Carlo determinism under a fixed seed, and leakage
+on the new ridge-training-pair construction. 13/13 tests pass overall.
+
+**How**: `python -m proj.eval_minutes_model`, then `pytest tests/`. Along
+the way, found and fixed a real early bug: the per-game stats payload's
+own `"team"` JSON key turned out to be a stats-totals row, not club
+identity (confirmed live), so `proj/coaches.py` had to join the raw
+coach-field cache against `player_game_stats`' team/home-away columns
+instead - caught immediately (coach extraction returned 0 rows) rather
+than silently producing wrong coach-change labels.
+
+**Result**: **acceptance gate (spec §3.10) not met** - full writeup in
+`reports/milestone3_minutes.md`. Headline: the pipeline's per-player
+predictions are *worse* than milestone 2's naive B0 baseline overall
+(MAE 4.31-4.61 vs B0's 3.67-3.92), driven by two diagnosed, distinct
+causes - the newcomer fallback (no depth-chart data, a previously-known
+gap) and a 5-feature ridge correction overfitting its single available
+training transition (192 pairs, one E2023→E2024 season-pair), concentrated
+specifically in the `starters` segment where it makes the exact bias it
+was meant to fix ~3x worse. One genuine, isolated win: the
+`team_changed` ridge feature gives a real ~20% MAE improvement on the
+`team_changers` segment on the E2025 fold specifically (3.84 vs
+4.78-4.93). Team allocation (Monte Carlo + water-filling) adds further
+error on top rather than reducing it, though team-total sanity itself
+holds (summed exp_minutes clusters tightly around the ~200-206 target per
+team) - diagnosed as the allocator faithfully redistributing pre-existing
+per-player error rather than being able to correct it. Per the spec's own
+"stop tuning" instruction, stopped here rather than iterating further;
+`config.yaml`'s `integration.use_new_features` stays `false`, consistent
+with this project's established discipline of not wiring in anything that
+doesn't demonstrably beat baseline.
