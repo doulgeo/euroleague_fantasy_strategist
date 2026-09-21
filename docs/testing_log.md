@@ -2134,3 +2134,50 @@ roster, lineup builder tables). Only `Out` actually changes a decision.
   value in the real brute-force selection, not just in isolation. Cleaned
   up the randomized test draft afterward (`/dev/clear-teams`) - back to 0
   owned players, matching the state before this session's testing.
+
+---
+
+## 2026-09-21 — Data audit for proposed projected-minutes / team-strength features (Milestone 1)
+
+**What**: before building anything toward a user-supplied spec for two new
+features (projected minutes via availability + allocation modeling, and
+adjusted-rating team strength), audited what data actually exists against
+the spec's expected schema and required inputs, per the spec's own ground
+rule ("stop and list what is missing" before building). Audit only - no
+`proj/` package code written.
+
+**How**: queried `euroleague.db` directly (row counts, duplicate check,
+minutes-format check, DNP-vs-absent check, mid-season-transfer count,
+name/ID crosswalk in both directions, per-team-game minutes-sum check,
+PIR-recompute mismatch rate, 18-vs-20-team-season confirmation) and made
+two live API calls (`EuroleagueClient.list_people` for E2026, and read of
+an already-cached `raw/v2_stats` game file) to check for coach and
+birthdate data the spec assumed might need external CSVs.
+
+**Result**: written up in full in `reports/data_audit.md`. Headline
+findings:
+- Data quality is clean: 0 duplicate rows, 0 name/ID crosswalk mismatches
+  across all 25,286 rows/E2023-E2025, 0 PIR-recompute mismatches (already
+  known), 99.95% of team-games land exactly on a 25-min-per-OT grid (one
+  4-OT outlier, internally consistent, not an error).
+- Two of the spec's four "required if absent" inputs turned out to already
+  be derivable from data this project already has or already fetches, just
+  not surfaced: **coach data** (current coach per team from `/people`
+  `type=="E"`, confirmed live - 20/20 teams; historical per-game coach
+  already sitting in the 76MB `raw/v2_stats` cache, just discarded before
+  it reaches the DB) and **player age** (`/people`'s `birthDate` field,
+  100% coverage on 307 live-checked E2026 players).
+- Real gaps: no depth-chart role data anywhere (spec's own newcomer
+  fallback covers this); `injuries` table has only qualitative status, no
+  numeric games-missed count; final score / OT count isn't persisted in
+  the `schedule` table (OT count is derivable as a proxy from summed
+  per-team-game minutes instead).
+- Sample-size note: only 2 season-to-season transitions and ~56
+  team-seasons (not ~36 as the spec's own text estimated) to validate on -
+  flagged, not a blocker, spec's own ground rules already call for
+  ridge/shrinkage with 2-4 parameters for exactly this reason.
+- Confirmed via `docs/technical_notes.md`/`team_strength.py` history that
+  a cruder version of the team-strength idea was already tried
+  (2026-09-14) and found to have no demonstrable predictive value -
+  surfaced this so the new, more rigorous version is understood as a
+  second attempt with real project history behind it, not a blank slate.
