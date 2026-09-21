@@ -376,6 +376,31 @@ Full context for a fresh session, in order of what to read:
   accuracy, could still help as a narrow tiebreaker in the lineup builder's
   captain/swap choices (the lineup builder itself now exists — see below —
   but this specific tiebreaker idea hasn't been tried against it).
+- **Projected-minutes / rigorous team-strength features (`proj/` package)**:
+  tried 2026-09-21, at the user's request, as a much more rigorous
+  follow-up attempt at both a minutes-allocation model and the
+  opponent-strength idea above. Full pipeline built and validated against
+  real data — availability/p_active, an injury-down-weighted minutes
+  prior with a ridge correction, water-filling/Monte-Carlo team
+  allocation, coach-rotation concentration, and (separately) ridge-
+  regularized adjusted offense/defense ratings with a preseason
+  net-rating projection. **Neither feature cleared its acceptance bar**:
+  the minutes pipeline is worse than a naive "last season's own rate"
+  baseline overall (driven by the newcomer fallback — no depth-chart data
+  exists anywhere in this project, per `reports/data_audit.md` §2 — and a
+  ridge correction that overfits the single available training
+  transition), and the team-strength projection loses
+  to a flat "predict league average" baseline on both available season
+  transitions, independently reconfirming the `engine/team_strength.py`
+  verdict above with a much more careful method. One isolated real win
+  worth remembering: the minutes ridge's `team_changed` feature gives a
+  genuine ~20% MAE improvement specifically for players who switched
+  teams. Not wired into `engine/`/`app.py`
+  (`config.yaml`'s `integration.use_new_features` stays `false`) — kept
+  as standalone, tested, unintegrated infrastructure, same posture as
+  `engine/team_strength.py`. Full detail across four reports:
+  `reports/data_audit.md`, `reports/milestone2_backtest_baselines.md`,
+  `reports/milestone3_minutes.md`, `reports/milestone4_team_strength.md`.
 - Frontend approach, hosting/deployment target, and full historical backfill
   sequencing were raised as open questions earlier and explicitly deferred
   by the user ("let's see what data we get first") — still open, see
