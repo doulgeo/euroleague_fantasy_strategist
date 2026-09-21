@@ -2279,3 +2279,45 @@ that will always underpredict a genuine forward-looking role change,
 regardless of which secondary features sit alongside it. Full writeup
 appended to `reports/milestone3_minutes.md`. Stopped here per the "stop
 tuning" ground rule - not pursuing further feature-set variations.
+
+---
+
+## 2026-09-21 — Team strength: adjusted ratings + preseason projection (Milestone 4)
+
+**What**: built `proj/possessions.py` (§4.1 possessions/pace) and
+`proj/team_strength.py` (§4.2 ridge-regularized adjusted offense/defense
+ratings with leave-one-round-out CV + bootstrap SEs; §4.3/§4.4 preseason
+net-rating projection with returning-minutes weighting, shrunk player
+value, and coach-change tracking; §4.5/§4.6 game-level model and matchup-
+multiplier building blocks, not evaluated end to end). Added
+`proj/eval_team_strength.py` (§4.7 backtest against the spec's own two
+baselines) and 2 tests (`tests/test_team_strength.py`) - 15/15 total pass.
+
+**How**: `python -m proj.eval_team_strength`, then `pytest tests/`. Along
+the way, found and fixed a real bug: `returning_minutes_share`'s first
+draft summed minutes across the *entire league's* stint table instead of
+the one team's, silently producing ~4% "returning share" for every team
+instead of a realistic ~52-55%. Caught by spot-checking a real team's
+roster overlap directly (Real Madrid E2024→E2025: 9/14 players carried
+over) rather than trusting the number - fixed in
+`build_transition_row`, documented in the function's docstring, and
+pinned with a regression test.
+
+**Result**: **acceptance gate (spec §4.8) not met, and the spec's own
+prescribed fallback ("shrunk-naive with returning-minutes weighting")
+also loses** - full writeup in `reports/milestone4_team_strength.md`.
+On both available season transitions, a flat "predict league average
+(net=0)" baseline beat every alternative on RMSE: raw last-season net,
+shrunk-naive, and the fitted ridge model all scored worse (3.47-5.21 RMSE
+vs league-mean's 3.42-3.81). The ridge model's Spearman rank correlation
+was actively negative on both transitions (−0.13, −0.35) despite a
+sometimes-lower RMSE - actively backwards on team ordering, not just
+"no better than random." This independently reconfirms
+`engine/team_strength.py`'s 2026-09-14 "no demonstrable predictive value"
+finding with a substantially more rigorous method, and is consistent with
+a real structural cause: this milestone's own bug-fixed
+`returning_minutes_share` shows only ~52-55% roster continuity year over
+year, alongside milestone 3's finding of 44-50% coach turnover - a league
+with this much personnel/coaching churn plausibly has genuinely weak
+net-rating persistence, not just a small-sample artifact. Not wired in;
+`config.yaml`'s `integration.use_new_features` stays `false`.

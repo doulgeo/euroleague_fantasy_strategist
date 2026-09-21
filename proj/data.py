@@ -21,10 +21,14 @@ POSITION_GROUPS = {"Guard": "G", "Forward": "F", "Center": "C"}
 
 # Player-game columns actually needed downstream - keeps the DataFrame
 # from carrying 36 columns of box-score detail nothing in proj/ reads yet.
+# points/fg2a/fg3a/oreb/turnovers/fta are here for proj.possessions (spec
+# §4.1's poss = FGA - OREB + TO + 0.44*FTA) - everything else in proj/
+# ignores them.
 _GAME_COLUMNS = [
     "season_code", "game_code", "round", "game_date", "team", "opponent",
     "home_away", "team_win", "player_id", "player_name", "position",
     "is_starter", "played", "minutes_seconds", "pir_official",
+    "points", "fg2a", "fg3a", "oreb", "turnovers", "fta",
 ]
 
 
