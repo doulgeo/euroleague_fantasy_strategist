@@ -371,9 +371,20 @@ Full context for a fresh session, in order of what to read:
   hidden. Re-verified against the same real DB: all 110 Forward candidates
   for a real drop independently confirmed as Forward (0 mismatches, also
   checked for Center), real owner names resolved correctly, and the result
-  box still computed the same delta as before. See `docs/testing_log.md` →
-  "Watchlist + transfer PIR compare tool" and "Transfer compare tool:
-  position-filtered table, owner shown" for the full write-ups.
+  box still computed the same delta as before. **Reworked again same day**:
+  the user preferred dropdowns back over the tables ("better for the
+  eyes") and wanted the result box shown above the pickers, not below.
+  Final shape: the result box renders first, then a Drop `<select>` (all
+  13 roster players) and, once one's picked, an Add `<select>` still
+  scoped to that position, each option's text carrying the owner info the
+  table's Owner column used to show (`"... - <manager name>"` or
+  `"... - Free agent"`) plus a `★ ` prefix for watchlisted players - same
+  auto-submit-on-change pattern as every other filter dropdown in the app.
+  No `app.py` changes needed for this last pass, only the template. See
+  `docs/testing_log.md` → "Watchlist + transfer PIR compare tool",
+  "Transfer compare tool: position-filtered table, owner shown", and
+  "Transfer compare tool: back to dropdowns, result on top" for the full
+  write-ups.
 
 **Explicitly NOT done yet (all deferred, not forgotten):**
 - The draft-tracking UI above is v1: no draft-credit/budget tracking

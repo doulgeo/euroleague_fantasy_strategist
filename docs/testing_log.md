@@ -2656,3 +2656,35 @@ and the chosen add row get the `.selected-row` highlight.
 **Result**: works as intended - position mismatches are no longer
 possible (there's nothing else to pick), and any player leaguewide can now
 be checked, with real ownership visible instead of hidden.
+
+---
+
+## 2026-09-23 — Transfer compare tool: back to dropdowns, result on top
+
+**What**: two more UI tweaks on the same "Compare a transfer" tool, per
+direct user feedback right after the table version above shipped: (1) the
+result box (Drop/Add/Gain) is now shown above the pickers instead of below
+- you see the answer first, no scrolling past two tables to find it; (2)
+reverted from the two tables back to two `<select>` dropdowns ("better for
+the eyes"), but kept both improvements the tables added - the Add dropdown
+is still filtered to the same position as the selected Drop (there's
+nothing else to pick, so a mismatch is still impossible), and each Add
+option's text now carries the same owner info the table's Owner column
+showed (`" - <manager name>"` or `" - Free agent"`), plus a `★ ` prefix for
+watchlisted players. Both selects auto-submit on change
+(`onchange="this.form.submit()"`, matching every other filter dropdown in
+this app), so picking a Drop immediately reloads the Add dropdown scoped to
+that position. No `app.py` changes needed - `selected_drop`/
+`add_candidates`/`owners`/`manager_names` were already being computed and
+passed for the table version; only `templates/transfers.html` and the now-
+unused `.selected-row` CSS (removed) changed.
+
+**How**: re-ran the same manual checks as the table version against the
+same real DB/manager (Abaluben, id 40): selecting VEZENKOV, SASHA
+(Forward) as Drop correctly re-rendered the Add dropdown scoped to
+"Add (Forward)" with only Forward options, each showing its real owner
+(e.g. "LUWAWU-CABARROT, TIMOTHE (MAD, 19.5) - Christos C") or "Free agent";
+selecting that option rendered the stat-box (`+2.1`, positive-styled)
+above the form, not below.
+
+**Result**: works as intended.

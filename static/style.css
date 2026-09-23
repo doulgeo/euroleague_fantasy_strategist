@@ -163,9 +163,6 @@ tr.gone-player:hover { background: #e2dccc; }
   margin-left: 0.3rem; vertical-align: middle; text-transform: uppercase;
 }
 
-tr.selected-row { background: rgba(47, 125, 79, 0.12); font-weight: 600; }
-tr.selected-row:hover { background: rgba(47, 125, 79, 0.18); }
-
 .stat-box {
   display: flex; flex-wrap: wrap; gap: 1px; background: var(--wood-line-soft);
   border: 1px solid var(--wood-line-soft); border-radius: 6px; overflow: hidden;

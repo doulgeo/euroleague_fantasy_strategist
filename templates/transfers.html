@@ -46,70 +46,7 @@
     </table>
 
     <h2>Compare a transfer</h2>
-    <p>Pick any drop/add pair - not just the same-position auto-suggestions above - to see the projected PIR gain or loss. Step 1: pick a player from your roster to drop.</p>
-    <table>
-      <thead>
-        <tr>
-          <th>Player</th>
-          <th>Position</th>
-          <th>Team</th>
-          <th title="Projected PIR for this player's next game.">Proj+Bonus</th>
-          <th>Action</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for p in roster.players|sort(attribute="projected_pir_with_bonus", reverse=True) %}
-          <tr class="{{ 'selected-row' if selected_drop and selected_drop.player_id == p.player_id }}">
-            <td>{{ p.player_name }}</td>
-            <td>{{ p.position }}</td>
-            <td>{{ p.team }}</td>
-            <td>{{ "%.1f"|format(p.projected_pir_with_bonus) }}</td>
-            <td>
-              {% if selected_drop and selected_drop.player_id == p.player_id %}
-                Selected
-              {% else %}
-                <a href="{{ url_for('transfers', manager_id=selected_manager_id, drop_id=p.player_id) }}">Compare this</a>
-              {% endif %}
-            </td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-
-    {% if selected_drop %}
-      <h3>Step 2: pick a {{ selected_drop.position }} to compare against {{ selected_drop.player_name }}</h3>
-      <table>
-        <thead>
-          <tr>
-            <th>Player</th>
-            <th>Team</th>
-            <th title="Projected PIR for this player's next game.">Proj+Bonus</th>
-            <th title="A player owned by another manager is shown for comparison only - acquiring them would need a trade, not a free-agent add.">Owner</th>
-            <th>Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for p in add_candidates %}
-            {% set owner_id = owners.get(p.player_id) %}
-            <tr class="{{ 'selected-row' if compare and compare.add.player_id == p.player_id }}">
-              <td>{{ p.player_name }}{% if p.player_id in watchlist_ids %} <span class="watch-badge" title="On your watchlist">★</span>{% endif %}</td>
-              <td>{{ p.team }}</td>
-              <td>{{ "%.1f"|format(p.projected_pir_with_bonus) }}</td>
-              <td>{% if owner_id %}{{ manager_names.get(owner_id, owner_id) }}{% else %}Free agent{% endif %}</td>
-              <td>
-                {% if compare and compare.add.player_id == p.player_id %}
-                  Selected
-                {% else %}
-                  <a href="{{ url_for('transfers', manager_id=selected_manager_id, drop_id=selected_drop.player_id, add_id=p.player_id) }}">Compare</a>
-                {% endif %}
-              </td>
-            </tr>
-          {% else %}
-            <tr><td colspan="5">No other {{ selected_drop.position }}s found.</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    {% endif %}
+    <p>Pick any drop/add pair - not just the same-position auto-suggestions above - to see the projected PIR gain or loss.</p>
 
     {% if compare %}
       <div class="stat-box">
@@ -127,5 +64,29 @@
         </div>
       </div>
     {% endif %}
+
+    <form method="get" class="filters">
+      <input type="hidden" name="manager_id" value="{{ selected_manager_id }}">
+      <label>Drop:
+        <select name="drop_id" onchange="this.form.submit()">
+          <option value="">Choose a player...</option>
+          {% for p in roster.players|sort(attribute="projected_pir_with_bonus", reverse=True) %}
+            <option value="{{ p.player_id }}" {% if selected_drop and selected_drop.player_id == p.player_id %}selected{% endif %}>{{ p.player_name }} ({{ p.position }}, {{ p.team }}, {{ "%.1f"|format(p.projected_pir_with_bonus) }})</option>
+          {% endfor %}
+        </select>
+      </label>
+      {% if selected_drop %}
+        <label>Add ({{ selected_drop.position }}):
+          <select name="add_id" onchange="this.form.submit()">
+            <option value="">Choose a player...</option>
+            {% for p in add_candidates %}
+              {% set owner_id = owners.get(p.player_id) %}
+              <option value="{{ p.player_id }}" {% if compare and compare.add.player_id == p.player_id %}selected{% endif %}>{{ '★ ' if p.player_id in watchlist_ids else '' }}{{ p.player_name }} ({{ p.team }}, {{ "%.1f"|format(p.projected_pir_with_bonus) }}) - {{ manager_names.get(owner_id, owner_id) if owner_id else 'Free agent' }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <p class="note">A player owned by another manager is shown for comparison only - acquiring them would need a trade, not a free-agent add.</p>
+      {% endif %}
+    </form>
   {% endif %}
 {% endblock %}
