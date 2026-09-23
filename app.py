@@ -792,7 +792,10 @@ def transfers():
     roster_error = None
     suggestions = []
     selected_manager_id = None
-    addable_players = []
+    selected_drop = None
+    add_candidates = []
+    manager_names = {}
+    owners = {}
     compare = None
 
     if manager_id_raw:
@@ -816,20 +819,36 @@ def transfers():
             addable_pool = {pid: p for pid, p in pool.items() if pid not in gone_ids}
             suggestions = suggest_transfers(roster, addable_pool, owned_ids=owned_ids)
 
-            # "Free agents" only - a player owned by another manager isn't
-            # actually acquirable, same restriction suggest_transfers applies.
-            addable_players = [p for pid, p in addable_pool.items() if pid not in owned_ids]
+            manager_names = {m["manager_id"]: m["name"] for m in managers}
+            owners = ownership.owner_map(conn)
+            roster_ids = {p.player_id for p in roster.players}
 
             drop_id = request.args.get("drop_id")
-            add_id = request.args.get("add_id")
-            drop_ids = {p.player_id for p in roster.players}
-            addable_ids = {p.player_id for p in addable_players}
-            if drop_id in drop_ids and add_id in addable_ids:
-                compare = {
-                    "drop": pool[drop_id],
-                    "add": pool[add_id],
-                    "gain": projected_gain(pool[drop_id], pool[add_id]),
-                }
+            if drop_id in roster_ids:
+                selected_drop = pool[drop_id]
+                # Same-position only - a same-position swap is the only kind
+                # of transfer this roster model supports. Excludes this
+                # manager's own roster (already owned, not "addable") but
+                # otherwise includes players owned by other managers too,
+                # each annotated with their owner, purely for comparison -
+                # not necessarily actually available without a trade.
+                add_candidates = sorted(
+                    (
+                        p for pid, p in addable_pool.items()
+                        if p.position == selected_drop.position and pid not in roster_ids
+                    ),
+                    key=lambda p: p.projected_pir_with_bonus,
+                    reverse=True,
+                )
+
+                add_id = request.args.get("add_id")
+                addable_ids = {p.player_id for p in add_candidates}
+                if add_id in addable_ids:
+                    compare = {
+                        "drop": selected_drop,
+                        "add": pool[add_id],
+                        "gain": projected_gain(selected_drop, pool[add_id]),
+                    }
 
     return render_template(
         "transfers.html",
@@ -838,7 +857,10 @@ def transfers():
         roster=roster,
         roster_error=roster_error,
         suggestions=suggestions,
-        addable_players=addable_players,
+        selected_drop=selected_drop,
+        add_candidates=add_candidates,
+        owners=owners,
+        manager_names=manager_names,
         watchlist_ids=watchlist_ids,
         compare=compare,
     )

@@ -353,18 +353,27 @@ Full context for a fresh session, in order of what to read:
   `engine/transfers.py` gained `projected_gain(drop, add)`, extracted from
   the delta calculation `suggest_transfers` already did internally for its
   automatic same-position suggestions, and exposed on `/transfers` as a
-  manual "Compare a transfer" tool — pick any Drop from the manager's
-  roster and any Add from the free-agent pool (watchlisted players grouped
-  first) to see the projected PIR gain/loss, not restricted to same
-  position or the `MIN_UPGRADE_GAP` threshold like the automatic
-  suggestions. Live-tested end-to-end against the real, fully-drafted
-  E2026 DB: watch/unwatch round-tripped correctly on both `/draft` and
-  `/watchlist`, and the compare tool's displayed gain matched an
-  independently-computed delta exactly (-11.9, correctly styled as a
-  loss) while the existing automatic suggestions table kept rendering the
-  same numbers after the `projected_gain` refactor. See
-  `docs/testing_log.md` → "Watchlist + transfer PIR compare tool" for the
-  full write-up.
+  manual "Compare a transfer" tool, not restricted to the `MIN_UPGRADE_GAP`
+  threshold like the automatic suggestions. Live-tested end-to-end against
+  the real, fully-drafted E2026 DB: watch/unwatch round-tripped correctly
+  on both `/draft` and `/watchlist`, and the compare tool's displayed gain
+  matched an independently-computed delta exactly while the existing
+  automatic suggestions table kept rendering the same numbers after the
+  `projected_gain` refactor. **Reworked same-day** per direct user
+  feedback on the initial dropdown version: two same-position dropdowns let
+  you pick a mismatched position with no warning, and silently showed only
+  free agents. Replaced with a two-step table flow — pick a roster player
+  to drop from a table, which then shows every *same-position* player
+  leaguewide as Add candidates (a new `engine.ownership.owner_map` bulk
+  query resolves each one's owning manager, shown in an **Owner** column,
+  or "Free agent") — position mismatches are no longer possible since
+  there's nothing else to pick, and real ownership is visible instead of
+  hidden. Re-verified against the same real DB: all 110 Forward candidates
+  for a real drop independently confirmed as Forward (0 mismatches, also
+  checked for Center), real owner names resolved correctly, and the result
+  box still computed the same delta as before. See `docs/testing_log.md` →
+  "Watchlist + transfer PIR compare tool" and "Transfer compare tool:
+  position-filtered table, owner shown" for the full write-ups.
 
 **Explicitly NOT done yet (all deferred, not forgotten):**
 - The draft-tracking UI above is v1: no draft-credit/budget tracking

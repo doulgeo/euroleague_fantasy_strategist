@@ -129,6 +129,13 @@ def all_owned_ids(conn: sqlite3.Connection) -> set[str]:
     return {r[0] for r in cur.fetchall()}
 
 
+def owner_map(conn: sqlite3.Connection) -> dict[str, int]:
+    """player_id -> manager_id for every currently-owned player, in one query
+    (vs. calling current_owner per player)."""
+    cur = conn.execute("SELECT player_id, manager_id FROM ownership")
+    return {row[0]: row[1] for row in cur.fetchall()}
+
+
 def free_agent_ids(conn: sqlite3.Connection, universe_ids: set[str]) -> set[str]:
     return universe_ids - all_owned_ids(conn)
 

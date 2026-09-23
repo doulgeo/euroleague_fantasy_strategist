@@ -21,12 +21,12 @@ for personal use among friends — never monetized or redistributed.
   draft can also be bulk-imported from a draft-room app's CSV export
   (drag-and-drop or file picker on the draft board) instead of logging
   every pick by hand — matches each drafted player to this project's own
-  data and lets you map the file's manager names to this league's managers
-  before anything is written.
+  data and auto-creates a league manager for each name in the file.
 - **Transfer suggestions** — same-position upgrades from the actual
-  unowned free-agent pool, plus a manual compare tool to check the
-  projected PIR gain or loss for any drop/add pair you pick yourself, not
-  just same-position auto-matches.
+  unowned free-agent pool, plus a manual compare tool: pick a player to
+  drop from your roster, then pick any same-position player to add from a
+  filtered table (showing which manager already owns them, if any, or
+  "Free agent") to see the projected PIR gain or loss.
 - **Watchlist** — a personal shortlist of players to keep an eye on for
   future transfers, toggled from the draft board and reviewed on a
   dedicated Watchlist page; watched players are flagged with a ★ badge

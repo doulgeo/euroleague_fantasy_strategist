@@ -2617,3 +2617,42 @@ were removed afterward (table back to 0 rows) since this is real (not
 disposable) DB state.
 
 **Result**: both features work as intended and are live in the app.
+
+---
+
+## 2026-09-23 — Transfer compare tool: position-filtered table, owner shown
+
+**What**: follow-up to the compare tool above, per explicit user feedback:
+the two `<select>` dropdowns let you pick a mismatched position (e.g. drop
+a Forward, add a Guard) with no warning, the Add list was silently
+free-agents-only, and dropdowns for ~100+ players are a poor UI anyway.
+Replaced with a two-step tabular flow on `/transfers`: Step 1 is a table of
+the manager's own 13 roster players (name/position/team/proj, "Compare
+this" link); picking one shows Step 2, a table of every other player at
+that *same position* (`add_candidates` in `app.py`'s `transfers()`,
+filtered by `p.position == selected_drop.position`), each row showing a new
+**Owner** column - the owning manager's name if any (via a new
+`engine.ownership.owner_map`, one bulk query instead of the per-player
+`current_owner` calls elsewhere) or "Free agent" - with the same "not
+necessarily acquirable without a trade" caveat suggest_transfers already
+carried, now made explicit in the column's tooltip instead of silently
+filtering owned players out entirely. Both tables highlight the currently-
+selected row (new `.selected-row` CSS). Navigation is plain `<a>` links
+carrying `drop_id`/`add_id` as query params (no JS, no form needed) -
+picking a new Drop naturally drops any stale `add_id` from the previous
+selection since the link only carries `manager_id`/`drop_id`.
+
+**How**: live-tested against the same real, fully-drafted E2026 DB. Picked
+a real Forward (VEZENKOV, SASHA) as Drop for a real manager (Abaluben,
+id 40) - confirmed all 110 Step-2 candidates were independently verified
+as Forward via a direct `get_pool` query (0 mismatches), and repeated for
+a Center drop (ZIZIC, ANTE) to confirm the filter isn't hardcoded to one
+position. Confirmed real owner names render correctly for owned candidates
+(e.g. "LUWAWU-CABARROT, TIMOTHE" → "Christos C") rather than blank/free
+agent. Confirmed the Compare result box still computes the same delta as
+before (17.4 → 19.5, `+2.1`, positive-styled) and that both the drop row
+and the chosen add row get the `.selected-row` highlight.
+
+**Result**: works as intended - position mismatches are no longer
+possible (there's nothing else to pick), and any player leaguewide can now
+be checked, with real ownership visible instead of hidden.
