@@ -42,7 +42,7 @@ This is a three-tier hierarchy, not a simple starter/bench split:
 
 | Tier | Count | Scoring |
 |---|---|---|
-| Starters | 5 | Full points. One of the five is **captain**: doubles (2x). |
+| Starters | 5 | Full points. One of the five is **captain**: 1.5x. |
 | Sixth man | 1 | Full points too, but **never captain-eligible**. |
 | Bench | 4 | **Half points** — and this is automatic, not conditional on being swapped in. A bench player who's never touched all round still scores at half rate for whatever they actually do. |
 | Excluded | 3 | Zero, always, no swap can change this. |
@@ -76,15 +76,17 @@ PIR is the fantasy currency, not raw points. Per player, per game:
 Plus a **team win bonus: +10% of that player's fantasy score for the round**
 if their team won.
 
-**Captain**: doubles (2x) whatever they score, and must be one of the 5
-starters (not the sixth man). Captain can be reassigned at the day-2 swap
+**Captain**: scores **1.5x** whatever they score, and must be one of the 5
+starters (not the sixth man). **Corrected 2026-09-22**: this was previously
+documented and implemented as 2x (a straight double) — the user corrected
+this to the real rule, 1.5x. Captain can be reassigned at the day-2 swap
 window (e.g. captain plays badly Thursday, you name a new captain among
 your Friday starters). **Corrected 2026-09-16** (an earlier note here said
-doubling was "per-stage" — the day-1 captain's points stay doubled
+doubling was "per-stage" — the day-1 captain's points stay boosted
 regardless of a later reassignment — that was wrong, and directly follows
-from the day-1/day-2 correction just below): captain doubling, like every
-other tier, is governed entirely by whoever holds the FINAL, post-swap
-captain slot. A demoted former captain loses the 2x along with their
+from the day-1/day-2 correction just below): the captain multiplier, like
+every other tier, is governed entirely by whoever holds the FINAL, post-swap
+captain slot. A demoted former captain loses the multiplier along with their
 full-rate slot, same as anyone else who gets demoted. See
 `technical_notes.md` for how this maps to `compute_round_score`.
 
@@ -137,7 +139,8 @@ and their own experience playing the real game. The corrected mechanic:
 - **12 managers**, draft mode, roster exclusivity as above.
 - **Head-to-head format**: matched against one opponent per round; total
   season points matter only as a tiebreaker.
-- Captain doubling confirmed; win bonus is +10% as documented above.
+- Captain multiplier confirmed at 1.5x (see correction above); win bonus is
+  +10% as documented above.
 - Trades are rare; transfer windows sit between rounds.
 - The user (not all 12 managers) will be the one using this tool. They plan
   to manually log opponents' rosters/transfers/trades themselves and

@@ -211,6 +211,23 @@ CREATE TABLE IF NOT EXISTS manual_projections (
 """
 
 
+# --- Watchlist (transfer shortlist) ---
+#
+# A personal shortlist of players the user is keeping an eye on for future
+# transfers - independent of the 12-manager ownership model, since this is
+# the user's own planning tool rather than a per-manager feature. One row
+# per player - INSERT OR REPLACE keeps this idempotent to rerun/update.
+
+_CREATE_WATCHLIST_SQL = """
+CREATE TABLE IF NOT EXISTS watchlist (
+    player_id TEXT PRIMARY KEY,
+    player_name TEXT NOT NULL,
+    note TEXT,
+    added_at TEXT NOT NULL
+)
+"""
+
+
 # --- Injury report (engine.injuries / sync_injuries.py) ---
 #
 # Scraped from basketnews.com's EuroLeague injury report - a third-party
@@ -254,6 +271,7 @@ def get_connection(db_path: Path | str = DB_PATH) -> sqlite3.Connection:
     conn.execute(_CREATE_SCHEDULE_SQL)
     conn.execute(_CREATE_SCHEDULE_ROUND_INDEX_SQL)
     conn.execute(_CREATE_MANUAL_PROJECTIONS_SQL)
+    conn.execute(_CREATE_WATCHLIST_SQL)
     conn.execute(_CREATE_INJURIES_SQL)
     conn.commit()
     return conn
@@ -472,6 +490,30 @@ def load_manual_projections(conn: sqlite3.Connection) -> dict[str, dict]:
     cur = conn.execute("SELECT player_id, player_name, projected_pir, note, set_at FROM manual_projections")
     return {
         row[0]: {"player_name": row[1], "projected_pir": row[2], "note": row[3], "set_at": row[4]}
+        for row in cur.fetchall()
+    }
+
+
+def add_to_watchlist(conn: sqlite3.Connection, player_id: str, player_name: str, note: str | None = None) -> None:
+    conn.execute(
+        "INSERT OR REPLACE INTO watchlist (player_id, player_name, note, added_at) "
+        "VALUES (?, ?, ?, ?)",
+        (player_id, player_name, note, datetime.now(timezone.utc).isoformat()),
+    )
+    conn.commit()
+
+
+def remove_from_watchlist(conn: sqlite3.Connection, player_id: str) -> bool:
+    cur = conn.execute("DELETE FROM watchlist WHERE player_id = ?", (player_id,))
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def load_watchlist(conn: sqlite3.Connection) -> dict[str, dict]:
+    """player_id -> {player_name, note, added_at} for every watchlisted player."""
+    cur = conn.execute("SELECT player_id, player_name, note, added_at FROM watchlist")
+    return {
+        row[0]: {"player_name": row[1], "note": row[2], "added_at": row[3]}
         for row in cur.fetchall()
     }
 

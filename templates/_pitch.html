@@ -31,7 +31,7 @@
                 <div class="pitch-avatar{{ ' pitch-avatar-promoted' if (full_ids and p.player_id not in full_ids) else '' }}">
                   {{ p.player_name | player_initials }}
                   {% if p.player_id == lineup.captain.player_id %}
-                    <span class="pitch-tag-captain" data-tip="Captain - scores double">C</span>
+                    <span class="pitch-tag-captain" data-tip="Captain - scores 1.5x">C</span>
                   {% endif %}
                 </div>
                 <div class="pitch-name">{{ p.player_name | player_surname }}</div>

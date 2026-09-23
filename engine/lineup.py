@@ -8,7 +8,8 @@ model that was wrong on several points):
   leaving exactly 3 excluded - those 3 score zero and can never be swapped
   in that round (see engine.roster.ActiveSquad).
 - Within the active 10, there's a three-tier scoring hierarchy:
-    - 5 starters, full points, one of them captain (2x).
+    - 5 starters, full points, one of them captain (1.5x, corrected
+      2026-09-22 - was previously 2x).
     - 1 "sixth man", also full points, but not captain-eligible.
     - 4 bench players, HALF points - they score automatically at that rate
       even if never swapped in, they don't need to be activated to count.
@@ -54,8 +55,8 @@ they're easy to revisit):
   above, captain doubling - like every other tier - is governed entirely by
   the FINAL lineup: there's no separate "day-1 captain's points stay
   doubled regardless" carve-out (an earlier assumption, now also
-  superseded) - a demoted former captain loses the 2x along with their
-  full-rate slot, same as anyone else who gets demoted.
+  superseded) - a demoted former captain loses the captain multiplier along
+  with their full-rate slot, same as anyone else who gets demoted.
 
 Two ways to get the team_dates dict every function below needs:
 team_dates_for_round (from played box scores - historical/backtest use)
@@ -75,6 +76,7 @@ from engine.roster import ActiveSquad, Roster
 
 VALID_FORMATIONS: list[tuple[int, int, int]] = [(2, 2, 1), (2, 1, 2), (3, 1, 1)]  # (Guard, Forward, Center)
 BENCH_SCORE_MULTIPLIER = 0.5
+CAPTAIN_SCORE_MULTIPLIER = 1.5
 
 ValueFn = Callable[[str], float]
 
@@ -153,7 +155,7 @@ def _all_players(lineup: Lineup) -> list[Projection]:
 
 def _tier_multiplier(player: Projection, lineup: Lineup) -> float:
     if player.player_id == lineup.captain.player_id:
-        return 2.0
+        return CAPTAIN_SCORE_MULTIPLIER
     starter_ids = {p.player_id for p in lineup.starters}
     if player.player_id in starter_ids or player.player_id == lineup.sixth_man.player_id:
         return 1.0
@@ -424,9 +426,9 @@ def choose_active_squad(
 
 
 def compute_round_score(lineup: Lineup, actual_pir: dict[str, float]) -> float:
-    """Round score given real (or backtest ground-truth) PIR per player,
-    using ONLY the given lineup's own tier assignments (captain 2x,
-    starter/sixth-man full, bench half - see _tier_multiplier).
+    """Round score given real (or backtest ground-truth) fantasy score per
+    player, using ONLY the given lineup's own tier assignments (captain
+    1.5x, starter/sixth-man full, bench half - see _tier_multiplier).
 
     Confirmed by the user (2026-09-16): a player's score is governed
     entirely by whatever tier they hold in the lineup passed in here - there
@@ -436,6 +438,15 @@ def compute_round_score(lineup: Lineup, actual_pir: dict[str, float]) -> float:
     post-swap_after_day1 lineup; to score the no-swap baseline for
     comparison, pass the initial (pre-swap) lineup instead - either way,
     this function itself doesn't need to know which day anyone played.
+
+    `actual_pir` is misleadingly named for historical reasons - despite the
+    name, this function is agnostic to what's in it, but every real caller
+    should pass each player's actual PIR ALREADY adjusted for the +10%
+    team-win bonus (see engine.projections.actual_fantasy_score), not raw
+    PIR - this function has no access to who actually won, so it can't
+    apply that bonus itself. **Confirmed 2026-09-22**: this was missed
+    entirely until then, silently understating every real/backtested round
+    score.
     """
     return sum(actual_pir.get(p.player_id, 0.0) * _tier_multiplier(p, lineup) for p in _all_players(lineup))
 

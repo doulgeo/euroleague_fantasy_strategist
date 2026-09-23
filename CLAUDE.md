@@ -61,7 +61,16 @@ Full context for a fresh session, in order of what to read:
   logic, corrected substitution rule, formation-optimizing build_lineup):
   beats or ties a no-swap baseline in 82% of trials (74% outright beat, 18%
   lose), +10.62 PIR mean gain per round (95% CI ±0.53), captures ~23% of
-  the theoretical best-possible swap upside.** This is a much lower-looking
+  the theoretical best-possible swap upside.** **Stale as of 2026-09-22**:
+  two corrections landed that day, after this number was computed, and
+  neither has been folded back into a rerun yet - the captain multiplier
+  was fixed from 2x to the real 1.5x, and `compute_round_score`'s actual
+  scoring was found to be missing the real +10% team-win bonus entirely
+  (it was only ever applied to *projected* values, never real ones - see
+  `docs/testing_log.md`, "Actual scoring was missing the real +10%
+  team-win bonus"). Both change the real point totals this headline is
+  built from; treat this specific number as provisional until
+  `backtest_eval.py` is rerun. This is also a much lower-looking
   number than the pre-2026-09-16 headline,
   and that's expected, not a regression — see the **2026-09-16 substitution
   rule correction** below, which fundamentally changed what "swapping" even
@@ -333,6 +342,29 @@ Full context for a fresh session, in order of what to read:
   confirming the zeroed value overrides raw projection in the real
   brute-force selection, not just in isolation. See `docs/testing_log.md` →
   "Injury report scraping (basketnews.com)" for the full write-up.
+- **Watchlist + transfer PIR compare tool**, as of 2026-09-23: a personal,
+  global (not per-manager — confirmed with the user, this is their own
+  planning tool) shortlist of players, via a new `watchlist` table
+  (`engine/db.py`, same style as `manual_projections`) and
+  `add_to_watchlist`/`remove_from_watchlist`/`load_watchlist` helpers.
+  Toggled with a ☆/★ button next to every player on `/draft`, reviewed on a
+  new `/watchlist` page, and flagged with a ★ badge wherever a watched
+  player appears elsewhere (draft board, `/transfers`). Separately,
+  `engine/transfers.py` gained `projected_gain(drop, add)`, extracted from
+  the delta calculation `suggest_transfers` already did internally for its
+  automatic same-position suggestions, and exposed on `/transfers` as a
+  manual "Compare a transfer" tool — pick any Drop from the manager's
+  roster and any Add from the free-agent pool (watchlisted players grouped
+  first) to see the projected PIR gain/loss, not restricted to same
+  position or the `MIN_UPGRADE_GAP` threshold like the automatic
+  suggestions. Live-tested end-to-end against the real, fully-drafted
+  E2026 DB: watch/unwatch round-tripped correctly on both `/draft` and
+  `/watchlist`, and the compare tool's displayed gain matched an
+  independently-computed delta exactly (-11.9, correctly styled as a
+  loss) while the existing automatic suggestions table kept rendering the
+  same numbers after the `projected_gain` refactor. See
+  `docs/testing_log.md` → "Watchlist + transfer PIR compare tool" for the
+  full write-up.
 
 **Explicitly NOT done yet (all deferred, not forgotten):**
 - The draft-tracking UI above is v1: no draft-credit/budget tracking

@@ -126,6 +126,17 @@ what makes the POC's backtest meaningful rather than circular):
 Unaffected by the roster/active-squad rules correction below — this module
 is position/roster-agnostic.
 
+**`actual_fantasy_score(pir, team_won)`, added 2026-09-22**: the real-outcome
+counterpart to the win-rate-based projection above — once a game's actually
+been played, `team_won` is a known fact (`engine.data`'s per-game boolean),
+not an estimate, so the real +10% bonus applies outright rather than scaled
+by a win rate. Every caller that scores a real/backtested round
+(`engine.lineup.compute_round_score`'s `actual_pir` argument, despite the
+name) is expected to pre-apply this before calling it — `compute_round_score`
+itself has no access to who actually won. Missed entirely until 2026-09-22,
+across both the live app's `/lineup` "Total Projected Score" box (for
+already-synced games) and every backtest headline number.
+
 **Why heuristic-first, not ML**: agreed with the user early on. EuroLeague
 has far less data volume than NBA (a season is ~340-400 games total, not
 30k+), so a from-scratch ML model risks overfitting noise. The plan is:
@@ -183,7 +194,8 @@ anything here is simpler than it looks.
 
 **Three-tier scoring**, all drawn from the 10-player `ActiveSquad`:
 - 5 **starters** (one of the three valid formations — see `game_rules.md`),
-  full points, one of them **captain** (2x).
+  full points, one of them **captain** (1.5x, corrected 2026-09-22 — was
+  previously 2x).
 - 1 **sixth man**, full points, never captain-eligible.
 - 4 **bench**, **half points** — scored automatically whether or not they
   were ever swapped in. This is the single biggest behavioral difference
@@ -216,7 +228,7 @@ anything here is simpler than it looks.
   scoring comes from `initial` (whoever occupied which tier when those games
   were actually played), day-2/later scoring comes from `final` (post-swap).
   Each player's contribution is multiplied by their tier at the relevant
-  stage: 2x if that stage's captain, 1x if starter/sixth-man, 0.5x if bench.
+  stage: 1.5x if that stage's captain, 1x if starter/sixth-man, 0.5x if bench.
   Captain doubling is per-stage (`initial.captain` for day-1,
   `final.captain` for day-2) so reassigning captain at the swap window only
   affects not-yet-banked points.

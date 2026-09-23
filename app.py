@@ -30,6 +30,7 @@ from engine import ownership
 from engine.draft_import import DraftCsvError, distinct_managers, parse_draft_csv, resolve_manager_picks
 from engine.db import (
     DB_PATH,
+    add_to_watchlist,
     all_known_players,
     fantasy_pool_synced_at,
     get_connection,
@@ -42,7 +43,9 @@ from engine.db import (
     load_roster,
     load_rows,
     load_schedule,
+    load_watchlist,
     next_unplayed_round,
+    remove_from_watchlist,
     roster_synced_at,
     row_count,
 )
@@ -57,11 +60,11 @@ from engine.lineup import (
     swap_after_day1,
     team_dates_from_schedule,
 )
-from engine.projections import Projection, build_projections
+from engine.projections import Projection, actual_fantasy_score, build_projections
 from engine.roster import REQUIRED_COUNTS, Roster
 from engine.dev_draft import randomize_draft
 from engine.rosters import merge_roster
-from engine.transfers import suggest_transfers
+from engine.transfers import projected_gain, suggest_transfers
 
 # Edit these once per year as seasons roll over.
 CURRENT_SEASON = "E2026"
@@ -127,17 +130,29 @@ _sync_state: dict[str, dict] = {
 }
 
 
-def _run_sync(kind: str, cmd: list[str], log_path: Path) -> None:
+def _run_sync(kind: str, cmds: list[list[str]], log_path: Path) -> None:
+    """Runs each command in `cmds` in order, all output appended to one log
+    file - a multi-step sync (see sync_rosters_trigger: EuroLeague /people
+    then the Fantasy sheet, so "Sync Rosters" is one click for both sources)
+    stops at the first failing step, same as a shell `&&` chain, and that
+    step's exit code is what's recorded."""
+    returncode = 0
     with open(log_path, "w") as f:
-        proc = subprocess.run(cmd, cwd=BASE_DIR, stdout=f, stderr=subprocess.STDOUT, text=True)
+        for cmd in cmds:
+            f.write(f"$ {' '.join(cmd)}\n")
+            f.flush()
+            proc = subprocess.run(cmd, cwd=BASE_DIR, stdout=f, stderr=subprocess.STDOUT, text=True)
+            if proc.returncode != 0:
+                returncode = proc.returncode
+                break
     with _sync_lock:
         _sync_state[kind]["running"] = False
         _sync_state[kind]["finished_at"] = datetime.now(timezone.utc).isoformat()
-        _sync_state[kind]["returncode"] = proc.returncode
+        _sync_state[kind]["returncode"] = returncode
     _projection_cache.clear()  # the DB just changed under us - don't serve a stale pool
 
 
-def _start_sync(kind: str, cmd: list[str], seasons: list[str]) -> bool:
+def _start_sync(kind: str, cmds: list[list[str]], seasons: list[str]) -> bool:
     """Returns False (does nothing) if a sync of this kind is already running."""
     with _sync_lock:
         if _sync_state[kind]["running"]:
@@ -151,7 +166,7 @@ def _start_sync(kind: str, cmd: list[str], seasons: list[str]) -> bool:
             returncode=None,
             seasons=seasons,
         )
-    thread = threading.Thread(target=_run_sync, args=(kind, cmd, log_path), daemon=True)
+    thread = threading.Thread(target=_run_sync, args=(kind, cmds, log_path), daemon=True)
     thread.start()
     return True
 
@@ -365,7 +380,7 @@ def sync_db_trigger():
     if not seasons:
         seasons = [CURRENT_SEASON]
     cmd = [sys.executable, "sync_db.py", "--seasons", *seasons]
-    if _start_sync("db", cmd, seasons):
+    if _start_sync("db", [cmd], seasons):
         flash(f"Started syncing box scores for {', '.join(seasons)} in the background.", "success")
     else:
         flash("A box-score sync is already running - wait for it to finish.", "error")
@@ -374,9 +389,19 @@ def sync_db_trigger():
 
 @app.route("/sync/rosters", methods=["POST"])
 def sync_rosters_trigger():
-    cmd = [sys.executable, "sync_rosters.py", "--season", CURRENT_SEASON]
-    if _start_sync("rosters", cmd, [CURRENT_SEASON]):
-        flash(f"Started syncing {CURRENT_SEASON} rosters in the background.", "success")
+    # Two steps, one click: EuroLeague's own /people endpoint first (still
+    # needed as the identity/ID backbone resolve_pool_rows matches the
+    # sheet against, and as full-coverage fallback for anyone the sheet
+    # doesn't list), then the Fantasy sheet (the more current, more
+    # complete source for actual team/position composition - see the
+    # "Fantasy draft pool" section below). Confirmed with the user
+    # 2026-09-22: syncing "rosters" should mean both, not just the
+    # EuroLeague side, so composition data doesn't go stale just because a
+    # second button wasn't also clicked.
+    people_cmd = [sys.executable, "sync_rosters.py", "--season", CURRENT_SEASON]
+    sheet_cmd = [sys.executable, "sync_fantasy_pool.py", "--season", CURRENT_SEASON]
+    if _start_sync("rosters", [people_cmd, sheet_cmd], [CURRENT_SEASON]):
+        flash(f"Started syncing {CURRENT_SEASON} rosters (EuroLeague + Fantasy sheet) in the background.", "success")
     else:
         flash("A roster sync is already running - wait for it to finish.", "error")
     return redirect(url_for("sync_page"))
@@ -385,7 +410,7 @@ def sync_rosters_trigger():
 @app.route("/sync/fantasy-pool", methods=["POST"])
 def sync_fantasy_pool_trigger():
     cmd = [sys.executable, "sync_fantasy_pool.py", "--season", CURRENT_SEASON]
-    if _start_sync("fantasy_pool", cmd, [CURRENT_SEASON]):
+    if _start_sync("fantasy_pool", [cmd], [CURRENT_SEASON]):
         flash("Started syncing the Fantasy draft pool in the background.", "success")
     else:
         flash("A Fantasy pool sync is already running - wait for it to finish.", "error")
@@ -395,7 +420,7 @@ def sync_fantasy_pool_trigger():
 @app.route("/sync/injuries", methods=["POST"])
 def sync_injuries_trigger():
     cmd = [sys.executable, "sync_injuries.py", "--season", CURRENT_SEASON]
-    if _start_sync("injuries", cmd, [CURRENT_SEASON]):
+    if _start_sync("injuries", [cmd], [CURRENT_SEASON]):
         flash("Started syncing the injury report in the background.", "success")
     else:
         flash("An injury report sync is already running - wait for it to finish.", "error")
@@ -411,6 +436,7 @@ def draft():
     replacement = replacement_values(board)
     managers = ownership.list_managers(conn)
     owned_ids = ownership.all_owned_ids(conn)
+    watchlist_ids = set(load_watchlist(conn).keys())
 
     hide_drafted = request.args.get("hide_drafted") == "1"
     position_filter = request.args.get("position")
@@ -453,6 +479,7 @@ def draft():
                 "is_new": p.player_id in new_ids,
                 "is_estimated": p.player_id in estimated_ids,
                 "injury": injury_status.get(p.player_id),
+                "is_watched": p.player_id in watchlist_ids,
             })
         positions_out[position] = rows_out
 
@@ -500,6 +527,63 @@ def draft_pick():
     return redirect(url_for("draft", **redirect_args))
 
 
+def _redirect_after_watchlist_change():
+    if request.form.get("from") == "watchlist":
+        return redirect(url_for("watchlist_page"))
+
+    redirect_args = {}
+    if request.form.get("position"):
+        redirect_args["position"] = request.form["position"]
+    if request.form.get("team"):
+        redirect_args["team"] = request.form["team"]
+    if request.form.get("sort"):
+        redirect_args["sort"] = request.form["sort"]
+    if request.form.get("dir"):
+        redirect_args["dir"] = request.form["dir"]
+    if request.form.get("hide_drafted"):
+        redirect_args["hide_drafted"] = request.form["hide_drafted"]
+    return redirect(url_for("draft", **redirect_args))
+
+
+@app.route("/watchlist/add", methods=["POST"])
+def watchlist_add():
+    conn = get_db()
+    add_to_watchlist(conn, request.form["player_id"], request.form["player_name"])
+    return _redirect_after_watchlist_change()
+
+
+@app.route("/watchlist/remove", methods=["POST"])
+def watchlist_remove():
+    conn = get_db()
+    remove_from_watchlist(conn, request.form["player_id"])
+    return _redirect_after_watchlist_change()
+
+
+@app.route("/watchlist")
+def watchlist_page():
+    conn = get_db()
+    watched = load_watchlist(conn)
+    pool, new_ids, gone_ids, estimated_ids, injury_status = get_pool(conn)
+
+    rows = []
+    for player_id, entry in watched.items():
+        p = pool.get(player_id)
+        if p is None:
+            continue
+        rows.append({
+            "player": p,
+            "is_new": player_id in new_ids,
+            "is_gone": player_id in gone_ids,
+            "is_estimated": player_id in estimated_ids,
+            "injury": injury_status.get(player_id),
+            "note": entry["note"],
+            "added_at": entry["added_at"],
+        })
+    rows.sort(key=lambda r: r["player"].projected_pir_with_bonus, reverse=True)
+
+    return render_template("watchlist.html", rows=rows)
+
+
 @app.route("/draft/import", methods=["GET"])
 def draft_import():
     return render_template("draft_import.html")
@@ -524,19 +608,12 @@ def draft_import_preview():
         flash(str(e), "error")
         return redirect(url_for("draft_import"))
 
-    conn = get_db()
-    managers = ownership.list_managers(conn)
-    manager_by_lower_name = {m["name"].strip().lower(): m["manager_id"] for m in managers}
-
     csv_managers = distinct_managers(rows)
-    for cm in csv_managers:
-        cm["suggested_manager_id"] = manager_by_lower_name.get(cm["manager_name"].strip().lower())
 
     return render_template(
         "draft_import_map.html",
         csv_text=text,
         csv_managers=csv_managers,
-        managers=managers,
         total_picks=len(rows),
     )
 
@@ -552,15 +629,6 @@ def draft_import_commit():
         return redirect(url_for("draft_import"))
 
     csv_managers = distinct_managers(rows)
-    mapping: dict[str, int] = {}
-    for cm in csv_managers:
-        raw = request.form.get(f"manager_for_{cm['manager_key']}", "").strip()
-        if raw:
-            mapping[cm["manager_key"]] = int(raw)
-
-    if not mapping:
-        flash("No CSV managers were mapped to a league manager - nothing imported.", "error")
-        return redirect(url_for("draft_import"))
 
     if request.form.get("clear_existing") == "1":
         conn.execute("DELETE FROM ownership")
@@ -570,9 +638,13 @@ def draft_import_commit():
     historical_players = all_known_players(conn)
 
     drafted = 0
+    created = 0
     skipped: list[str] = []
-    for manager_key, manager_id in mapping.items():
-        resolved, diag = resolve_manager_picks(rows, manager_key, roster_rows, historical_players)
+    for cm in csv_managers:
+        manager_id, was_created = ownership.get_or_create_manager(conn, cm["manager_name"])
+        if was_created:
+            created += 1
+        resolved, diag = resolve_manager_picks(rows, cm["manager_key"], roster_rows, historical_players)
         skipped.extend(diag.get("skipped", []))
         for r in resolved:
             try:
@@ -582,7 +654,8 @@ def draft_import_commit():
                 skipped.append(f"{r['player_name']}: {e}")
 
     flash(
-        f"Imported {drafted} pick(s) across {len(mapping)} manager(s)."
+        f"Imported {drafted} pick(s) across {len(csv_managers)} manager(s)"
+        f" ({created} new manager(s) created)."
         + (f" {len(skipped)} skipped." if skipped else ""),
         "success" if drafted else "error",
     )
@@ -713,11 +786,14 @@ def transfers():
     conn = get_db()
     managers = ownership.list_managers(conn)
     manager_id_raw = request.args.get("manager_id")
+    watchlist_ids = set(load_watchlist(conn).keys())
 
     roster = None
     roster_error = None
     suggestions = []
     selected_manager_id = None
+    addable_players = []
+    compare = None
 
     if manager_id_raw:
         selected_manager_id = int(manager_id_raw)
@@ -740,6 +816,21 @@ def transfers():
             addable_pool = {pid: p for pid, p in pool.items() if pid not in gone_ids}
             suggestions = suggest_transfers(roster, addable_pool, owned_ids=owned_ids)
 
+            # "Free agents" only - a player owned by another manager isn't
+            # actually acquirable, same restriction suggest_transfers applies.
+            addable_players = [p for pid, p in addable_pool.items() if pid not in owned_ids]
+
+            drop_id = request.args.get("drop_id")
+            add_id = request.args.get("add_id")
+            drop_ids = {p.player_id for p in roster.players}
+            addable_ids = {p.player_id for p in addable_players}
+            if drop_id in drop_ids and add_id in addable_ids:
+                compare = {
+                    "drop": pool[drop_id],
+                    "add": pool[add_id],
+                    "gain": projected_gain(pool[drop_id], pool[add_id]),
+                }
+
     return render_template(
         "transfers.html",
         managers=managers,
@@ -747,6 +838,9 @@ def transfers():
         roster=roster,
         roster_error=roster_error,
         suggestions=suggestions,
+        addable_players=addable_players,
+        watchlist_ids=watchlist_ids,
+        compare=compare,
     )
 
 
@@ -829,13 +923,18 @@ def lineup():
                     # not just a missed upside). player_game_stats only ever
                     # has played games, so if day 1's box scores have been
                     # synced (see Sync) by the time this page is visited,
-                    # use their actual PIR for the swap decision instead of
-                    # the projection; day-2 teams always use their
-                    # projection since their games haven't happened yet.
+                    # use their actual fantasy score (PIR + the real +10%
+                    # win bonus, now that the real outcome is known - see
+                    # engine.projections.actual_fantasy_score, confirmed
+                    # 2026-09-22) for the swap decision instead of the
+                    # projection; day-2 teams always use their projection
+                    # (which already includes an *expected* win bonus based
+                    # on recent win rate) since their games haven't happened
+                    # yet.
                     min_date = min(team_dates.values())
                     day1_teams = {team for team, date in team_dates.items() if date == min_date}
                     day1_actual = {
-                        r["player_id"]: r["pir_official"]
+                        r["player_id"]: actual_fantasy_score(r["pir_official"], r.get("team_win"))
                         for r in load_rows(conn, CURRENT_SEASON)
                         if r.get("round") == selected_round and r.get("team") in day1_teams
                     }

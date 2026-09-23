@@ -58,9 +58,15 @@
     <strong>{{ roster_info.count }}</strong> players on the {{ current_season }} roster{% if roster_info.synced_at %},
     last synced {{ roster_info.synced_at[:19] }} UTC{% else %} (never synced yet){% endif %}.
   </p>
+  <p>This button runs two steps: EuroLeague's own <code>/people</code> data
+  first (the identity backbone - real player IDs, and full coverage for
+  anyone not yet on the Fantasy sheet below), then the Fantasy sheet itself
+  (more current/complete for actual team and position). One click keeps
+  both current, rather than needing the separate "Sync Fantasy draft pool"
+  button below too.</p>
   <form method="post" action="{{ url_for('sync_rosters_trigger') }}" class="stacked-form">
     <button type="submit" {% if state.rosters.running %}disabled{% endif %}>
-      {% if state.rosters.running %}Syncing...{% else %}Sync {{ current_season }} rosters{% endif %}
+      {% if state.rosters.running %}Syncing...{% else %}Sync {{ current_season }} rosters (EuroLeague + Fantasy sheet){% endif %}
     </button>
   </form>
   {% if state.rosters.finished_at and not state.rosters.running %}

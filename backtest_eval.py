@@ -46,7 +46,7 @@ from engine.db import get_connection, load_rows
 from engine.lineup import build_lineup, choose_active_squad, compute_round_score, swap_after_day1, team_dates_for_round
 from engine.ml_features import build_feature_table
 from engine.ml_projections import build_ensemble_projections, build_ml_projections, train_model
-from engine.projections import ROLLING_WINDOW, build_projections
+from engine.projections import ROLLING_WINDOW, actual_fantasy_score, build_projections
 from engine.roster import DRAFT_POOL_SIZE, build_draft_pool, sample_roster
 
 Z_95 = 1.96
@@ -70,7 +70,16 @@ class SeasonSummary:
 
 
 def actual_pir_lookup(rows: list[dict], round_no: int) -> dict[str, float]:
-    return {r["player_id"]: float(r["pir_official"]) for r in rows if r.get("round") == round_no}
+    """Each player's real fantasy score for the round - PIR plus the real
+    +10% team-win bonus when their team actually won (see
+    engine.projections.actual_fantasy_score, confirmed 2026-09-22; this
+    function's name predates that fix and is kept for the existing call
+    sites, but it's no longer just raw PIR)."""
+    return {
+        r["player_id"]: actual_fantasy_score(float(r["pir_official"]), r.get("team_win"))
+        for r in rows
+        if r.get("round") == round_no
+    }
 
 
 def run_one_trial(

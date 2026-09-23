@@ -28,7 +28,16 @@ from __future__ import annotations
 import csv
 import io
 
-from engine.fantasy_pool import TEAM_CODE_MAP, resolve_pool_rows
+from engine.fantasy_pool import _SUFFIX_TOKENS, TEAM_CODE_MAP, resolve_pool_rows
+
+# A trailing token that looks like part of a multi-word surname, not a
+# first name - "Oscar Da Silva" is surname "Da Silva", not "Silva" (real
+# case found live 2026-09-22: MUN's DA SILVA, OSCAR resolved as "SILVA"
+# and fell back to a synthetic/unmatched ID until this was added).
+_SURNAME_PARTICLES = {
+    "DA", "DE", "DI", "DO", "DOS", "DAS", "DEL", "DELLA", "VAN", "VON",
+    "DER", "DEN", "LA", "LE", "EL", "AL", "MC", "MAC",
+}
 
 REQUIRED_COLUMNS = {"manager_id", "manager", "player", "team", "pos", "overall_pick"}
 
@@ -105,10 +114,31 @@ def _split_full_name(full: str) -> tuple[str, str]:
     """(first, surname) from a single "First Last" field - the last
     whitespace-separated token is the surname (works for hyphenated
     surnames like "Horton-Tucker", since the hyphen isn't a space), any
-    remaining tokens are the first name(s)."""
+    remaining tokens are the first name(s) - with two corrections, both
+    found live against a real draft-app export (2026-09-22), where the
+    naive last-token rule put 5 of 156 players into engine.fantasy_pool's
+    synthetic-ID fallback (they resolve fine once split correctly, since
+    the roster/historical matching itself was already right):
+    - A trailing generational suffix ("Jr"/"Sr"/"II"/"III"/"IV"/"V",
+      optional trailing period) isn't the surname - "Patrick Baldwin Jr."
+      is surname "Baldwin", not "Jr". Dropped before picking the last
+      token, same suffix set engine.fantasy_pool._normalize_name strips.
+    - A surname-particle token right before the final token ("Da", "Van",
+      "Mc", ...) is folded into the surname - "Oscar Da Silva" is surname
+      "Da Silva", not "Silva".
+    """
     parts = full.strip().split()
     if len(parts) <= 1:
         return "", full.strip()
+
+    tail = parts[-1].rstrip(".").upper()
+    if tail in _SUFFIX_TOKENS and len(parts) > 2:
+        parts = parts[:-1]
+    if len(parts) <= 1:
+        return "", parts[0] if parts else full.strip()
+
+    if len(parts) > 2 and parts[-2].upper() in _SURNAME_PARTICLES:
+        return " ".join(parts[:-2]), " ".join(parts[-2:])
     return " ".join(parts[:-1]), parts[-1]
 
 

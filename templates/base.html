@@ -28,6 +28,7 @@
         <a href="{{ url_for('managers_index') }}" class="{{ 'active' if request.endpoint in ('managers_index', 'manager_roster') }}">Managers</a>
         <a href="{{ url_for('transactions') }}" class="{{ 'active' if request.endpoint == 'transactions' }}">Transactions</a>
         <a href="{{ url_for('transfers') }}" class="{{ 'active' if request.endpoint == 'transfers' }}">Transfers</a>
+        <a href="{{ url_for('watchlist_page') }}" class="{{ 'active' if request.endpoint == 'watchlist_page' }}">Watchlist</a>
         <a href="{{ url_for('lineup') }}" class="{{ 'active' if request.endpoint == 'lineup' }}">Lineup</a>
         <a href="{{ url_for('sync_page') }}" class="{{ 'active' if request.endpoint == 'sync_page' }}">Sync</a>
         <a href="{{ url_for('how_it_works') }}" class="{{ 'active' if request.endpoint == 'how_it_works' }}">How this works</a>

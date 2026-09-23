@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 {% block title %}Import Draft{% endblock %}
 {% block content %}
-  <h1>Match Managers</h1>
+  <h1>Confirm Import</h1>
   <p>Found <strong>{{ total_picks }}</strong> pick(s) across
   <strong>{{ csv_managers|length }}</strong> manager(s) in the uploaded file.
-  Match each one to a manager in this league, or leave it set to "Skip" to
-  leave that manager's picks out of the import.</p>
+  A league manager will be created for each name below that doesn't already
+  exist (matched case-insensitively).</p>
 
   <form method="post" action="{{ url_for('draft_import_commit') }}">
     <input type="hidden" name="csv_text" value="{{ csv_text }}">
@@ -13,9 +13,8 @@
     <table>
       <thead>
         <tr>
-          <th>Name in file</th>
+          <th>Manager</th>
           <th>Picks</th>
-          <th>Import as</th>
         </tr>
       </thead>
       <tbody>
@@ -23,14 +22,6 @@
           <tr>
             <td>{{ cm.manager_name }}</td>
             <td>{{ cm.pick_count }}</td>
-            <td>
-              <select name="manager_for_{{ cm.manager_key }}">
-                <option value="">Skip</option>
-                {% for m in managers %}
-                  <option value="{{ m.manager_id }}" {% if cm.suggested_manager_id == m.manager_id %}selected{% endif %}>{{ m.name }}</option>
-                {% endfor %}
-              </select>
-            </td>
           </tr>
         {% endfor %}
       </tbody>

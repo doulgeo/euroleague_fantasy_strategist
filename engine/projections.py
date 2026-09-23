@@ -18,6 +18,20 @@ TEAM_WIN_WINDOW = 10
 WIN_BONUS_FRACTION = 0.10
 
 
+def actual_fantasy_score(pir: float, team_won: bool | None) -> float:
+    """Real PIR plus the official +10% team-win bonus, applied only when
+    the game's real outcome is known (team_won True/False - a per-game
+    fact from engine.data, not the trailing win-RATE estimate used above
+    for pre-game projection). Confirmed 2026-09-22: the official scoring
+    rule is "+10% of that round's fantasy score if their team won," and
+    this was previously applied only inside the projection (as an expected
+    value based on recent win rate, appropriate before the game's played)
+    - engine.lineup.compute_round_score's *actual* scoring path ignored it
+    entirely, silently understating every real/backtested round score by
+    up to 10% for any player on a winning team."""
+    return pir * (1 + WIN_BONUS_FRACTION) if team_won else pir
+
+
 @dataclass
 class Projection:
     player_id: str

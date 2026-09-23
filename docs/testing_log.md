@@ -2343,3 +2343,277 @@ confirmed managers, ownership, and transactions all cleared together.
 
 **Result**: works as intended. Real `euroleague.db` was not touched by this
 test (all_managers/12 currently seeded there was left alone).
+
+---
+
+## 2026-09-22 — Draft import: auto-create managers instead of matching to pre-seeded ones
+
+**What**: the CSV draft-import "Match Managers" step originally required
+mapping each distinct manager name found in the file to an already-seeded
+league manager via a dropdown (built 2026-09-16). In practice the user hit
+this with an empty `managers` table (after the "clean the managers" reset)
+and the dropdowns had nothing but "Skip" to offer, so nothing could be
+mapped and the commit failed with "No CSV managers were mapped." The user's
+actual want: just use the CSV's own `manager` column as the manager name
+and create league managers on the fly - however many distinct names the
+file has (2, 14, whatever), not a fixed pre-seeded set. Replaced the
+mapping step entirely: `engine.ownership.get_or_create_manager` (new,
+case-insensitive lookup-or-insert by name) is called once per distinct CSV
+manager at commit time; the former "Match Managers" page is now a plain
+read-only confirmation table (name + pick count) with no dropdowns.
+`draft_import_preview`/`draft_import_commit` in `app.py` simplified to
+match (no more `manager_by_lower_name`/`suggested_manager_id`/`mapping`
+dict).
+
+**How**: live HTTP round-trip against the real running app/DB (which
+genuinely had 0 managers, confirmed via direct query first) - a 4-pick,
+3-manager mock CSV through `POST /draft/import/preview` then
+`POST /draft/import/commit` (replaying the exact hidden `csv_text` field
+the preview page renders, to catch any encode/decode round-trip issue).
+
+**Result**: confirmed the preview page now shows a plain table with no
+dropdown. Commit created exactly 3 new managers (auto-incremented IDs,
+unrelated to the pre-reset ones) and recorded all 4 ownership rows against
+the right manager, with the flash message correctly reporting "4 pick(s)
+across 3 manager(s) (3 new manager(s) created)". Test data (3 managers + 4
+ownership rows) was left in the real DB - a follow-up cleanup via
+`clear_all_managers` was attempted but blocked by the session's own
+destructive-action guard; use the `/sync` "clean the managers" button (or
+ask again explicitly) to remove it before a real import.
+
+---
+
+## 2026-09-22 — Captain multiplier corrected: 1.5x, not 2x
+
+**What**: the user corrected a rule that had been documented and
+implemented as a straight double since the engine was first built: captain
+scores **1.5x**, not 2x. Fixed at the single source of truth,
+`engine.lineup._tier_multiplier` (now returns the new
+`CAPTAIN_SCORE_MULTIPLIER = 1.5` constant instead of a bare `2.0`) - this
+is the only place in the codebase the multiplier was hardcoded, so
+`compute_round_score` and everything built on it (the lineup builder, the
+backtest) picks up the correction automatically with no other code changes
+needed. Updated every doc/comment/template that stated "2x"/"doubles" as
+the captain rule: `docs/game_rules.md`, `docs/technical_notes.md`,
+`engine/lineup.py`'s module docstring, and the `title`/`data-tip` text in
+`templates/lineup.html`, `templates/how_it_works.html`, and
+`templates/_pitch.html`.
+
+**Not done this session**: the validated backtest headline numbers in
+`CLAUDE.md` ("Current status", e.g. the +10.62 PIR mean gain / 82%
+beat-or-tie figures) were all computed under the old, wrong 2x captain
+assumption via `compute_round_score`, and are now stale - the swap logic
+itself is unaffected, but the actual point totals it's scored against
+changed. Re-running `backtest_eval.py`'s elaborate multi-season backtest to
+get corrected numbers was not done as part of this fix; revisit before
+trusting or citing those specific figures again.
+
+---
+
+## 2026-09-22 — Real draft import: name-splitting and stale-position bugs found and fixed
+
+**What**: after the user imported their actual real draft (156 picks, 12
+managers) through the CSV importer above, `/lineup` errored for every
+manager - first "Roster incomplete ... 1 not found in current pool", then
+(after that fix) "Roster must have 5 Forwards, got 4" for 5 of the 12
+managers. Two independent real bugs, both found by tracing the live DB
+rather than guessing:
+
+1. **Name-splitting**: `engine.draft_import._split_full_name`'s naive
+   "last whitespace token is the surname" rule broke on exactly the name
+   shapes a real draft-app export actually contains: a trailing
+   generational suffix ("Patrick Baldwin Jr.", "Wendell Moore Jr.",
+   "Derrick Alston Jr.", "Jimmy Clark III") or a multi-word surname
+   ("Oscar Da Silva"). All 5 fell through to `engine.fantasy_pool`'s
+   synthetic-ID fallback - correctly *not guessed*, but then permanently
+   invisible to `get_pool` (a synthetic ID is never added to the merged
+   pool, since it's neither a real box-score player_id nor present on any
+   current roster row), which is what actually broke `/lineup`. Fixed by
+   making `_split_full_name` suffix-aware (drop a trailing
+   Jr/Sr/II/III/IV/V, optional trailing period, before picking the surname
+   - reusing `engine.fantasy_pool._SUFFIX_TOKENS`) and particle-aware (fold
+   a leading surname particle - Da/Van/Mc/etc, new `_SURNAME_PARTICLES` -
+   into a 2-word surname). Verified against all 5 real cases directly
+   (`_split_full_name` now returns e.g. `('Oscar', 'Da Silva')`,
+   `('Jimmy', 'Clark')`) and by re-running `resolve_pool_rows` against the
+   live DB - all 5 now match a real, current-roster player_id (0
+   synthetic). The 5 already-imported ownership rows (holding the old
+   synthetic IDs, e.g. `sheet:mun:silva:oscar-da`) were hand-corrected via
+   a direct `UPDATE ownership/transactions SET player_id=...` to the real
+   IDs found this way, rather than asking the user to re-import - no ID
+   collisions existed, confirmed before writing.
+
+2. **Stale position on merge**: even after fix #1, 5 of 12 managers still
+   failed roster validation with a position-count mismatch (e.g. 5G/4F/4C
+   instead of the required 5G/5F/3C) despite having a full, correctly-
+   resolved 13 real players. Root cause: `engine.rosters.merge_roster`
+   only overwrote a known player's `position` when their `team` changed
+   ("`existing.position or r["position"]`, only reached inside the
+   team-changed branch") - so a player whose position disagrees between
+   the authoritative current source (`fantasy_pool`, the real Fantasy
+   game's own sheet - synced 2026-09-16) and their older box-score-derived
+   classification (`existing.position`, from `build_projections`) kept the
+   stale one forever, as long as their team hadn't also changed. Confirmed
+   with a real example: `Filip Petrusev` (DUB) is `Forward` in
+   `fantasy_pool` but `Center` in the box-score-derived pool - same team
+   both sides, so the old code never corrected it, silently giving one
+   manager 4 Centers/4 Forwards instead of 3/5. Fixed by updating
+   `position` (and `team`) whenever either disagrees with the roster-
+   composition source, preferring that source's position over the stale
+   existing one (`r["position"] or existing.position`, source now checked
+   first) - the reverse of the previous priority order. This is a general
+   fix, not fantasy_pool-specific: it also corrects the /people-only
+   fallback path the same way.
+
+**How**: live-diagnosed against the real, already-imported DB (not a
+mock) - queried `ownership`/`rosters`/`fantasy_pool` directly to find the
+5 unresolved player_ids and the 5 position-mismatched managers, compared
+`fantasy_pool` vs. the merged pool's position for the mismatched players'
+full rosters, then re-verified all 12 managers hit exactly 5G/5F/3C after
+the fix and hit `/lineup` for 5 of them live (200, no roster/schedule
+error, lineup builder rendered with the day-1/day-2 tables).
+
+**Result**: both fixes confirmed against the real league DB - all 156
+real picks now resolve to real player_ids with correct positions, all 12
+managers pass roster validation, `/lineup` works end-to-end for the whole
+league. No test data to clean up this time (this was the user's actual
+real draft, not a scratch/mock import).
+
+---
+
+## 2026-09-22 — Actual scoring was missing the real +10% team-win bonus
+
+**What**: the user, cross-checking the official scoring rules screenshot
+against this project's own documented rules, recalled that the +10%
+team-win bonus might not actually be implemented. Confirmed true, and
+worse than just undocumented - it was a real correctness bug in the
+*actual*-scoring path specifically. `WIN_BONUS_FRACTION = 0.10`
+(`engine/projections.py`) was only ever applied inside `build_projections`,
+as a pre-game *expected-value* estimate (`team_win_rate` over the last 10
+games × 0.10 × `projected_pir`) - appropriate before a game's played, since
+the real outcome isn't known yet. But `engine.lineup.compute_round_score`
+- the function that scores a round's REAL outcome, used both by the live
+`/lineup` page's "Total Projected Score" box (for anyone whose game has
+already synced) and by every number in the validated backtest headline in
+CLAUDE.md - just multiplied raw `pir_official` by the tier multiplier, with
+no win bonus at all, despite the real outcome being known and already
+sitting unused in `player_game_stats.team_win` (a confirmed-correct
+per-game boolean, `engine/data.py`).
+
+Fixed by adding `engine.projections.actual_fantasy_score(pir, team_won)` -
+real PIR × 1.10 when `team_won` is `True`, unchanged otherwise (applies
+correctly to a negative PIR too, per the official rule's literal wording:
+"+10% of fantasy score", not "+10% of points scored") - and threading it
+through every caller that builds an `actual_pir`-style dict before passing
+it to `compute_round_score`: `app.py`'s `/lineup` route (`day1_actual`),
+`backtest_eval.py`'s `actual_pir_lookup`, `poc_run.py`'s
+`actual_pir_lookup`. `compute_round_score`'s docstring was expanded to spell
+out the contract explicitly (it has no access to who won, so every caller
+must pre-apply the bonus) since this exact gap is what let the bug hide for
+this long. `team_strength_backtest.py` has a similar raw-`pir_official`
+read (`actual=float(r["pir_official"])`) but that's a PIR-*prediction*-MAE
+comparison in an already-shelved, never-wired-in experiment
+(`engine/team_strength.py`, "no demonstrable predictive value") - out of
+scope, left alone.
+
+**How**: `actual_fantasy_score` unit-checked directly (win/loss/unknown,
+plus the negative-PIR case). `backtest_eval.actual_pir_lookup` re-run
+against real E2025 round-20 data from the live DB and spot-checked: a
+winning-team player went from raw PIR 11 to scored 12.1 (×1.10 exactly),
+a losing-team player's PIR was unchanged. `/lineup` re-hit live for a real
+manager after the change - 200, no error, "Total Projected Score" box
+still renders.
+
+**Result**: fixed and verified. **Not done this session**: the validated
+backtest headline numbers in `CLAUDE.md` are now stale for a *second*,
+independent reason (on top of the captain-multiplier correction earlier
+today) - every number in there was computed with actual scoring missing
+this bonus entirely. Revisit before citing those figures again; a full
+`backtest_eval.py` rerun would fold in both corrections at once.
+
+---
+
+## 2026-09-22 — "Sync Rosters" now also syncs the Fantasy sheet
+
+**What**: the user asked whether roster sync pulls from the Fantasy sheet.
+It didn't - `sync_rosters.py`/the "Sync Rosters" button only ever hit
+EuroLeague's own `/people` endpoint; the sheet has its own separate script/
+button (`sync_fantasy_pool.py` / "Sync Fantasy draft pool"). Composition
+(team/position) was already sheet-driven *at read time* (`get_pool`
+resolves the sheet against `/people` + historical data on every page load,
+since 2026-09-15), but that only stays current if both buttons get clicked
+- easy to forget the second one and silently serve stale composition. Per
+the user's explicit direction ("please use the sheet it is more up to
+date" / "the roster sync button gets data from the sheet"), made "Sync
+Rosters" a single action that runs both: `sync_rosters.py` first (still
+needed - it's the identity/ID backbone `resolve_pool_rows` matches the
+sheet against, and full-coverage fallback for anyone not yet on the sheet),
+then `sync_fantasy_pool.py`. `app.py`'s sync-runner internals
+(`_run_sync`/`_start_sync`) generalized from a single command to a list of
+commands run in order under one "kind"/lock/log, stopping at the first
+failing step (same as a shell `&&` chain) - the other three sync buttons
+(db/fantasy-pool/injuries) unaffected, just each now pass a 1-item list.
+`templates/sync.html`'s Rosters section and button label updated to say
+what actually happens now.
+
+**How**: live-triggered the real `/sync/rosters` endpoint against the real
+running app/DB (`curl -X POST .../sync/rosters`), polled until it finished,
+and confirmed both steps actually ran (not just the first) via the
+combined log file (`$ sync_rosters.py ...` output followed by
+`$ sync_fantasy_pool.py ...` output, 307 + 326 players respectively) and by
+directly checking `rosters.synced_at`/`fantasy_pool.synced_at` in the DB -
+both advanced to the same run.
+
+**Result**: works as intended - one click now keeps both sources current.
+
+---
+
+## 2026-09-23 — Watchlist + transfer PIR compare tool
+
+**What**: two user-requested features. (1) A personal watchlist/transfer
+shortlist - a new `watchlist` table (`engine/db.py`, same single-table,
+`INSERT OR REPLACE`/bare-commit style as `manual_projections`) plus
+`add_to_watchlist`/`remove_from_watchlist`/`load_watchlist` helpers. It's a
+single global list, not per-manager - confirmed with the user this is their
+own personal planning tool, not a multi-tenant feature for all 12 league
+members. Wired in: a ☆/★ toggle button next to every player on `/draft`
+(alongside the existing draft-pick form), a new `/watchlist` page listing
+watched players with current projected value and the same NEW/EST/GONE/
+injury badges used elsewhere, and a ★ badge anywhere a watched player
+appears (draft board, and the `Add` column of `/transfers`' suggestions
+table and its Add `<select>`, grouped into its own "Watchlist" optgroup).
+(2) Projected PIR gain/loss for a transfer - `engine/transfers.py` gained a
+`projected_gain(drop, add)` helper (`add.projected_pir_with_bonus -
+drop.projected_pir_with_bonus`), extracted from the existing
+`suggest_transfers` calculation it already did internally for same-position
+auto-suggestions. Per the user's direction, exposed as a manual "Compare a
+transfer" tool on `/transfers` (pick any Drop from the manager's roster and
+any Add from the free-agent pool, not restricted to same position or the
+`MIN_UPGRADE_GAP` threshold like the automatic suggestions are) rather than
+on the real add/drop/trade transaction forms. Result renders via the same
+`.stat-box`/`.stat-box-positive`/`.stat-box-negative` markup `/lineup`
+already uses for its Total Projected Score box - no new CSS needed for
+that part.
+
+**How**: live-tested end-to-end against the real, already-drafted 12-manager
+E2026 DB (156/156 owned) via direct HTTP calls to the running app. Watched
+two players via `/watchlist/add` (confirmed the redirect preserves the
+draft board's current filters), verified both appeared on `/watchlist` and
+showed the ★ badge on `/draft`; removed one via `/watchlist/remove` from
+the watchlist page itself and confirmed it disappeared from both pages, and
+confirmed the empty-state message renders correctly with nothing watched.
+For the compare tool: watched a real player (LIGHTY, DAVID, proj 3.7),
+picked a real manager's real roster player as Drop (BALDWIN IV, WADE, proj
+15.6) via `?manager_id=40&drop_id=...&add_id=...`, and independently
+computed the expected delta in a Python shell against the same `get_pool`
+pool the route uses (`3.67 - 15.58 = -11.91`) - the rendered page showed
+`-11.9` with the negative (red) styling applied, and the watched player
+appeared pre-selected in its own "Watchlist" optgroup. Also confirmed the
+existing automatic suggestions table for that same manager still rendered
+correctly (SLOUKAS, KOSTAS `+12.2`, DIARRA, ALIOU `+9.2`, etc.) after the
+`projected_gain` extraction - the refactor of `suggest_transfers` line 51
+was behavior-preserving, not just in isolation. All test watchlist rows
+were removed afterward (table back to 0 rows) since this is real (not
+disposable) DB state.
+
+**Result**: both features work as intended and are live in the app.

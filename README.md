@@ -24,7 +24,13 @@ for personal use among friends — never monetized or redistributed.
   data and lets you map the file's manager names to this league's managers
   before anything is written.
 - **Transfer suggestions** — same-position upgrades from the actual
-  unowned free-agent pool.
+  unowned free-agent pool, plus a manual compare tool to check the
+  projected PIR gain or loss for any drop/add pair you pick yourself, not
+  just same-position auto-matches.
+- **Watchlist** — a personal shortlist of players to keep an eye on for
+  future transfers, toggled from the draft board and reviewed on a
+  dedicated Watchlist page; watched players are flagged with a ★ badge
+  wherever they appear, including in the transfer compare tool's Add list.
 - **Lineup builder** — for a chosen manager and round (including a round
   that hasn't been played yet), picks which 3 of 13 to exclude, the day-1
   starting lineup and captain, and the day-2 swap plan - auto-optimizing

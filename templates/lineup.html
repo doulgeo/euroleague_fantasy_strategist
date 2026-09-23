@@ -46,7 +46,7 @@
       {% for d in team_dates.values() | unique | sort %}{{ d }}{{ ", " if not loop.last }}{% endfor %}
     </p>
 
-    <div class="stat-box" title="Projected total round score (captain 2x, starters/6th-man full, bench half), using actual PIR for anyone whose game has already been synced and projections for everyone else.">
+    <div class="stat-box" title="Projected total round score (captain 1.5x, starters/6th-man full, bench half), using actual fantasy score (PIR + the real 10% team-win bonus if they won) for anyone whose game has already been synced, and projected fantasy score (PIR + an expected win bonus from recent win rate) for everyone else.">
       <div class="stat-box-item">
         <span class="stat-box-label">No-swap total</span>
         <span class="stat-box-value">{{ "%.1f"|format(no_swap_total) }}</span>

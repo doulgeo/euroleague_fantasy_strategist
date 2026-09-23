@@ -40,6 +40,27 @@ def get_manager_id(conn: sqlite3.Connection, name: str) -> int | None:
     return row[0] if row else None
 
 
+def get_or_create_manager(conn: sqlite3.Connection, name: str) -> tuple[int, bool]:
+    """Case-insensitive get-or-create by name. Returns (manager_id, created).
+
+    The draft-import path uses this to build the league's manager list
+    straight from whatever distinct names appear in an uploaded CSV, rather
+    than requiring managers to be pre-seeded and mapped by hand - however
+    many managers the file has (2, 14, whatever) is however many get
+    created, matching an existing manager by name (case-insensitively) if
+    one's already there.
+    """
+    name = name.strip()
+    row = conn.execute(
+        "SELECT manager_id FROM managers WHERE name = ? COLLATE NOCASE", (name,)
+    ).fetchone()
+    if row:
+        return row[0], False
+    with conn:
+        cur = conn.execute("INSERT INTO managers (name) VALUES (?)", (name,))
+    return cur.lastrowid, True
+
+
 def _natural_sort_key(name: str) -> list:
     """Splits a name into text/number chunks so e.g. "Test2" sorts before
     "Test10" - plain SQL/string ordering treats them character-by-character

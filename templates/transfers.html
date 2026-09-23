@@ -35,7 +35,7 @@
             <td>{{ s.drop.player_name }}</td>
             <td>{{ s.drop.position }}</td>
             <td>{{ "%.1f"|format(s.drop.projected_pir_with_bonus) }}</td>
-            <td>{{ s.add.player_name }}</td>
+            <td>{{ s.add.player_name }}{% if s.add.player_id in watchlist_ids %} <span class="watch-badge" title="On your watchlist">★</span>{% endif %}</td>
             <td>{{ "%.1f"|format(s.add.projected_pir_with_bonus) }}</td>
             <td>{{ "%+.1f"|format(s.projected_gain) }}</td>
           </tr>
@@ -44,5 +44,55 @@
         {% endfor %}
       </tbody>
     </table>
+
+    <h2>Compare a transfer</h2>
+    <p>Pick any drop/add pair - not just the same-position auto-suggestions above - to see the projected PIR gain or loss.</p>
+    <form method="get" class="filters">
+      <input type="hidden" name="manager_id" value="{{ selected_manager_id }}">
+      <label>Drop:
+        <select name="drop_id">
+          <option value="">Choose a player...</option>
+          {% for p in roster.players|sort(attribute="player_name") %}
+            <option value="{{ p.player_id }}" {% if compare and compare.drop.player_id == p.player_id %}selected{% endif %}>{{ p.player_name }} ({{ p.position }})</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Add:
+        <select name="add_id">
+          <option value="">Choose a player...</option>
+          {% set watched = addable_players|selectattr("player_id", "in", watchlist_ids)|list %}
+          {% if watched %}
+            <optgroup label="Watchlist">
+              {% for p in watched|sort(attribute="player_name") %}
+                <option value="{{ p.player_id }}" {% if compare and compare.add.player_id == p.player_id %}selected{% endif %}>{{ p.player_name }} ({{ p.position }})</option>
+              {% endfor %}
+            </optgroup>
+          {% endif %}
+          <optgroup label="All players">
+            {% for p in addable_players|sort(attribute="player_name") %}
+              <option value="{{ p.player_id }}" {% if compare and compare.add.player_id == p.player_id %}selected{% endif %}>{{ p.player_name }} ({{ p.position }})</option>
+            {% endfor %}
+          </optgroup>
+        </select>
+      </label>
+      <button type="submit">Compare</button>
+    </form>
+
+    {% if compare %}
+      <div class="stat-box">
+        <div class="stat-box-item">
+          <span class="stat-box-label">Drop: {{ compare.drop.player_name }}</span>
+          <span class="stat-box-value">{{ "%.1f"|format(compare.drop.projected_pir_with_bonus) }}</span>
+        </div>
+        <div class="stat-box-item">
+          <span class="stat-box-label">Add: {{ compare.add.player_name }}</span>
+          <span class="stat-box-value">{{ "%.1f"|format(compare.add.projected_pir_with_bonus) }}</span>
+        </div>
+        <div class="stat-box-item">
+          <span class="stat-box-label">Gain</span>
+          <span class="stat-box-value {{ 'stat-box-positive' if compare.gain > 0 else 'stat-box-negative' if compare.gain < 0 else '' }}">{{ "%+.1f"|format(compare.gain) }}</span>
+        </div>
+      </div>
+    {% endif %}
   {% endif %}
 {% endblock %}

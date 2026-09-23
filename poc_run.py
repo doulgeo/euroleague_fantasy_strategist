@@ -23,7 +23,7 @@ from engine.lineup import (
     swap_after_day1,
     team_dates_for_round,
 )
-from engine.projections import build_projections
+from engine.projections import actual_fantasy_score, build_projections
 from engine.roster import sample_roster
 from engine.transfers import suggest_transfers
 
@@ -86,7 +86,14 @@ def print_transfers(suggestions) -> None:
 
 
 def actual_pir_lookup(rows: list[dict], round_no: int) -> dict[str, float]:
-    return {r["player_id"]: float(r["pir_official"]) for r in rows if r.get("round") == round_no}
+    """Each player's real fantasy score for the round - PIR plus the real
+    +10% team-win bonus when their team actually won (see
+    engine.projections.actual_fantasy_score, confirmed 2026-09-22)."""
+    return {
+        r["player_id"]: actual_fantasy_score(float(r["pir_official"]), r.get("team_win"))
+        for r in rows
+        if r.get("round") == round_no
+    }
 
 
 def main() -> None:

@@ -85,8 +85,8 @@ def merge_roster(
 
         if pid in merged:
             existing = merged[pid]
-            if existing.team != r["team"]:
-                merged[pid] = replace(existing, team=r["team"], position=existing.position or r["position"])
+            if existing.team != r["team"] or existing.position != r["position"]:
+                merged[pid] = replace(existing, team=r["team"], position=r["position"] or existing.position)
         else:
             manual = manual_projections.get(pid)
             pir = manual["projected_pir"] if manual else 0.0

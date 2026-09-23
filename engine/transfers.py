@@ -25,6 +25,11 @@ class TransferSuggestion:
     projected_gain: float
 
 
+def projected_gain(drop: Projection, add: Projection) -> float:
+    """Projected PIR delta of dropping `drop` for `add` - positive is an upgrade."""
+    return add.projected_pir_with_bonus - drop.projected_pir_with_bonus
+
+
 def suggest_transfers(
     roster: Roster,
     pool: dict[str, Projection],
@@ -48,7 +53,7 @@ def suggest_transfers(
             continue
 
         best_available = candidates[0]
-        gain = best_available.projected_pir_with_bonus - player.projected_pir_with_bonus
+        gain = projected_gain(player, best_available)
 
         if gain >= min_gap:
             suggestions.append(
