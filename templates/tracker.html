@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% import "_line_chart.html" as chart_macros %}
+{% block title %}Points Tracker{% endblock %}
+{% block content %}
+  <h1>Points Tracker</h1>
+  <p>Your real lineups, round by round, scored against real box scores - next to what
+    the tool suggested and the best lineup your roster could have played in hindsight.
+    <a href="{{ url_for('how_it_works') }}#tracker">How this works</a></p>
+
+  <form method="post" action="{{ url_for('tracker_set_me') }}" class="filters">
+    <label>My team:
+      <select name="manager_id" onchange="this.form.submit()">
+        <option value="">Choose your team...</option>
+        {% for m in managers %}
+          <option value="{{ m.manager_id }}" {% if my_id == m.manager_id %}selected{% endif %}>{{ m.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </form>
+
+  {% if my_id %}
+    <form method="get" action="{{ url_for('tracker_open') }}" class="filters">
+      <label>Enter / edit a round:
+        <select name="round" onchange="this.form.submit()">
+          {% for r in rounds %}
+            <option value="{{ r }}" {% if r == next_round %}selected{% endif %}>Round {{ r }}{{ " (next)" if r == next_round }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button type="submit">Open</button>
+    </form>
+
+    {% if not scores %}
+      <p>No lineups tracked yet - open a round above and save your day-1 lineup.</p>
+    {% else %}
+      {% if chart %}
+        <h2>Season so far</h2>
+        {{ chart_macros.cumulative_chart(chart) }}
+      {% endif %}
+
+      <h2>By round</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Round</th>
+            <th title="Your final (post-swap) lineup, scored with real PIR + the real 10% team-win bonus.">My score</th>
+            <th title="Your day-1 lineup scored as if you'd made no swaps - the difference is what your swaps were worth.">No swap</th>
+            <th title="Final minus no-swap.">Swap gain</th>
+            <th title="What /lineup suggested (snapshotted when you saved), scored the same way.">Tool</th>
+            <th title="The best lineup your 13-man roster could have played, knowing every real score in advance.">Best</th>
+            <th title="Your score as a share of the best possible.">% of best</th>
+            <th title="The in-game total you typed in, and its difference from our computed score - checks our scoring model.">Official (diff)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for sc in scores %}
+            <tr>
+              <td><a href="{{ url_for('tracker_round', round_no=sc.round_no) }}">Round {{ sc.round_no }}</a>
+                {% if not sc.has_box_scores %}<span class="muted">(not played / synced yet)</span>
+                {% elif not sc.complete %}<span class="muted">(partial)</span>{% endif %}</td>
+              <td><strong>{{ "%.1f"|format(sc.my_final) if sc.my_final is not none else "-" }}</strong></td>
+              <td>{{ "%.1f"|format(sc.my_no_swap) if sc.my_no_swap is not none else "-" }}</td>
+              <td class="{{ 'num-positive' if (sc.swap_gain or 0) > 0 else 'num-negative' if (sc.swap_gain or 0) < 0 }}">{{ "%+.1f"|format(sc.swap_gain) if sc.swap_gain is not none else "-" }}</td>
+              <td>{{ "%.1f"|format(sc.tool) if sc.tool is not none else "-" }}</td>
+              <td>{{ "%.1f"|format(sc.best) if sc.best is not none else "-" }}</td>
+              <td>{{ "%.0f%%"|format(100 * sc.pct_of_best) if sc.pct_of_best is not none else "-" }}</td>
+              <td>{% if sc.official is not none %}{{ "%.1f"|format(sc.official) }}{% if sc.official_diff is not none %} ({{ "%+.1f"|format(sc.official_diff) }}){% endif %}{% else %}-{% endif %}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr>
+            <th>Total</th>
+            {% for attr in ("my_final", "my_no_swap") %}
+              <th>{{ "%.1f"|format(totals[attr]) if totals[attr] is not none else "-" }}</th>
+            {% endfor %}
+            <th>{{ "%+.1f"|format(totals.my_final - totals.my_no_swap) if (totals.my_final is not none and totals.my_no_swap is not none) else "-" }}</th>
+            {% for attr in ("tool", "best") %}
+              <th>{{ "%.1f"|format(totals[attr]) if totals[attr] is not none else "-" }}</th>
+            {% endfor %}
+            <th>{{ "%.0f%%"|format(100 * totals.my_final / totals.best) if (totals.my_final and totals.best) else "-" }}</th>
+            <th>{{ "%.1f"|format(totals.official) if totals.official is not none else "-" }}</th>
+          </tr>
+        </tfoot>
+      </table>
+    {% endif %}
+  {% endif %}
+{% endblock %}

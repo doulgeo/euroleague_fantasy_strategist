@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% import "_pitch.html" as pitch_macros %}
+{% block title %}Tracker - Round {{ round_no }}{% endblock %}
+{% block content %}
+  <p><a href="{{ url_for('tracker') }}">&larr; Points Tracker</a></p>
+  <h1>Round {{ round_no }} - {{ manager_name }}</h1>
+  <p class="round-nav">
+    {% if round_no - 1 in rounds %}<a href="{{ url_for('tracker_round', round_no=round_no - 1) }}">&larr; Round {{ round_no - 1 }}</a>{% endif %}
+    {% if round_no + 1 in rounds %}<a href="{{ url_for('tracker_round', round_no=round_no + 1) }}">Round {{ round_no + 1 }} &rarr;</a>{% endif %}
+  </p>
+
+  {% if rec.roster_error and not players %}
+    <p class="flash-error">Roster incomplete: {{ rec.roster_error }}</p>
+  {% elif rec.schedule_error %}
+    <p class="flash-error">{{ rec.schedule_error }}</p>
+  {% endif %}
+
+  {% if score.has_box_scores %}
+    <div class="stat-box">
+      <div class="stat-box-item" title="Your final lineup (or day-1 lineup if no final saved), real PIR + real 10% win bonus.">
+        <span class="stat-box-label">My score{{ " (partial)" if not score.complete }}</span>
+        <span class="stat-box-value">{{ "%.1f"|format(score.my_final) if score.my_final is not none else "-" }}</span>
+      </div>
+      <div class="stat-box-item" title="Your day-1 lineup with no swaps made.">
+        <span class="stat-box-label">No swap</span>
+        <span class="stat-box-value">{{ "%.1f"|format(score.my_no_swap) if score.my_no_swap is not none else "-" }}</span>
+      </div>
+      <div class="stat-box-item" title="{{ 'Recomputed now from projections as of before this round - no snapshot was saved with your lineup.' if tool_recomputed else 'What /lineup suggested when you saved your lineup.' }}">
+        <span class="stat-box-label">Tool{{ "*" if tool_recomputed }}</span>
+        <span class="stat-box-value">{{ "%.1f"|format(score.tool) if score.tool is not none else "-" }}</span>
+      </div>
+      <div class="stat-box-item" title="The best lineup your 13-man roster could have played, knowing every real score in advance. Its slots are in the 'Best' column below.">
+        <span class="stat-box-label">Best possible</span>
+        <span class="stat-box-value">{{ "%.1f"|format(score.best) if score.best is not none else "-" }}</span>
+      </div>
+      {% if score.official is not none %}
+        <div class="stat-box-item" title="The in-game total you entered, minus our computed score.">
+          <span class="stat-box-label">Official (diff)</span>
+          <span class="stat-box-value">{{ "%.1f"|format(score.official) }}
+            {% if score.official_diff is not none %}<small class="{{ 'num-positive' if score.official_diff > 0 else 'num-negative' if score.official_diff < 0 }}">({{ "%+.1f"|format(score.official_diff) }})</small>{% endif %}</span>
+        </div>
+      {% endif %}
+    </div>
+    {% if tool_recomputed %}<p class="muted">* No tool suggestion was saved with this round, so it's recomputed from projections as of before round {{ round_no }} (no hindsight) - may differ slightly from what /lineup showed at the time.</p>{% endif %}
+  {% else %}
+    <p class="muted">No box scores synced for this round yet - scores appear here once its games are played and synced (<a href="{{ url_for('sync_page') }}">Sync</a>).</p>
+  {% endif %}
+
+  <form method="post" action="{{ url_for('tracker_official', round_no=round_no) }}" class="filters">
+    <label title="Your total from the real EuroLeague Fantasy game - shown next to our computed score as a check on the scoring model. Leave blank to clear.">Official in-game points:
+      <input type="number" step="0.1" name="official_points" value="{{ score.official if score.official is not none else '' }}" style="width: 6rem">
+    </label>
+    <button type="submit">Save</button>
+  </form>
+
+  {% if players %}
+    <h2>Your lineup</h2>
+    <p>Set a slot for every player: 1 captain + 4 starters (a 2-2-1, 2-1-2 or 3-1-1
+      G-F-C formation, captain included), 1 sixth man, 4 bench, 3 excluded.
+      <strong>Day 1</strong> is what you lock before the round. <strong>Final</strong>
+      is how it stood after the swap window (leave it matching Day 1 if you made no swaps).
+      Unsaved columns start from the tool's suggestion.
+      {% if not lineups.my_day1 %}Saving Day 1 also snapshots the tool's suggestion for comparison.{% endif %}</p>
+    <form id="day1-form" method="post" action="{{ url_for('tracker_save', round_no=round_no) }}"><input type="hidden" name="kind" value="day1"></form>
+    <form id="final-form" method="post" action="{{ url_for('tracker_save', round_no=round_no) }}"><input type="hidden" name="kind" value="final"></form>
+    <table class="tracker-table">
+      <thead>
+        <tr>
+          <th>Player</th><th>Pos</th><th>Team</th>
+          <th title="day1 = plays on this round's earliest date; later = a subsequent date; not playing = no game this round.">Plays</th>
+          <th title="Projected PIR + expected win bonus (from before this round).">Proj</th>
+          <th>Day 1{% if lineups.my_day1 %} <span class="saved-tag">saved</span>{% endif %}</th>
+          <th>Final{% if lineups.my_final %} <span class="saved-tag">saved</span>{% endif %}</th>
+          {% if score.has_box_scores %}
+            <th title="Real PIR + real 10% win bonus, before the slot multiplier.">Actual</th>
+            <th title="Where this player sits in the best possible lineup.">Best</th>
+          {% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% set actual_by_id = {} %}
+        {% for line in score.breakdown %}{% set _ = actual_by_id.update({line.player_id: line}) %}{% endfor %}
+        {% for p in players %}
+          <tr>
+            <td>{{ p.player_name }}{{ pitch_macros.injury_badge(p, injury_status) }}</td>
+            <td>{{ p.position }}</td><td>{{ p.team }}</td>
+            <td>{{ availability_label(p, team_dates) if team_dates else "-" }}</td>
+            <td>{{ "%.1f"|format(p.projected_pir_with_bonus) }}</td>
+            {% for form_id, current in (("day1-form", day1_slots), ("final-form", final_slots)) %}
+              <td>
+                <select name="slot_{{ p.player_id }}" form="{{ form_id }}" class="slot-select slot-{{ current.get(p.player_id, '') }}">
+                  <option value="">-</option>
+                  {% for s in slots %}
+                    <option value="{{ s }}" {% if current.get(p.player_id) == s %}selected{% endif %}>{{ slot_labels[s] }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+            {% endfor %}
+            {% if score.has_box_scores %}
+              {% set line = actual_by_id.get(p.player_id) %}
+              <td>{{ "%.1f"|format(line.fantasy) if line and line.played else "DNP" }}</td>
+              <td>{{ slot_labels.get(score.best_slots.get(p.player_id), "-") }}</td>
+            {% endif %}
+          </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td colspan="5"></td>
+          <td><button type="submit" form="day1-form">Save Day 1</button></td>
+          <td><button type="submit" form="final-form">Save Final</button></td>
+          {% if score.has_box_scores %}<td colspan="2"></td>{% endif %}
+        </tr>
+      </tfoot>
+    </table>
+  {% endif %}
+
+  {% if my_day1 or my_final %}
+    <div class="tracker-pitches">
+      {% if my_day1 %}
+        <div>
+          <h2>Day 1 (saved)</h2>
+          {{ pitch_macros.pitch(my_day1) }}
+        </div>
+      {% endif %}
+      {% if my_final %}
+        <div>
+          <h2>Final (saved)</h2>
+          {% set day1_full = (my_day1.starters | map(attribute='player_id') | list) + [my_day1.sixth_man.player_id] if my_day1 else none %}
+          {{ pitch_macros.pitch(my_final, day1_full) }}
+        </div>
+      {% endif %}
+    </div>
+  {% endif %}
+
+  {% if score.breakdown %}
+    <h2>Points breakdown (final lineup)</h2>
+    <table>
+      <thead>
+        <tr><th>Player</th><th>Slot</th><th>Actual</th><th>x</th><th>Points</th></tr>
+      </thead>
+      <tbody>
+        {% for line in score.breakdown %}
+          <tr class="{{ 'row-muted' if line.slot == 'excluded' }}">
+            <td>{{ line.player_name }} <span class="muted">{{ line.team }}</span></td>
+            <td>{{ slot_labels[line.slot] }}</td>
+            <td>{{ "%.1f"|format(line.fantasy) if line.played else "DNP" }}</td>
+            <td>{{ slot_multipliers[line.slot] }}</td>
+            <td><strong>{{ "%.1f"|format(line.points) }}</strong></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr><th colspan="4">Total</th><th>{{ "%.1f"|format(score.my_final) }}</th></tr>
+      </tfoot>
+    </table>
+  {% endif %}
+{% endblock %}

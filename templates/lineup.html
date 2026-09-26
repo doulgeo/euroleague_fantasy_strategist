@@ -61,6 +61,9 @@
       </div>
     </div>
 
+    <p><a href="{{ url_for('tracker_round', round_no=selected_round) }}">Record the lineup you actually play for round {{ selected_round }} in the Points Tracker &rarr;</a>
+      <span class="muted">(its form starts from this suggestion)</span></p>
+
     <h2 title="Score 0, cannot be used this round no matter what.">Excluded (3 of 13)</h2>
     <p>Chosen by trying all 286 possible 3-player exclusions and keeping
       whichever leaves the best final total (day-1 lineup + simulated day-2

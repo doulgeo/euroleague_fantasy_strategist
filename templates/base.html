@@ -30,6 +30,7 @@
         <a href="{{ url_for('transfers') }}" class="{{ 'active' if request.endpoint == 'transfers' }}">Transfers</a>
         <a href="{{ url_for('watchlist_page') }}" class="{{ 'active' if request.endpoint == 'watchlist_page' }}">Watchlist</a>
         <a href="{{ url_for('lineup') }}" class="{{ 'active' if request.endpoint == 'lineup' }}">Lineup</a>
+        <a href="{{ url_for('tracker') }}" class="{{ 'active' if request.endpoint in ('tracker', 'tracker_round') }}">Tracker</a>
         <a href="{{ url_for('sync_page') }}" class="{{ 'active' if request.endpoint == 'sync_page' }}">Sync</a>
         <a href="{{ url_for('how_it_works') }}" class="{{ 'active' if request.endpoint == 'how_it_works' }}">How this works</a>
       </nav>

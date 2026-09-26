@@ -35,6 +35,7 @@ from engine.db import (
     all_known_players,
     fantasy_pool_synced_at,
     get_connection,
+    get_setting,
     injuries_synced_at,
     known_player_ids,
     latest_game_date,
@@ -44,11 +45,16 @@ from engine.db import (
     load_roster,
     load_rows,
     load_schedule,
+    load_tracked_lineups,
+    load_tracked_rounds,
     load_watchlist,
     next_unplayed_round,
     remove_from_watchlist,
     roster_synced_at,
     row_count,
+    save_tracked_lineup,
+    set_official_points,
+    set_setting,
 )
 from engine.fantasy_pool import resolve_pool_rows
 from engine.injuries import EXCLUDING_STATUSES, resolve_injury_rows
@@ -66,6 +72,21 @@ from engine.projections import Projection, actual_fantasy_score, blend_season_ro
 from engine.roster import REQUIRED_COUNTS, ActiveSquad, Roster
 from engine.dev_draft import randomize_draft
 from engine.rosters import merge_roster
+from engine.tracker import (
+    SLOT_LABELS,
+    SLOT_MULTIPLIERS,
+    SLOTS,
+    RoundScore,
+    actual_scores,
+    final_rule_warnings,
+    formation_str,
+    lineup_formation,
+    lineup_from_slots,
+    lineup_to_slots,
+    players_from_snapshot,
+    score_round,
+    snapshot_rows,
+)
 from engine.transfers import projected_gain, suggest_transfers
 
 # Edit these once per year as seasons roll over.
@@ -186,19 +207,24 @@ def close_db(exception=None) -> None:
         db.close()
 
 
-def _load_pool_rows(conn: sqlite3.Connection) -> tuple[list[dict], int]:
+def _load_pool_rows(conn: sqlite3.Connection, before_round: int | None = None) -> tuple[list[dict], int]:
     """(rows, as_of_round) to build the player pool from right now: the
     prior season blended with whatever of the current season has been
     played so far (see engine.projections.blend_season_rows for why - a
     hard switch to the current season zeroed nearly every projection the
-    day after round 1 was synced)."""
+    day after round 1 was synced). `before_round` drops current-season
+    rounds >= it - the points tracker uses this so a suggestion computed
+    after a round was played never sees that round's own results."""
     prior_rows = load_rows(conn, season_code=PRIOR_SEASON)
     current_rows = load_rows(conn, season_code=CURRENT_SEASON)
+    if before_round is not None:
+        current_rows = [r for r in current_rows if r.get("round") is not None and r["round"] < before_round]
     return blend_season_rows(prior_rows, current_rows)
 
 
 def get_pool(
     conn: sqlite3.Connection,
+    before_round: int | None = None,
 ) -> tuple[dict[str, Projection], set[str], set[str], set[str], dict[str, dict]]:
     """(projections, new_player_ids, gone_player_ids, estimated_player_ids,
     injury_status) - the projection pool merged with the current roster
@@ -223,14 +249,14 @@ def get_pool(
     docstring) - callers that care about availability (draft board, manager
     roster, lineup builder) use it for a badge; the lineup builder also
     zeroes an "Out" player's decision value (see the /lineup route)."""
-    key = (PRIOR_SEASON, CURRENT_SEASON)
+    key = (PRIOR_SEASON, CURRENT_SEASON, before_round)
     mtime_ns = DB_PATH.stat().st_mtime_ns
 
     cached = _projection_cache.get(key)
     if cached and cached[0] == mtime_ns:
         return cached[1]
 
-    rows, as_of_round = _load_pool_rows(conn)
+    rows, as_of_round = _load_pool_rows(conn, before_round)
     projections = build_projections(rows, as_of_round=as_of_round)
 
     roster_rows = load_roster(conn, CURRENT_SEASON)
@@ -891,6 +917,7 @@ def compute_recommendation(
     manager_id: int,
     round_no: int,
     formation: tuple[int, int, int] | None = None,
+    before_round: int | None = None,
 ) -> LineupRecommendation:
     roster = None
     active_squad = None
@@ -905,7 +932,7 @@ def compute_recommendation(
     no_swap_total = None
     recommended_total = None
 
-    pool, _new_ids, _gone_ids, _estimated_ids, injury_status = get_pool(conn)
+    pool, _new_ids, _gone_ids, _estimated_ids, injury_status = get_pool(conn, before_round)
     out_ids = {pid for pid, inj in injury_status.items() if inj["status"] in EXCLUDING_STATUSES}
     player_ids = ownership.manager_roster_ids(conn, manager_id)
     players = [pool[pid] for pid in player_ids if pid in pool]
@@ -1051,6 +1078,331 @@ def lineup():
         recommended_total=rec.recommended_total,
         injury_status=rec.injury_status,
     )
+
+
+# --- Points tracker ---
+#
+# The user's REAL per-round lineups (see engine.tracker), as opposed to
+# /lineup's live suggestion. Tracks one manager - the user's own team, set
+# once via /tracker/me and kept in app_settings.
+
+MY_MANAGER_KEY = "my_manager_id"
+
+
+def _my_manager_id(conn: sqlite3.Connection) -> int | None:
+    value = get_setting(conn, MY_MANAGER_KEY)
+    return int(value) if value else None
+
+
+def _round_actuals(conn: sqlite3.Connection, round_no: int) -> tuple[dict[str, float], bool]:
+    """(player_id -> real fantasy score, round complete?) for a CURRENT_SEASON round."""
+    round_rows = [r for r in load_rows(conn, CURRENT_SEASON) if r.get("round") == round_no]
+    schedule_rows = load_schedule(conn, CURRENT_SEASON, round_no=round_no)
+    complete = bool(schedule_rows) and all(r["played"] for r in schedule_rows)
+    return actual_scores(round_rows), complete
+
+
+def _lineups_by_round(conn: sqlite3.Connection, manager_id: int) -> dict[int, dict[str, dict]]:
+    by_round: dict[int, dict[str, dict]] = {}
+    for (round_no, kind), snapshot in load_tracked_lineups(conn, CURRENT_SEASON, manager_id).items():
+        by_round.setdefault(round_no, {})[kind] = snapshot
+    return by_round
+
+
+def _tracker_recommendation(conn: sqlite3.Connection, manager_id: int, round_no: int) -> LineupRecommendation:
+    """/lineup's suggestion for this round, computed only from rounds before
+    it - so snapshotting it after the round was played isn't hindsight."""
+    return compute_recommendation(conn, manager_id, round_no, before_round=round_no)
+
+
+def _snapshot_lineup(snapshot: dict | None) -> Lineup | None:
+    if snapshot is None:
+        return None
+    players, slots = players_from_snapshot(snapshot)
+    try:
+        return lineup_from_slots(players, slots)[0]
+    except ValueError:
+        return None
+
+
+# Series colors: the dataviz skill's reference categorical palette, first
+# three slots (documented as validated all-pairs for CVD in light mode).
+# Identity is never color-alone - the chart has a legend plus direct labels
+# at each line's end, and the season table doubles as its table view.
+CHART_SERIES = [
+    ("mine", "My score", "#2a78d6"),
+    ("tool", "Tool's suggestion", "#eb6834"),
+    ("best", "Best possible", "#1baf7a"),
+]
+
+
+def _cumulative_chart(scores: list[RoundScore]) -> dict | None:
+    """Geometry for templates/_line_chart.html: cumulative points per series
+    over the rounds that have box scores. A series skips a round it has no
+    value for (e.g. no tool snapshot) by carrying its running total."""
+    scored = [sc for sc in scores if sc.has_box_scores and sc.my_final is not None]
+    if not scored:
+        return None
+
+    width, height = 720, 260
+    left, right, top, bottom = 48, 120, 16, 32
+    totals = {key: 0.0 for key, _l, _c in CHART_SERIES}
+    points: dict[str, list[float]] = {key: [] for key, _l, _c in CHART_SERIES}
+    for sc in scored:
+        for key, _l, _c in CHART_SERIES:
+            value = {"mine": sc.my_final, "tool": sc.tool, "best": sc.best}[key]
+            totals[key] += value or 0.0
+            points[key].append(totals[key])
+
+    y_max = max(max(v) for v in points.values()) or 1.0
+    step = 10 ** max(0, len(str(int(y_max))) - 1)
+    y_top = (int(y_max / step) + 1) * step
+    n = len(scored)
+    plot_w, plot_h = width - left - right, height - top - bottom
+    x = lambda i: left + (plot_w * i / (n - 1) if n > 1 else plot_w / 2)  # noqa: E731
+    y = lambda v: top + plot_h * (1 - v / y_top)  # noqa: E731
+
+    series = []
+    for key, label, color in CHART_SERIES:
+        coords = [(x(i), y(v)) for i, v in enumerate(points[key])]
+        series.append({
+            "key": key,
+            "label": label,
+            "color": color,
+            "points": " ".join(f"{cx:.1f},{cy:.1f}" for cx, cy in coords),
+            "coords": coords,
+            "end_label_y": coords[-1][1],
+            "total": points[key][-1],
+        })
+    # nudge end labels apart so they never overlap
+    ordered = sorted(series, key=lambda sr: sr["end_label_y"])
+    for prev, cur in zip(ordered, ordered[1:]):
+        if cur["end_label_y"] - prev["end_label_y"] < 14:
+            cur["end_label_y"] = prev["end_label_y"] + 14
+
+    band = plot_w / max(n - 1, 1)
+    hovers = [
+        {
+            "x": x(i),
+            "band_x": x(i) - band / 2,
+            "band_w": band,
+            "round": sc.round_no,
+            "values": [(label, points[key][i]) for key, label, _c in CHART_SERIES],
+        }
+        for i, sc in enumerate(scored)
+    ]
+    return {
+        "width": width,
+        "height": height,
+        "left": left,
+        "top": top,
+        "plot_w": plot_w,
+        "plot_h": plot_h,
+        "y_ticks": [(y(v), v) for v in range(0, int(y_top) + 1, int(y_top / 4) or 1)],
+        "x_ticks": [(x(i), sc.round_no) for i, sc in enumerate(scored)],
+        "series": series,
+        "hovers": hovers,
+    }
+
+
+@app.route("/tracker/me", methods=["POST"])
+def tracker_set_me():
+    conn = get_db()
+    manager_id = request.form.get("manager_id")
+    set_setting(conn, MY_MANAGER_KEY, manager_id or None)
+    flash("Saved which team is yours.", "success")
+    return redirect(request.form.get("next") or url_for("tracker"))
+
+
+@app.route("/tracker")
+def tracker():
+    conn = get_db()
+    managers = ownership.list_managers(conn)
+    my_id = _my_manager_id(conn)
+    rounds = sorted({r["round"] for r in load_schedule(conn, CURRENT_SEASON) if r.get("round") is not None})
+    next_round = next_unplayed_round(conn, CURRENT_SEASON)
+
+    scores: list[RoundScore] = []
+    if my_id is not None:
+        by_round = _lineups_by_round(conn, my_id)
+        official = load_tracked_rounds(conn, CURRENT_SEASON, my_id)
+        for round_no in sorted(by_round):
+            actual, complete = _round_actuals(conn, round_no)
+            scores.append(score_round(
+                round_no, by_round[round_no], actual, complete,
+                official.get(round_no, {}).get("official_points"),
+            ))
+
+    def total(attr: str) -> float | None:
+        values = [getattr(sc, attr) for sc in scores if getattr(sc, attr) is not None]
+        return sum(values) if values else None
+
+    totals = {attr: total(attr) for attr in ("my_final", "my_no_swap", "tool", "best", "official")}
+    return render_template(
+        "tracker.html",
+        managers=managers,
+        my_id=my_id,
+        rounds=rounds,
+        next_round=next_round,
+        scores=scores,
+        totals=totals,
+        chart=_cumulative_chart(scores),
+        current_season=CURRENT_SEASON,
+    )
+
+
+@app.route("/tracker/open")
+def tracker_open():
+    return redirect(url_for("tracker_round", round_no=request.args.get("round", type=int) or 1))
+
+
+@app.route("/tracker/<int:round_no>")
+def tracker_round(round_no: int):
+    conn = get_db()
+    my_id = _my_manager_id(conn)
+    if my_id is None:
+        flash("Pick which team is yours first.", "error")
+        return redirect(url_for("tracker"))
+    return _render_tracker_round(conn, my_id, round_no)
+
+
+def _render_tracker_round(
+    conn: sqlite3.Connection,
+    my_id: int,
+    round_no: int,
+    posted_kind: str | None = None,
+    posted_slots: dict[str, str] | None = None,
+):
+    """The /tracker/<round> page. `posted_*` re-fills one form with what the
+    user just submitted, when that submission failed validation."""
+    lineups = _lineups_by_round(conn, my_id).get(round_no, {})
+    rec = _tracker_recommendation(conn, my_id, round_no)
+
+    # The form lists the players of the saved day-1 lineup when there is
+    # one (so editing a past round keeps that round's roster even after a
+    # trade), otherwise the manager's current roster.
+    if "my_day1" in lineups:
+        players, day1_slots = players_from_snapshot(lineups["my_day1"])
+    elif rec.roster is not None:
+        players = rec.roster.players
+        day1_slots = lineup_to_slots(rec.initial, rec.excluded) if rec.initial else {}
+    else:
+        players, day1_slots = [], {}
+
+    if "my_final" in lineups:
+        final_slots = players_from_snapshot(lineups["my_final"])[1]
+    elif "my_day1" in lineups:
+        final_slots = dict(day1_slots)
+    elif rec.recommended is not None:
+        final_slots = lineup_to_slots(rec.recommended, rec.excluded)
+    else:
+        final_slots = {}
+
+    if posted_kind == "day1":
+        day1_slots = posted_slots
+    elif posted_kind == "final":
+        final_slots = posted_slots
+
+    actual, complete = _round_actuals(conn, round_no)
+    tool_recomputed = False
+    score_lineups = dict(lineups)
+    if "tool_final" not in lineups and "tool_day1" not in lineups and rec.recommended is not None:
+        score_lineups["tool_final"] = {
+            "players": snapshot_rows(rec.roster.players, lineup_to_slots(rec.recommended, rec.excluded))
+        }
+        tool_recomputed = True
+    official = load_tracked_rounds(conn, CURRENT_SEASON, my_id).get(round_no, {}).get("official_points")
+    score = score_round(round_no, score_lineups, actual, complete, official)
+
+    position_order = {"Guard": 0, "Forward": 1, "Center": 2}
+    players = sorted(players, key=lambda p: (position_order.get(p.position, 3), -p.projected_pir_with_bonus))
+    rounds = sorted({r["round"] for r in load_schedule(conn, CURRENT_SEASON) if r.get("round") is not None})
+
+    return render_template(
+        "tracker_round.html",
+        round_no=round_no,
+        rounds=rounds,
+        manager_name=next((m["name"] for m in ownership.list_managers(conn) if m["manager_id"] == my_id), "?"),
+        rec=rec,
+        players=players,
+        day1_slots=day1_slots,
+        final_slots=final_slots,
+        lineups=lineups,
+        my_day1=_snapshot_lineup(lineups.get("my_day1")),
+        my_final=_snapshot_lineup(lineups.get("my_final")),
+        score=score,
+        tool_recomputed=tool_recomputed,
+        slots=SLOTS,
+        slot_labels=SLOT_LABELS,
+        slot_multipliers=SLOT_MULTIPLIERS,
+        availability_label=availability_label,
+        team_dates=rec.team_dates,
+        injury_status=rec.injury_status,
+        current_season=CURRENT_SEASON,
+    )
+
+
+@app.route("/tracker/<int:round_no>/save", methods=["POST"])
+def tracker_save(round_no: int):
+    conn = get_db()
+    my_id = _my_manager_id(conn)
+    kind = request.form.get("kind")
+    if my_id is None or kind not in ("day1", "final"):
+        abort(400)
+
+    lineups = _lineups_by_round(conn, my_id).get(round_no, {})
+    rec = _tracker_recommendation(conn, my_id, round_no)
+    if "my_day1" in lineups:
+        players, day1_slots = players_from_snapshot(lineups["my_day1"])
+    elif rec.roster is not None:
+        players, day1_slots = rec.roster.players, None
+    else:
+        flash(f"Can't save: {rec.roster_error or 'no roster'}", "error")
+        return redirect(url_for("tracker_round", round_no=round_no))
+
+    slots = {p.player_id: request.form.get(f"slot_{p.player_id}") for p in players}
+    try:
+        lineup, _excluded = lineup_from_slots(players, slots)
+    except ValueError as e:
+        flash(f"Not saved - {e}", "error")
+        return _render_tracker_round(conn, my_id, round_no, kind, slots)
+
+    save_tracked_lineup(
+        conn, CURRENT_SEASON, round_no, my_id, f"my_{kind}",
+        formation_str(lineup_formation(lineup)), snapshot_rows(players, slots),
+    )
+
+    # Snapshot what the tool suggested alongside - see engine.db's tracker comment.
+    tool_lineup = rec.initial if kind == "day1" else rec.recommended
+    if tool_lineup is not None:
+        save_tracked_lineup(
+            conn, CURRENT_SEASON, round_no, my_id, f"tool_{kind}",
+            formation_str(lineup_formation(tool_lineup)),
+            snapshot_rows(rec.roster.players, lineup_to_slots(tool_lineup, rec.excluded)),
+        )
+
+    if kind == "final" and day1_slots is not None:
+        for warning in final_rule_warnings(day1_slots, slots, players, rec.team_dates):
+            flash(f"Saved, but check: {warning}", "warning")
+    flash(f"Round {round_no} {'day-1' if kind == 'day1' else 'final'} lineup saved.", "success")
+    return redirect(url_for("tracker_round", round_no=round_no))
+
+
+@app.route("/tracker/<int:round_no>/official", methods=["POST"])
+def tracker_official(round_no: int):
+    conn = get_db()
+    my_id = _my_manager_id(conn)
+    if my_id is None:
+        abort(400)
+    raw = (request.form.get("official_points") or "").strip()
+    try:
+        value = float(raw) if raw else None
+    except ValueError:
+        flash(f"'{raw}' isn't a number.", "error")
+        return redirect(url_for("tracker_round", round_no=round_no))
+    set_official_points(conn, CURRENT_SEASON, round_no, my_id, value)
+    flash("Official points saved." if value is not None else "Official points cleared.", "success")
+    return redirect(url_for("tracker_round", round_no=round_no))
 
 
 if __name__ == "__main__":

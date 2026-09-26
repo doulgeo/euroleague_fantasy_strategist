@@ -1,0 +1,49 @@
+{# Cumulative-points line chart for /tracker - a server-rendered inline SVG
+   (no JS framework in this app). Geometry comes precomputed from
+   app.py::_cumulative_chart. Hover: each round has a full-height hit band
+   that reveals a crosshair + a tooltip listing every series' running
+   total (pure CSS :hover, no script). Identity is never color-alone:
+   legend above, direct labels at each line's end, and the season table
+   on the same page is the table view. #}
+{% macro cumulative_chart(chart) %}
+  <div class="chart-wrap">
+    <ul class="chart-legend">
+      {% for sr in chart.series %}
+        <li><span class="chart-swatch" style="background: {{ sr.color }}"></span>{{ sr.label }}</li>
+      {% endfor %}
+    </ul>
+    <svg class="line-chart" viewBox="0 0 {{ chart.width }} {{ chart.height }}" role="img"
+         aria-label="Cumulative fantasy points by round: {% for sr in chart.series %}{{ sr.label }} {{ '%.1f'|format(sr.total) }}{{ ', ' if not loop.last }}{% endfor %}">
+      {% for ty, tv in chart.y_ticks %}
+        <line class="chart-grid" x1="{{ chart.left }}" x2="{{ chart.left + chart.plot_w }}" y1="{{ ty }}" y2="{{ ty }}"></line>
+        <text class="chart-axis-label" x="{{ chart.left - 8 }}" y="{{ ty + 4 }}" text-anchor="end">{{ tv }}</text>
+      {% endfor %}
+      {% for tx, tr in chart.x_ticks %}
+        <text class="chart-axis-label" x="{{ tx }}" y="{{ chart.top + chart.plot_h + 20 }}" text-anchor="middle">R{{ tr }}</text>
+      {% endfor %}
+
+      {% for sr in chart.series %}
+        <polyline class="chart-line" points="{{ sr.points }}" style="stroke: {{ sr.color }}"></polyline>
+        {% for cx, cy in sr.coords %}
+          <circle class="chart-dot" cx="{{ cx }}" cy="{{ cy }}" r="4" style="fill: {{ sr.color }}"></circle>
+        {% endfor %}
+        <text class="chart-end-label" x="{{ chart.left + chart.plot_w + 10 }}" y="{{ sr.end_label_y + 4 }}">{{ sr.label.split(' ')[0] }} {{ '%.0f'|format(sr.total) }}</text>
+      {% endfor %}
+
+      {% for h in chart.hovers %}
+        <g class="chart-hover">
+          <rect class="chart-hit" x="{{ h.band_x }}" y="{{ chart.top }}" width="{{ h.band_w }}" height="{{ chart.plot_h }}"></rect>
+          <line class="chart-crosshair" x1="{{ h.x }}" x2="{{ h.x }}" y1="{{ chart.top }}" y2="{{ chart.top + chart.plot_h }}"></line>
+          {% set tip_x = h.x + 10 if h.x < chart.left + chart.plot_w / 2 else h.x - 170 %}
+          <g class="chart-tooltip">
+            <rect x="{{ tip_x }}" y="{{ chart.top + 4 }}" width="160" height="{{ 22 + 16 * h['values']|length }}" rx="4"></rect>
+            <text x="{{ tip_x + 10 }}" y="{{ chart.top + 20 }}" class="chart-tooltip-title">Through round {{ h.round }}</text>
+            {% for label, value in h['values'] %}
+              <text x="{{ tip_x + 10 }}" y="{{ chart.top + 38 + 16 * loop.index0 }}">{{ label }}: {{ '%.1f'|format(value) }}</text>
+            {% endfor %}
+          </g>
+        </g>
+      {% endfor %}
+    </svg>
+  </div>
+{% endmacro %}

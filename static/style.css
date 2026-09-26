@@ -275,6 +275,7 @@ pre {
 }
 .flash-success { color: #fff; background: var(--green); }
 .flash-error { color: #fff; background: var(--red); }
+.flash-warning { color: var(--ink); background: var(--orange-light); }
 
 /* ---- Forms / filters / buttons ---- */
 .filters {
@@ -395,3 +396,38 @@ button, input[type="submit"] {
   transition: background 0.15s;
 }
 button:hover, input[type="submit"]:hover { background: var(--orange-dark); }
+
+/* ---- Points tracker ---- */
+.muted { color: var(--ink-soft); font-size: 0.85rem; }
+.num-positive { color: var(--green); }
+.num-negative { color: var(--red); }
+.row-muted td { color: var(--ink-soft); }
+.round-nav { display: flex; gap: 1.5rem; }
+.saved-tag {
+  font-size: 0.65rem; background: var(--green); color: #fff; border-radius: 3px;
+  padding: 0.05rem 0.3rem; vertical-align: middle; letter-spacing: 0.04em;
+}
+.tracker-table select { font-size: 0.85rem; }
+.slot-select.slot-captain { font-weight: 700; border-color: var(--orange); }
+.slot-select.slot-excluded { color: var(--ink-soft); }
+.tracker-pitches { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.5rem; }
+
+/* Cumulative line chart (templates/_line_chart.html) - thin 2px lines,
+   8px markers with a 2px surface ring, recessive grid/axes, text in ink
+   tokens (never the series color). */
+.chart-wrap { background: var(--surface); border: 1px solid var(--wood-line-soft); border-radius: 5px; padding: 0.8rem 1rem; }
+.chart-legend { list-style: none; display: flex; flex-wrap: wrap; gap: 0.3rem 1.2rem; margin: 0 0 0.4rem; padding: 0; font-size: 0.85rem; color: var(--ink); }
+.chart-swatch { display: inline-block; width: 12px; height: 3px; border-radius: 2px; margin-right: 0.4rem; vertical-align: middle; }
+.line-chart { width: 100%; height: auto; display: block; overflow: visible; }
+.chart-grid { stroke: var(--wood-line-soft); stroke-width: 1; }
+.chart-axis-label { fill: var(--ink-soft); font-size: 11px; font-family: var(--font-body); }
+.chart-line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.chart-dot { stroke: var(--surface); stroke-width: 2; }
+.chart-end-label { fill: var(--ink); font-size: 12px; font-weight: 600; font-family: var(--font-body); }
+.chart-hit { fill: transparent; }
+.chart-crosshair { stroke: var(--ink-soft); stroke-width: 1; stroke-dasharray: 3 3; visibility: hidden; pointer-events: none; }
+.chart-tooltip { visibility: hidden; pointer-events: none; }
+.chart-tooltip rect { fill: var(--charcoal); }
+.chart-tooltip text { fill: #fff; font-size: 12px; font-family: var(--font-body); }
+.chart-tooltip .chart-tooltip-title { font-weight: 600; }
+.chart-hover:hover .chart-crosshair, .chart-hover:hover .chart-tooltip { visibility: visible; }
