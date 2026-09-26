@@ -187,33 +187,6 @@ def _build_formation_starters(
     return starters
 
 
-def _build_formation_starters_by_value(
-    candidates: list[Projection],
-    formation: tuple[int, int, int],
-    value_fn: ValueFn,
-) -> list[Projection] | None:
-    """Same shape as _build_formation_starters, but ranks by value_fn alone
-    - no day-1-first tiebreak. Used only by swap_after_day1's final re-solve:
-    at that point there's no future swap window left to preserve optionality
-    for, so whoever has the higher value (day-1 actual-known or day-2
-    projected, whichever value_fn represents at call time) should simply
-    win the slot.
-    """
-    guards, forwards, centers = formation
-    requirements = [("Guard", guards), ("Forward", forwards), ("Center", centers)]
-    starters: list[Projection] = []
-
-    for position, count in requirements:
-        candidates_at_position = [p for p in candidates if p.position == position]
-        if len(candidates_at_position) < count:
-            return None  # this formation isn't feasible with this candidate pool
-
-        ranked = sorted(candidates_at_position, key=lambda p: -value_fn(p.player_id))
-        starters.extend(ranked[:count])
-
-    return starters
-
-
 def _lock_formation(
     active_squad: ActiveSquad,
     formation: tuple[int, int, int],
@@ -340,32 +313,64 @@ def swap_after_day1(
     flexible = [p for p in _all_players(lineup) if p.player_id not in day1_bench_locked_ids]
     day1_bench_locked = [p for p in lineup.bench if p.player_id in day1_bench_locked_ids]
 
+    # Captain rule (docs/game_rules.md, enforced 2026-09-26): the captaincy
+    # can only move to a starter who hasn't played yet - so the final
+    # captain is either the day-1 captain (kept) or a player whose game is
+    # still to come. Previously the captain was simply the top final
+    # starter by value, which could illegally hand the 1.5x to a day-1
+    # player after their (actual, known) score was in.
+    day1_ids = {p.player_id for p in _all_players(lineup) if _availability_rank(p, team_dates, min_date) == 0}
+
+    def captain_allowed(p: Projection) -> bool:
+        return p.player_id == lineup.captain.player_id or p.player_id not in day1_ids
+
+    # Exact re-solve: for each formation x legal captain, fill the other
+    # starters and then the sixth man by value. For a fixed formation and
+    # captain that greedy fill is optimal; the round total (bench at half
+    # rate) ranks lineups the same as starters + sixth man + captain again,
+    # since each extra full-slot point or captaincy is worth +0.5 over the
+    # bench/non-captain rate.
     candidate_formations = [formation] if formation is not None else VALID_FORMATIONS
-    best_starters: list[Projection] | None = None
-    best_total: float | None = None
+    positions = ("Guard", "Forward", "Center")
+    best: tuple[float, list[Projection], Projection, Projection] | None = None
 
     for f in candidate_formations:
-        starters = _build_formation_starters_by_value(flexible, f, value_fn)
-        if starters is None:
-            continue
+        for captain in flexible:
+            if not captain_allowed(captain):
+                continue
+            need = dict(zip(positions, f))
+            if need.get(captain.position, 0) == 0:
+                continue
+            need[captain.position] -= 1
 
-        total_value = sum(value_fn(p.player_id) for p in starters)
-        if best_total is None or total_value > best_total:
-            best_total = total_value
-            best_starters = starters
+            others = [p for p in flexible if p.player_id != captain.player_id]
+            starters = [captain]
+            for pos in positions:
+                ranked = sorted((p for p in others if p.position == pos), key=lambda p: -value_fn(p.player_id))
+                if len(ranked) < need[pos]:
+                    break
+                starters.extend(ranked[: need[pos]])
+            else:
+                starter_ids = {p.player_id for p in starters}
+                remaining = [p for p in flexible if p.player_id not in starter_ids]
+                sixth_man = max(remaining, key=lambda p: value_fn(p.player_id))
+                total = (
+                    sum(value_fn(p.player_id) for p in starters)
+                    + value_fn(sixth_man.player_id)
+                    + value_fn(captain.player_id)
+                )
+                if best is None or total > best[0]:
+                    best = (total, starters, sixth_man, captain)
 
-    if best_starters is None:
+    if best is None:
         raise RuntimeError(
             "No valid formation (2-2-1 / 2-1-2 / 3-1-1) could be filled from the flexible pool - "
             "should be unreachable since the day-1 lineup's own 5 starters always remain flexible"
         )
 
-    starter_ids = {p.player_id for p in best_starters}
-    remaining_flexible = [p for p in flexible if p.player_id not in starter_ids]
-    sixth_man = max(remaining_flexible, key=lambda p: value_fn(p.player_id))
-    bench = [p for p in remaining_flexible if p.player_id != sixth_man.player_id] + day1_bench_locked
-    captain = max(best_starters, key=lambda p: value_fn(p.player_id))
-
+    _total, best_starters, sixth_man, captain = best
+    full_ids = {p.player_id for p in best_starters} | {sixth_man.player_id}
+    bench = [p for p in flexible if p.player_id not in full_ids] + day1_bench_locked
     return Lineup(starters=best_starters, sixth_man=sixth_man, bench=bench, captain=captain)
 
 
