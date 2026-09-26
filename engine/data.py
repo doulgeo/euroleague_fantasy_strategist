@@ -133,9 +133,27 @@ class EuroleagueClient:
         return data
 
     def list_games(self, competition: str, season_code: str, limit: int = 1000) -> list[dict]:
+        """Every game in a season with its `played` flag and score. Always
+        re-fetched live, NOT served from the disk cache like box scores:
+        the list is mutable (games flip from unplayed to played), and a
+        cache written before a round is played freezes every game as
+        unplayed forever - which silently stopped sync_db.py from ever
+        picking up E2026's played games. The cache file is still written
+        on every successful fetch, and only read back as a fallback when
+        the network fetch fails (e.g. offline backtest runs)."""
         cache_path = RAW_DIR / "v2_games" / competition / f"{season_code}_limit{limit}.json"
         url = f"{V2_BASE}/{competition}/seasons/{season_code}/games"
-        data = self._cached(cache_path, lambda: self._get_json(url, params={"limit": limit}))
+        try:
+            data = self._get_json(url, params={"limit": limit})
+        except (requests.RequestException, RuntimeError):
+            if not cache_path.exists():
+                raise
+            print(f"  [offline] using cached game list for {season_code}", file=sys.stderr)
+            data = json.loads(cache_path.read_text())
+        else:
+            if data is not None:
+                cache_path.parent.mkdir(parents=True, exist_ok=True)
+                cache_path.write_text(json.dumps(data))
         return (data or {}).get("data", [])
 
     def game_stats_v2(self, competition: str, season_code: str, game_code: int) -> dict | None:

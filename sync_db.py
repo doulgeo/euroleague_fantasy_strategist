@@ -10,8 +10,8 @@ into the DB, without touching or duplicating anything already there.
 Also refreshes the `schedule` table (every game in the season, played or
 not - see engine.db's schedule comment block) each run: fetch_season
 already fetches the season's game list internally to decide what to fetch,
-so calling list_games again here hits the same disk cache
-(raw/v2_games/...), not the network, even on an otherwise-cold run.
+and list_games is always re-fetched live (the game list is mutable -
+see EuroleagueClient.list_games), so this costs one extra small request.
 
 Usage:
     python sync_db.py --seasons E2025                            # after a gameweek

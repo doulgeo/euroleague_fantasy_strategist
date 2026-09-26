@@ -2688,3 +2688,26 @@ selecting that option rendered the stat-box (`+2.1`, positive-styled)
 above the form, not below.
 
 **Result**: works as intended.
+
+## 2026-09-26 — Stale game-list cache blocked E2026 box-score sync
+
+**What**: user reported the box-score endpoint looked "not updated yet"
+the day after E2026 round 1 finished. Tested live: the API was fine - all
+10 round-1 games returned `played=True` with final scores from the v2
+`/games` list, and every game's v2 `/stats` and legacy `Boxscore` returned
+full data (HTTP 200). The real bug was local: `EuroleagueClient.list_games`
+disk-cached the season's game list permanently
+(`raw/v2_games/E/E2026_limit1000.json`, written 2026-09-14 when every game
+was unplayed), so `sync_db.py` kept seeing 0 played games and never fetched
+a single box score. Fixed `list_games` to always re-fetch live (same
+reasoning as `list_people`: mutable data), still writing the cache on each
+successful fetch but only reading it back as a fallback when the network
+fetch fails. Per-game stats stay cached (only fetched once a game is
+`played`, so immutable by then).
+
+**How**: `python sync_db.py --seasons E2026` after the fix.
+
+**Result**: 10 played games fetched, 240 player-game rows upserted (0 v2
+fallbacks), schedule shows 10 played / 370 upcoming. `pir_recomputed`
+matches `pir_official` on all 240 rows; top PIR (JONES, CARLIK, PAR, 33)
+looks sane.
