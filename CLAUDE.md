@@ -539,9 +539,9 @@ over the network), never needs to be committed.
   recent form/role/other-league stats), then run `set_manual_projection.py`
   with the agreed number. The separate multi-season-fallback gap (below)
   is still open.
-- The lineup builder is live-recomputed only (no persistence of what a
-  manager actually picks) — confirmed as the right v1 scope with the user,
-  revisit only if that turns out to be missed in practice.
+- The lineup builder itself is still live-recomputed only. What the user
+  actually picks is now persisted separately, by the points tracker
+  (`/tracker`, 2026-09-26), for the user's own team only.
 - The team-strength tiebreaker question the "Opponent-strength adjustment"
   entry above leaves open is now actually testable, since `/lineup` exists
   — worth trying if opponent-aware lineup decisions come up again.
@@ -552,8 +552,9 @@ over the network), never needs to be committed.
   not observed in the one live case checked, and it's not fixed yet.
 - **Known gap, found but not fixed 2026-09-14**: `known_player_ids` (the
   NEW-badge check) looks across ALL locally-synced seasons (E2023-E2025),
-  but `build_projections` (the actual value) only ever uses ONE season
-  (whichever `_resolve_pool_source` currently picks). A player with history
+  but `build_projections` (the actual value) only uses the prior + current
+  season (blended since 2026-09-26, `app.py::_load_pool_rows`), so history
+  from E2023/E2024 alone never counts. A player with history
   in an *earlier* season but not the one currently used for projections
   (found via real examples: `ZIZIC, ANTE`, `DEJULIUS, DAVID`, both on
   Besiktas's real E2026 roster) is correctly not flagged NEW, but still
