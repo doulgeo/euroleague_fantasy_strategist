@@ -216,6 +216,47 @@
       as a monogram instead.</dd>
     </dl>
 
+    <h2 id="tracker">Points tracker</h2>
+    <p>Where you record the lineup you <em>actually</em> played each round -
+    independent of what the Lineup builder suggested - and build up a season
+    history of lineups and points. Pick your team once at the top of the
+    Tracker page; everything is tracked for that team.</p>
+    <dl>
+      <dt>Day 1 and Final</dt>
+      <dd>Each round has two lineups: the <strong>Day 1</strong> lock you set
+      before the round, and the <strong>Final</strong> lineup as it stood
+      after the swap window. Set a slot for all 13 players (1 captain, 4
+      starters, 1 sixth man, 4 bench, 3 excluded; the 5 starters must form
+      2-2-1, 2-1-2 or 3-1-1). A lineup that breaks those rules isn't saved.
+      A final lineup that breaks a swap rule (an exclusion changed, a player
+      promoted off the bench after already playing on day 1, or captaincy
+      moved to someone who already played) <em>is</em> saved, with a warning -
+      the real game enforces these, so it most likely means a typo.</dd>
+      <dt>My score</dt>
+      <dd>Your final lineup (or your Day 1 lineup, if no final was saved)
+      scored with each player's real PIR plus the real 10% team-win bonus:
+      captain 1.5x, starters and 6th man full, bench half, excluded zero.
+      Never stored - always recomputed from the synced box scores, so it
+      fills in as games get synced.</dd>
+      <dt>No swap / Swap gain</dt>
+      <dd>Your Day 1 lineup scored as if you'd made no swaps. The difference
+      is what your swaps were worth.</dd>
+      <dt>Tool</dt>
+      <dd>What the Lineup builder suggested, snapshotted when you saved each
+      of your lineups and scored the same way. The suggestion is always
+      computed only from rounds <em>before</em> this one, so recording a round
+      after it's been played doesn't let the tool peek at its own results.</dd>
+      <dt>Best possible</dt>
+      <dd>The highest score your 13-man roster could have produced that round,
+      knowing every real score in advance - found by trying every possible
+      exclusion and formation. Any lineup could have been locked in on day 1,
+      so this is the true ceiling, not an estimate.</dd>
+      <dt>Official</dt>
+      <dd>Optionally type in your total from the real game. The difference
+      from "My score" checks this project's scoring model against the real
+      thing.</dd>
+    </dl>
+
     <h2>Keeping the data fresh</h2>
     <p>This app only ever reads the local database - it never calls the live
     EuroLeague API itself, so pages load fast and never hit a rate limit.

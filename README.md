@@ -38,6 +38,11 @@ for personal use among friends — never monetized or redistributed.
   projected score, shown in a totals box alongside the recommendation.
   Each lineup also renders as a court "pitch view" (starters by position,
   a checkmarked bench with the 6th man tagged) above the detail table.
+- **Points tracker** — record the lineup you actually played each round
+  (day-1 lock and final post-swap lineup), scored automatically from real
+  box scores, next to what the lineup builder suggested, the best lineup
+  your roster could have played in hindsight, and optionally your official
+  in-game total. Includes a season-to-date cumulative chart.
 - **Roster sync** — current club rosters pulled directly from EuroLeague's
   data backend, so transfers and new signings are reflected without waiting
   for a player's first box score. Triggerable from the app itself (a
@@ -108,7 +113,7 @@ A standalone pre-draft cheat sheet (no server needed) is also available:
 
 ```
 engine/         Data fetching, projections, roster/lineup/transfer logic
-app.py          Flask web app (draft board, rosters, transactions, transfers, lineup)
+app.py          Flask web app (draft board, rosters, transactions, transfers, lineup, tracker)
 draft_board.py  Standalone CLI draft cheat sheet
 sync_db.py           Refreshes box-score history (run after each gameweek)
 sync_rosters.py      Refreshes current club rosters (run before a draft / after transfer news)

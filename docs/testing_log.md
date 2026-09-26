@@ -2740,3 +2740,67 @@ after 13). Remaining edge case, not fixed: a player new to EuroLeague with
 NEW badge, since `known_player_ids` now sees their E2026 rows. Same family as
 the CLAUDE.md "known gap"; it resolves itself after their 3rd game.
 Existing tests pass.
+
+## 2026-09-26 — Points tracker (`/tracker`)
+
+**What**: new feature requested by the user - record the lineup they
+actually play each round, independent of `/lineup`'s suggestion, and build
+up a history of lineups and points. Design choices (the user's): a day-1
+lineup plus a final post-swap lineup per round; only the user's own team
+(set once, kept in a new `app_settings` table); points auto-computed from
+box scores plus an optional official in-game total as a cross-check;
+comparisons vs the tool's suggestion and vs the hindsight-best lineup; a
+season cumulative chart. Built as: new tables `tracked_lineups` /
+`tracked_lineup_players` / `tracked_rounds` / `app_settings`
+(`engine/db.py`), `engine/tracker.py` (slot validation, scoring, best
+possible, day-1 → final rule warnings), routes `/tracker`,
+`/tracker/<round>` (+ save/official/me/open), and templates
+`tracker.html`, `tracker_round.html`, `_line_chart.html` (inline-SVG chart,
+CSS-only hover).
+
+Three design points worth recording:
+- **Best possible is exact.** Any valid lineup can be locked in on day 1 and
+  never swapped, so the hindsight optimum is the best static lineup,
+  brute-forced over all 286 exclusions × 3 formations. This is a stronger
+  ceiling than `backtest_eval.py`'s, which goes through `swap_after_day1`.
+- **The tool's suggestion is hindsight-free.** `get_pool` /
+  `compute_recommendation` gained an optional `before_round` cutoff that
+  drops current-season rounds ≥ it. The tracker always uses it, so a
+  suggestion snapshotted after the round has been synced (e.g. backfilling
+  round 1 today) never sees that round's results. `/lineup` doesn't pass
+  it, so its behavior is unchanged.
+- **The `/lineup` logic was extracted into `compute_recommendation`**
+  so the tracker can reuse it (committed separately). Verified
+  byte-identical `/lineup` HTML for 12 manager/round/formation combos
+  against the pre-refactor code under a fixed `PYTHONHASHSEED`.
+
+**How**: `tests/test_tracker.py` (11 tests): slot validation (valid and each
+kind of violation), a hand-computed round total (captain 1.5x, bench 0.5x,
+excluded 0, DNP, a negative PIR, win bonus True/False/None),
+`best_possible_lineup` checked against an exhaustive brute force over
+every slot assignment, the rule warnings, and a DB save/replace round-trip.
+Then end-to-end through Flask's test client against a **copy** of the real
+DB (so no test data in the real tracker), E2026 round 1, manager 40:
+- setting "my team";
+- the round page prefilling from the tool's suggestion;
+- an invalid save (two captains) being rejected with the user's input kept
+  in the form;
+- a valid day-1 save;
+- a final with an illegal promotion (DECK, GABRIEL, a day-1 bench player,
+  moved to sixth man) saved with the right warning;
+- entering an official total;
+- the overview table and chart rendering;
+- round 2 (unplayed) showing the "no box scores yet" state;
+- `/lineup` still rendering.
+
+**Result**: all 26 tests pass. Computed round-1 score 132.2 matches a direct
+SQL sum over `tracked_lineup_players` × `player_game_stats` (132.15). The
+tool's snapshot scored 145.3 and best possible 155.0, so best ≥ tool ≥
+mine held. Tool snapshots were saved for both day 1 and final.
+
+**Found, not fixed**: `engine.lineup.swap_after_day1` names the captain as
+the top final starter by value, but the real rule
+(`docs/game_rules.md`) only allows captaincy to move to a starter who
+hasn't played yet. It didn't trigger in this test (VEZENKOV stayed
+captain), but nothing prevents it, which would make the tool's and the
+backtest's post-swap numbers slightly optimistic whenever it happens.

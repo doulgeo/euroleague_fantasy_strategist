@@ -386,6 +386,42 @@ Full context for a fresh session, in order of what to read:
   "Transfer compare tool: back to dropdowns, result on top" for the full
   write-ups.
 
+- **Points tracker** (`/tracker`), as of 2026-09-26: the user records the
+  lineup they *actually* played each round (a day-1 lock plus the final
+  post-swap lineup, a slot for all 13 players), independent of `/lineup`'s
+  suggestion. It only tracks the user's own team, set once and stored in a
+  new `app_settings` table. Scores are never stored: they're recomputed from
+  `player_game_stats` via `engine/tracker.py`. Each round shows:
+  - my score, and the no-swap score (the day-1 lineup, never swapped);
+  - the tool's suggestion, snapshotted when the user saves (`tool_day1` /
+    `tool_final`);
+  - the exact hindsight-best lineup, brute-forced over 286 exclusions × 3
+    formations. This is exact because any lineup could have been locked in
+    on day 1;
+  - an optional official in-game total, with its difference from our score.
+
+  Plus a season cumulative inline-SVG chart. Tables: `tracked_lineups`,
+  `tracked_lineup_players`, `tracked_rounds`, `app_settings`. Other changes:
+  - `/lineup`'s logic was extracted into `app.py::compute_recommendation`
+    (verified byte-identical output), and it plus `get_pool` gained a
+    `before_round` cutoff. The tracker always uses it, so a suggestion
+    snapshotted after a round was synced never sees that round's results.
+  - `final_rule_warnings` flags (but still saves) a final lineup that breaks
+    a swap rule.
+
+  Tested with `tests/test_tracker.py` plus an end-to-end run on a DB copy.
+  See `docs/testing_log.md` → "Points tracker (`/tracker`)".
+- **Two data fixes, 2026-09-26** (found the day after E2026 round 1):
+  - `EuroleagueClient.list_games` no longer serves the season game list
+    from disk cache. A pre-season cache had frozen every game as unplayed,
+    so `sync_db.py` never fetched round 1.
+  - Once round 1 was synced, the live pool's hard switch to the current
+    season zeroed ~every projection (the 3-game minimum). Live projections
+    now blend E2025 + E2026 as one timeline
+    (`engine.projections.blend_season_rows`).
+
+  See the two 2026-09-26 entries in `docs/testing_log.md`.
+
 **Explicitly NOT done yet (all deferred, not forgotten):**
 - The draft-tracking UI above is v1: no draft-credit/budget tracking
   (confirmed out of scope — credits don't affect in-season scoring), no
@@ -509,6 +545,11 @@ over the network), never needs to be committed.
 - The team-strength tiebreaker question the "Opponent-strength adjustment"
   entry above leaves open is now actually testable, since `/lineup` exists
   — worth trying if opponent-aware lineup decisions come up again.
+- **Captain rule not enforced in `swap_after_day1`**, found 2026-09-26: it
+  names the top final starter as captain. The real rule says a new captain
+  must be a starter who hasn't played yet. This can make the tool's
+  post-swap suggestion (and backtest numbers) slightly optimistic. It was
+  not observed in the one live case checked, and it's not fixed yet.
 - **Known gap, found but not fixed 2026-09-14**: `known_player_ids` (the
   NEW-badge check) looks across ALL locally-synced seasons (E2023-E2025),
   but `build_projections` (the actual value) only ever uses ONE season
