@@ -2711,3 +2711,32 @@ fetch fails. Per-game stats stay cached (only fetched once a game is
 fallbacks), schedule shows 10 played / 370 upcoming. `pir_recomputed`
 matches `pir_official` on all 240 rows; top PIR (JONES, CARLIK, PAR, 33)
 looks sane.
+
+## 2026-09-26 — Early-season projections collapsed to 0.0; now blend both seasons
+
+**What**: found while verifying the `/lineup` refactor for the points
+tracker. `/lineup` gave different recommendations run to run, and the
+cause was upstream: `app.py::_resolve_pool_source` switched the live pool
+to the current season as soon as ANY E2026 box score existed. Once round 1
+was synced (see the entry above), every player had only 1 E2026 game, under
+`MIN_GAMES_FOR_PROJECTION` (3), so ~all projections fell to a flat 0.0 in
+`merge_roster`. The draft board, transfers and lineup builder were all
+running on zeros, and the run-to-run variance was just hash-order
+tie-breaking between equal zeros. Fixed (user's choice) by blending seasons:
+new `engine.projections.blend_season_rows` appends the current season's rows
+after the prior season's, renumbering rounds past the prior's last round and
+shifting game codes past every prior code (`build_projections` orders a
+team's win-rate window by game_code, and both seasons restart at 1).
+`get_pool` now always builds from the blended rows.
+
+**How**: compared the E2025-only projection vs the blended one for round-1
+standouts through the real `get_pool`.
+
+**Result**: 302/423 pool players have a nonzero projection again. Blended
+values move sensibly toward round-1 form (VEZENKOV 17.38 → 19.80 after a
+30-PIR game; JONES, CARLIK 18.75 → 21.70 after 33; BALDWIN IV 15.58 → 15.35
+after 13). Remaining edge case, not fixed: a player new to EuroLeague with
+1-2 E2026 games still gets 0.0 (under the 3-game minimum), and has lost the
+NEW badge, since `known_player_ids` now sees their E2026 rows. Same family as
+the CLAUDE.md "known gap"; it resolves itself after their 3rd game.
+Existing tests pass.

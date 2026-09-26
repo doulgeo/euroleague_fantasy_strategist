@@ -80,6 +80,34 @@ def stdev(values: list[float]) -> float:
     return variance**0.5
 
 
+SEASON_GAME_CODE_OFFSET = 100_000
+
+
+def blend_season_rows(prior_rows: list[dict], current_rows: list[dict]) -> tuple[list[dict], int]:
+    """(rows, as_of_round) that let build_projections treat the prior
+    season and the current one as a single continuous timeline - the
+    current season's rounds are renumbered to come after the prior
+    season's last round, and its game codes shifted past any prior-season
+    code (build_projections orders a team's games by game_code for the
+    win-rate window, and both seasons' codes restart from 1).
+
+    Found 2026-09-26: switching the live pool to the current season as soon
+    as it had ANY box score left almost every player with fewer than
+    MIN_GAMES_FOR_PROJECTION games, i.e. a flat 0.0, the day after round 1
+    was synced. Blending instead means an early-season projection is mostly
+    last season's form, shifting toward this season's game by game through
+    the ROLLING_WINDOW - no cliff at the season boundary. Input rows are
+    not mutated."""
+    prior_max_round = max((r["round"] for r in prior_rows if r.get("round") is not None), default=0)
+    shifted = [
+        {**r, "round": r["round"] + prior_max_round, "game_code": r["game_code"] + SEASON_GAME_CODE_OFFSET}
+        for r in current_rows
+        if r.get("round") is not None
+    ]
+    current_max_round = max((r["round"] for r in shifted), default=prior_max_round)
+    return list(prior_rows) + shifted, current_max_round + 1
+
+
 def build_projections(
     rows: list[dict],
     as_of_round: int,

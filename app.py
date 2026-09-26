@@ -62,7 +62,7 @@ from engine.lineup import (
     swap_after_day1,
     team_dates_from_schedule,
 )
-from engine.projections import Projection, actual_fantasy_score, build_projections
+from engine.projections import Projection, actual_fantasy_score, blend_season_rows, build_projections
 from engine.roster import REQUIRED_COUNTS, ActiveSquad, Roster
 from engine.dev_draft import randomize_draft
 from engine.rosters import merge_roster
@@ -186,18 +186,15 @@ def close_db(exception=None) -> None:
         db.close()
 
 
-def _resolve_pool_source(conn: sqlite3.Connection) -> tuple[str, int]:
-    """(season_code, as_of_round) to build the player pool from right now."""
+def _load_pool_rows(conn: sqlite3.Connection) -> tuple[list[dict], int]:
+    """(rows, as_of_round) to build the player pool from right now: the
+    prior season blended with whatever of the current season has been
+    played so far (see engine.projections.blend_season_rows for why - a
+    hard switch to the current season zeroed nearly every projection the
+    day after round 1 was synced)."""
+    prior_rows = load_rows(conn, season_code=PRIOR_SEASON)
     current_rows = load_rows(conn, season_code=CURRENT_SEASON)
-    if not current_rows:
-        rows = load_rows(conn, season_code=PRIOR_SEASON)
-        if not rows:
-            return PRIOR_SEASON, 1
-        max_round = max(r["round"] for r in rows if r.get("round") is not None)
-        return PRIOR_SEASON, max_round + 1
-
-    max_round = max(r["round"] for r in current_rows if r.get("round") is not None)
-    return CURRENT_SEASON, max_round + 1
+    return blend_season_rows(prior_rows, current_rows)
 
 
 def get_pool(
@@ -226,15 +223,14 @@ def get_pool(
     docstring) - callers that care about availability (draft board, manager
     roster, lineup builder) use it for a badge; the lineup builder also
     zeroes an "Out" player's decision value (see the /lineup route)."""
-    season_code, as_of_round = _resolve_pool_source(conn)
-    key = (season_code, as_of_round)
+    key = (PRIOR_SEASON, CURRENT_SEASON)
     mtime_ns = DB_PATH.stat().st_mtime_ns
 
     cached = _projection_cache.get(key)
     if cached and cached[0] == mtime_ns:
         return cached[1]
 
-    rows = load_rows(conn, season_code=season_code)
+    rows, as_of_round = _load_pool_rows(conn)
     projections = build_projections(rows, as_of_round=as_of_round)
 
     roster_rows = load_roster(conn, CURRENT_SEASON)
