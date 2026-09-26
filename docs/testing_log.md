@@ -2804,3 +2804,55 @@ the top final starter by value, but the real rule
 hasn't played yet. It didn't trigger in this test (VEZENKOV stayed
 captain), but nothing prevents it, which would make the tool's and the
 backtest's post-swap numbers slightly optimistic whenever it happens.
+
+## 2026-09-26 — Captain rule enforced; tracker restrictions, points column, chart fix
+
+**What**: follow-up after the user tested `/tracker` on their real team
+(GD, round 1). Four items:
+1. **"The calculation is false"**: the user expected their captain OTURU,
+   DAN (32 PIR) to show 48 points. The scoring was actually correct:
+   HTA lost, so there was no win bonus, and 32 × 1.5 = 48.0 was in the
+   total (104.8). But 48.0 only appeared in a breakdown table at the
+   bottom of the page, below the court graphics. The main lineup table's
+   only score column showed the pre-multiplier 32.0. Fixed the
+   presentation: the main table now has PIR+bonus and **Pts** (after the
+   final slot's multiplier) side by side, with the round total in its
+   footer, and the separate breakdown table is gone.
+2. **"No chart rendering"**: screenshotted the real page with headless
+   Chrome (the Windows install, driven from WSL; this is the first time a
+   page in this project was actually eyeballed in a browser rather than
+   checked structurally). With one round, each series was a single point,
+   so no line was drawn: only two dots. Fixed by starting every series
+   at a "Start" point at 0. Also added SVG presentation attributes (fill,
+   stroke, visibility) and a `?v=<mtime>` cache-buster on `style.css`, so
+   the chart can't render broken against a stale cached stylesheet (the
+   hover band would otherwise default to a black fill).
+3. **Captain rule in the engine** (the open item from the previous entry).
+   `swap_after_day1` now only lets the captaincy stay with the day-1
+   captain or move to a player who hasn't played yet. While doing this,
+   the final re-solve was made exact: it searches formation × legal
+   captain and scores starters + sixth man + captain. The old version
+   chose the formation by the starters' sum alone and then captained the
+   top starter.
+4. **Tracker restrictions**: the three day-1 → final swap rules are now
+   hard errors (the lineup is rejected, the input kept in the form), not
+   save-with-warning. Re-saving a day 1 that makes an already-saved
+   final inconsistent flashes a warning to re-save the final.
+
+**How**: new `tests/test_lineup.py`:
+- the captaincy never goes to a day-1 player who already played;
+- a day-1 bench player is never promoted;
+- 40 random-value cases of `swap_after_day1` compared with a brute force
+  over every legal final lineup.
+
+Against the **old** engine, 19 of these 42 fail (captain violations and
+sub-optimal legal lineups); the new engine passes all. The full suite is
+68 passed. Headless-Chrome screenshots of `/tracker` and `/tracker/1` on
+the real DB confirmed the chart lines and the Oturu row
+(32.0 → 48.0, total 104.8).
+
+**Result**: all four fixed. Note: this changes `swap_after_day1`'s output,
+so the backtest headline in CLAUDE.md is stale once more (on top of the
+two 2026-09-22 corrections). The user's already-saved round-1 `tool_final`
+snapshot was made with the old swap logic and was left as is, since it
+records what the tool suggested at the time.

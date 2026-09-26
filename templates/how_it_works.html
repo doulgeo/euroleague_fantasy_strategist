@@ -228,10 +228,16 @@
       after the swap window. Set a slot for all 13 players (1 captain, 4
       starters, 1 sixth man, 4 bench, 3 excluded; the 5 starters must form
       2-2-1, 2-1-2 or 3-1-1). A lineup that breaks those rules isn't saved.
-      A final lineup that breaks a swap rule (an exclusion changed, a player
-      promoted off the bench after already playing on day 1, or captaincy
-      moved to someone who already played) <em>is</em> saved, with a warning -
-      the real game enforces these, so it most likely means a typo.</dd>
+      Neither is a final lineup that breaks one of the real game's swap rules
+      relative to your saved Day 1: the exclusions can't change, a player who
+      already played on day 1 from the bench can't be promoted, and the
+      captaincy can only move to a starter who hasn't played yet.</dd>
+      <dt>Pts</dt>
+      <dd>In the round table, <strong>PIR+bonus</strong> is what the player
+      scored on their own; <strong>Pts</strong> is what they earned you after
+      their slot in your final lineup (captain 1.5x, starter/6th man 1x,
+      bench 0.5x, excluded 0). E.g. a 32-PIR captain on a losing team = 48
+      Pts. The footer is the round total.</dd>
       <dt>My score</dt>
       <dd>Your final lineup (or your Day 1 lineup, if no final was saved)
       scored with each player's real PIR plus the real 10% team-win bonus:
@@ -242,7 +248,8 @@
       <dd>Your Day 1 lineup scored as if you'd made no swaps. The difference
       is what your swaps were worth.</dd>
       <dt>Tool</dt>
-      <dd>What the Lineup builder suggested, snapshotted when you saved each
+      <dd>What the Lineup builder suggested (it follows the same captain rule
+      in its own swap plan), snapshotted when you saved each
       of your lineups and scored the same way. The suggestion is always
       computed only from rounds <em>before</em> this one, so recording a round
       after it's been played doesn't let the tool peek at its own results.</dd>

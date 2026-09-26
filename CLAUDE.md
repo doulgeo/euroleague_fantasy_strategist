@@ -68,8 +68,10 @@ Full context for a fresh session, in order of what to read:
   scoring was found to be missing the real +10% team-win bonus entirely
   (it was only ever applied to *projected* values, never real ones - see
   `docs/testing_log.md`, "Actual scoring was missing the real +10%
-  team-win bonus"). Both change the real point totals this headline is
-  built from; treat this specific number as provisional until
+  team-win bonus"). A third change followed on 2026-09-26:
+  `swap_after_day1` now enforces the captain rule and does an exact final
+  re-solve (see "Captain rule enforced" in the testing log). All three
+  change the real point totals this headline is built from; treat this specific number as provisional until
   `backtest_eval.py` is rerun. This is also a much lower-looking
   number than the pre-2026-09-16 headline,
   and that's expected, not a regression — see the **2026-09-16 substitution
@@ -406,8 +408,12 @@ Full context for a fresh session, in order of what to read:
     (verified byte-identical output), and it plus `get_pool` gained a
     `before_round` cutoff. The tracker always uses it, so a suggestion
     snapshotted after a round was synced never sees that round's results.
-  - `final_rule_warnings` flags (but still saves) a final lineup that breaks
-    a swap rule.
+  - `final_rule_violations` rejects a final lineup that breaks a swap rule
+    relative to the saved day 1 (hard restriction since 2026-09-26, per the
+    user).
+  - The round table shows PIR+bonus *and* Pts (after the slot multiplier)
+    per player. Showing only the pre-multiplier value made the user think a
+    32-PIR captain was scored as 32 rather than 48.
 
   Tested with `tests/test_tracker.py` plus an end-to-end run on a DB copy.
   See `docs/testing_log.md` → "Points tracker (`/tracker`)".
@@ -421,6 +427,17 @@ Full context for a fresh session, in order of what to read:
     (`engine.projections.blend_season_rows`).
 
   See the two 2026-09-26 entries in `docs/testing_log.md`.
+- **Captain rule in `swap_after_day1`**, 2026-09-26: the captaincy can only
+  stay with the day-1 captain or move to a player who hasn't played yet.
+  The final re-solve is now exact (formation × legal captain, scoring
+  starters + sixth + captain), checked against a brute force of every legal
+  final lineup (`tests/test_lineup.py`).
+- **Pages can be screenshotted for real**: headless Chrome from the Windows
+  install works from WSL. Run
+  `"/mnt/c/Program Files/Google/Chrome/Application/chrome.exe" --headless=new
+  --screenshot='C:\...\x.png' --window-size=1200,1400 http://localhost:<port>/...`
+  against a `flask --app app run --port <port>` server, then view the PNG.
+  Use this instead of structural-only HTML checks.
 
 **Explicitly NOT done yet (all deferred, not forgotten):**
 - The draft-tracking UI above is v1: no draft-credit/budget tracking
@@ -545,11 +562,6 @@ over the network), never needs to be committed.
 - The team-strength tiebreaker question the "Opponent-strength adjustment"
   entry above leaves open is now actually testable, since `/lineup` exists
   — worth trying if opponent-aware lineup decisions come up again.
-- **Captain rule not enforced in `swap_after_day1`**, found 2026-09-26: it
-  names the top final starter as captain. The real rule says a new captain
-  must be a starter who hasn't played yet. This can make the tool's
-  post-swap suggestion (and backtest numbers) slightly optimistic. It was
-  not observed in the one live case checked, and it's not fixed yet.
 - **Known gap, found but not fixed 2026-09-14**: `known_player_ids` (the
   NEW-badge check) looks across ALL locally-synced seasons (E2023-E2025),
   but `build_projections` (the actual value) only uses the prior + current
