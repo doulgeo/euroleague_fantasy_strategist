@@ -2856,3 +2856,33 @@ so the backtest headline in CLAUDE.md is stale once more (on top of the
 two 2026-09-22 corrections). The user's already-saved round-1 `tool_final`
 snapshot was made with the old swap logic and was left as is, since it
 records what the tool suggested at the time.
+
+## 2026-09-26 — Scoring model confirmed exactly against the real game (round 1)
+
+**What**: the user shared screenshots of their real round-1 team from the
+official EuroLeague Fantasy game (team GD): a total of **120.25**, with
+per-player points. The tracker had shown 104.8. The difference was the
+**lineup, not the scoring**: the saved "final" was the tool's suggestion
+(the Final column is prefilled from it, and it was saved unchanged), not
+the lineup actually played. With the real lineup (Oturu captain;
+Shengelia, Ojeleye, Bryant, Forrest starters; Hall 6th man; Crowder, Ward,
+Edwards and Blakeney bench; DeJulius, Da Silva and Klintman excluded),
+every player's points match the game's exactly:
+- the captain's 1.5x (OTURU 32 → 48, HTA lost);
+- the **+10% team-win bonus**, on starters and 6th man (SHENGELIA 3 → 3.3,
+  FORREST 7 → 7.7, HALL 12 → 13.2);
+- the bonus applying *before* the bench halving (CROWDER 25 → 27.5 →
+  13.75, WARD 12 → 13.2 → 6.6).
+
+This is the first confirmation of the whole scoring model against a real
+official total, including the 2026-09-22 win-bonus correction.
+
+**How**: backed up `euroleague.db` (scratchpad copy), then re-saved the
+user's real round-1 final through the app's own `/tracker/1/save` route
+(normal validation). Entered the official 120.25 via `/tracker/1/official`.
+Also added a `pts` Jinja filter so tracker points show like the game does
+(up to 2 decimals, trailing zeros dropped); with 1 decimal, 120.25 had
+rendered as "120.2".
+
+**Result**: the tracker shows My score 120.25 and Official 120.25, a
+difference of +0. 68 tests pass.

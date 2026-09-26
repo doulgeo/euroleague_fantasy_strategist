@@ -58,13 +58,13 @@
               <td><a href="{{ url_for('tracker_round', round_no=sc.round_no) }}">Round {{ sc.round_no }}</a>
                 {% if not sc.has_box_scores %}<span class="muted">(not played / synced yet)</span>
                 {% elif not sc.complete %}<span class="muted">(partial)</span>{% endif %}</td>
-              <td><strong>{{ "%.1f"|format(sc.my_final) if sc.my_final is not none else "-" }}</strong></td>
-              <td>{{ "%.1f"|format(sc.my_no_swap) if sc.my_no_swap is not none else "-" }}</td>
-              <td class="{{ 'num-positive' if (sc.swap_gain or 0) > 0 else 'num-negative' if (sc.swap_gain or 0) < 0 }}">{{ "%+.1f"|format(sc.swap_gain) if sc.swap_gain is not none else "-" }}</td>
-              <td>{{ "%.1f"|format(sc.tool) if sc.tool is not none else "-" }}</td>
-              <td>{{ "%.1f"|format(sc.best) if sc.best is not none else "-" }}</td>
+              <td><strong>{{ (sc.my_final)|pts if sc.my_final is not none else "-" }}</strong></td>
+              <td>{{ (sc.my_no_swap)|pts if sc.my_no_swap is not none else "-" }}</td>
+              <td class="{{ 'num-positive' if (sc.swap_gain or 0) > 0 else 'num-negative' if (sc.swap_gain or 0) < 0 }}">{{ (sc.swap_gain)|pts(true) if sc.swap_gain is not none else "-" }}</td>
+              <td>{{ (sc.tool)|pts if sc.tool is not none else "-" }}</td>
+              <td>{{ (sc.best)|pts if sc.best is not none else "-" }}</td>
               <td>{{ "%.0f%%"|format(100 * sc.pct_of_best) if sc.pct_of_best is not none else "-" }}</td>
-              <td>{% if sc.official is not none %}{{ "%.1f"|format(sc.official) }}{% if sc.official_diff is not none %} ({{ "%+.1f"|format(sc.official_diff) }}){% endif %}{% else %}-{% endif %}</td>
+              <td>{% if sc.official is not none %}{{ (sc.official)|pts }}{% if sc.official_diff is not none %} ({{ (sc.official_diff)|pts(true) }}){% endif %}{% else %}-{% endif %}</td>
             </tr>
           {% endfor %}
         </tbody>
@@ -72,14 +72,14 @@
           <tr>
             <th>Total</th>
             {% for attr in ("my_final", "my_no_swap") %}
-              <th>{{ "%.1f"|format(totals[attr]) if totals[attr] is not none else "-" }}</th>
+              <th>{{ (totals[attr])|pts if totals[attr] is not none else "-" }}</th>
             {% endfor %}
-            <th>{{ "%+.1f"|format(totals.my_final - totals.my_no_swap) if (totals.my_final is not none and totals.my_no_swap is not none) else "-" }}</th>
+            <th>{{ (totals.my_final - totals.my_no_swap)|pts(true) if (totals.my_final is not none and totals.my_no_swap is not none) else "-" }}</th>
             {% for attr in ("tool", "best") %}
-              <th>{{ "%.1f"|format(totals[attr]) if totals[attr] is not none else "-" }}</th>
+              <th>{{ (totals[attr])|pts if totals[attr] is not none else "-" }}</th>
             {% endfor %}
             <th>{{ "%.0f%%"|format(100 * totals.my_final / totals.best) if (totals.my_final and totals.best) else "-" }}</th>
-            <th>{{ "%.1f"|format(totals.official) if totals.official is not none else "-" }}</th>
+            <th>{{ (totals.official)|pts if totals.official is not none else "-" }}</th>
           </tr>
         </tfoot>
       </table>

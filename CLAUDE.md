@@ -416,6 +416,10 @@ Full context for a fresh session, in order of what to read:
     32-PIR captain was scored as 32 rather than 48.
 
   Tested with `tests/test_tracker.py` plus an end-to-end run on a DB copy.
+  **Scoring model confirmed exactly against the real game** (2026-09-26):
+  the user's official round-1 total of 120.25 matched to the hundredth,
+  player by player. That covers the captain's 1.5x, the +10% win bonus (a
+  real rule), and the bonus being applied before the bench halving.
   See `docs/testing_log.md` → "Points tracker (`/tracker`)".
 - **Two data fixes, 2026-09-26** (found the day after E2026 round 1):
   - `EuroleagueClient.list_games` no longer serves the season game list

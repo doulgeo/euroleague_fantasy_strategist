@@ -101,6 +101,15 @@ app = Flask(__name__)
 app.secret_key = "euroleague-fantasy-local-dev"  # local single-user tool, not internet-facing
 
 
+@app.template_filter("pts")
+def pts(value: float, signed: bool = False) -> str:
+    """Fantasy points the way the real game shows them: up to 2 decimals,
+    trailing zeros dropped (48, 13.2, 13.75, 120.25)."""
+    text = f"{abs(value):.2f}".rstrip("0").rstrip(".")
+    sign = "-" if value < 0 and text != "0" else ("+" if signed else "")
+    return sign + text
+
+
 @app.template_filter("player_initials")
 def player_initials(name: str) -> str:
     """'SURNAME, FIRSTNAME' -> 'FS' monogram - the EuroLeague API's /people

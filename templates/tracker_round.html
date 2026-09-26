@@ -19,25 +19,25 @@
     <div class="stat-box">
       <div class="stat-box-item" title="Your final lineup (or day-1 lineup if no final saved), real PIR + real 10% win bonus.">
         <span class="stat-box-label">My score{{ " (partial)" if not score.complete }}</span>
-        <span class="stat-box-value">{{ "%.1f"|format(score.my_final) if score.my_final is not none else "-" }}</span>
+        <span class="stat-box-value">{{ (score.my_final)|pts if score.my_final is not none else "-" }}</span>
       </div>
       <div class="stat-box-item" title="Your day-1 lineup with no swaps made.">
         <span class="stat-box-label">No swap</span>
-        <span class="stat-box-value">{{ "%.1f"|format(score.my_no_swap) if score.my_no_swap is not none else "-" }}</span>
+        <span class="stat-box-value">{{ (score.my_no_swap)|pts if score.my_no_swap is not none else "-" }}</span>
       </div>
       <div class="stat-box-item" title="{{ 'Recomputed now from projections as of before this round - no snapshot was saved with your lineup.' if tool_recomputed else 'What /lineup suggested when you saved your lineup.' }}">
         <span class="stat-box-label">Tool{{ "*" if tool_recomputed }}</span>
-        <span class="stat-box-value">{{ "%.1f"|format(score.tool) if score.tool is not none else "-" }}</span>
+        <span class="stat-box-value">{{ (score.tool)|pts if score.tool is not none else "-" }}</span>
       </div>
       <div class="stat-box-item" title="The best lineup your 13-man roster could have played, knowing every real score in advance. Its slots are in the 'Best' column below.">
         <span class="stat-box-label">Best possible</span>
-        <span class="stat-box-value">{{ "%.1f"|format(score.best) if score.best is not none else "-" }}</span>
+        <span class="stat-box-value">{{ (score.best)|pts if score.best is not none else "-" }}</span>
       </div>
       {% if score.official is not none %}
         <div class="stat-box-item" title="The in-game total you entered, minus our computed score.">
           <span class="stat-box-label">Official (diff)</span>
-          <span class="stat-box-value">{{ "%.1f"|format(score.official) }}
-            {% if score.official_diff is not none %}<small class="{{ 'num-positive' if score.official_diff > 0 else 'num-negative' if score.official_diff < 0 }}">({{ "%+.1f"|format(score.official_diff) }})</small>{% endif %}</span>
+          <span class="stat-box-value">{{ (score.official)|pts }}
+            {% if score.official_diff is not none %}<small class="{{ 'num-positive' if score.official_diff > 0 else 'num-negative' if score.official_diff < 0 }}">({{ (score.official_diff)|pts(true) }})</small>{% endif %}</span>
         </div>
       {% endif %}
     </div>
@@ -99,8 +99,8 @@
             {% endfor %}
             {% if score.has_box_scores %}
               {% set line = actual_by_id.get(p.player_id) %}
-              <td>{{ "%.1f"|format(line.fantasy) if line and line.played else "DNP" }}</td>
-              <td title="{{ slot_labels[line.slot] if line }} x{{ slot_multipliers[line.slot] if line }}"><strong>{{ "%.1f"|format(line.points) if line else "-" }}</strong></td>
+              <td>{{ (line.fantasy)|pts if line and line.played else "DNP" }}</td>
+              <td title="{{ slot_labels[line.slot] if line }} x{{ slot_multipliers[line.slot] if line }}"><strong>{{ (line.points)|pts if line else "-" }}</strong></td>
               <td>{{ slot_labels.get(score.best_slots.get(p.player_id), "-") }}</td>
             {% endif %}
           </tr>
@@ -113,7 +113,7 @@
           <td><button type="submit" form="final-form">Save Final</button></td>
           {% if score.has_box_scores %}
             <td><strong>Total</strong></td>
-            <td><strong>{{ "%.1f"|format(score.my_final) if score.my_final is not none else "-" }}</strong></td>
+            <td><strong>{{ (score.my_final)|pts if score.my_final is not none else "-" }}</strong></td>
             <td></td>
           {% endif %}
         </tr>
