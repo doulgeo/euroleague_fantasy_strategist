@@ -12,7 +12,9 @@ for personal use among friends — never monetized or redistributed.
 
 - **Projections** — a transparent, hand-auditable heuristic (no ML) that
   projects each player's next-game fantasy score (PIR) from recency-weighted
-  recent form plus a team win-rate bonus.
+  recent form plus a team win-rate bonus. A **form ticker** next to every
+  projection shows how it moved after the player's last game (▲/▼) and
+  flags players scoring well above/below it over their last 3 (HOT/COLD).
 - **Draft board** — every player ranked per position, with VORP
   (scarcity-adjusted value) and tiering (where the drop-off to the next
   player actually matters).

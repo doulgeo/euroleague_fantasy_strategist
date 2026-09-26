@@ -431,3 +431,19 @@ button:hover, input[type="submit"]:hover { background: var(--orange-dark); }
 .chart-tooltip text { fill: #fff; font-size: 12px; font-family: var(--font-body); }
 .chart-tooltip .chart-tooltip-title { font-weight: 600; }
 .chart-hover:hover .chart-crosshair, .chart-hover:hover .chart-tooltip { visibility: visible; }
+
+/* Form ticker (templates/_form.html): projection movement since the last
+   game, plus a HOT/COLD badge for last-3-games scoring vs the projection. */
+.form-tick { font-size: 0.75rem; font-weight: 600; margin-left: 0.3rem; white-space: nowrap; }
+.form-up { color: var(--green); }
+.form-down { color: var(--red); }
+.form-flat { color: var(--ink-soft); }
+.form-badge {
+  display: inline-block; color: #fff;
+  font-family: var(--font-display); font-size: 0.62rem; font-weight: 600;
+  letter-spacing: 0.04em; padding: 0.1rem 0.4rem; border-radius: 3px;
+  margin-left: 0.3rem; vertical-align: middle; text-transform: uppercase;
+}
+.form-hot { background: #c4572a; }
+.form-cold { background: #4a6f8a; }
+td:has(> .form-tick) { white-space: nowrap; }

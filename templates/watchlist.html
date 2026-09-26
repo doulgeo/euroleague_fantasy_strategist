@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_form.html" as form_macros %}
 {% block title %}Watchlist{% endblock %}
 {% block content %}
   <h1>Watchlist</h1>
@@ -23,7 +24,7 @@
           <td>{{ row.player.player_name }}{% if row.is_new %} <span class="new-badge" title="No EuroLeague box-score history in this project's data (E2023+) - new to the league, or a returning player not yet re-synced">NEW</span>{% endif %}{% if row.is_estimated %} <span class="new-badge" title="No box-score history, so the projection shown is a manually-set estimate (see set_manual_projection.py), not computed from data.">EST</span>{% endif %}{% if row.is_gone %} <span class="gone-badge" title="No longer on any current EuroLeague club roster.">GONE</span>{% endif %}{% if row.injury %} <span class="injury-badge injury-badge-{{ row.injury.severity }}" title="basketnews injury report{% if row.injury.round_text %} ({{ row.injury.round_text }}){% endif %}{% if row.injury.comment %}: {{ row.injury.comment }}{% endif %}">{{ row.injury.status | upper }}</span>{% endif %}</td>
           <td>{{ row.player.position }}</td>
           <td>{{ row.player.team }}</td>
-          <td>{{ "%.1f"|format(row.player.projected_pir_with_bonus) }}</td>
+          <td>{{ "%.1f"|format(row.player.projected_pir_with_bonus) }}{{ form_macros.ticker(row.player) }}</td>
           <td>{{ row.added_at.split("T")[0] }}</td>
           <td>
             <form method="post" action="{{ url_for('watchlist_remove') }}" class="inline-form">

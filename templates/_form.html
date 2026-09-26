@@ -1,0 +1,19 @@
+{# Form ticker next to a projected value: an arrow for how the projection
+   moved after the player's most recent game, plus a HOT/COLD badge when
+   their last-3-games average is well above/below the projection (see
+   engine.projections.Projection.form). Display only - it never changes a
+   projection or a lineup decision. Placeholder projections (NEW/EST
+   players, tracker snapshots) have no form data and render nothing. #}
+{% macro ticker(p) %}
+  {%- if p.recent_pir is not none -%}
+    {%- set ch = p.projection_change -%}
+    {%- set tip = "Last 3 games: %.1f PIR avg (projection %.1f). Projection %+.1f since the previous game."|format(p.recent_pir, p.projected_pir, ch) -%}
+    {%- if ch >= 0.5 %} <span class="form-tick form-up" title="{{ tip }}">▲{{ "%.1f"|format(ch) }}</span>
+    {%- elif ch <= -0.5 %} <span class="form-tick form-down" title="{{ tip }}">▼{{ "%.1f"|format(-ch) }}</span>
+    {%- else %} <span class="form-tick form-flat" title="{{ tip }}">–</span>
+    {%- endif -%}
+    {%- if p.form == "hot" %} <span class="form-badge form-hot" title="{{ tip }}">HOT</span>
+    {%- elif p.form == "cold" %} <span class="form-badge form-cold" title="{{ tip }}">COLD</span>
+    {%- endif -%}
+  {%- endif -%}
+{% endmacro %}

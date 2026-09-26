@@ -59,11 +59,20 @@
       Fewer than 3 games and no projection is built at all - too little
       signal.</dd>
       <dt>Which season's data</dt>
-      <dd>If the current season already has synced games, only those count.
-      Otherwise it falls back to using all of last season's games. This is a
-      hard switch, not a blend - early in a new season, a returning player
-      with only 1-2 games so far can temporarily show as unprojected until
-      they hit 3 games in the new season.</dd>
+      <dd>Last season and the current one are treated as one continuous
+      timeline, so early in a new season a projection is mostly last
+      season's form, shifting toward this season's game by game - no cliff
+      where everyone drops to zero after round 1.</dd>
+      <dt>Form ticker (<span class="form-tick form-up">▲1.2</span> / <span class="form-tick form-down">▼0.8</span>, <span class="form-badge form-hot">HOT</span> / <span class="form-badge form-cold">COLD</span>)</dt>
+      <dd>Shown next to the projected value. The arrow is how much the
+      projection moved after the player's most recent game (a dash means
+      under 0.5 either way). HOT/COLD compares their plain average over the
+      last 3 games to the projection: at least 3 PIR <em>and</em> 20% above
+      it is HOT, the same below is COLD. The two can disagree - e.g. ▲ with
+      COLD means the latest game beat the one it pushed out of the 10-game
+      window, but the last 3 are still well under the projection. Hover
+      either for the exact numbers. Display only: it never changes the
+      projection itself or any lineup recommendation.</dd>
     </dl>
 
     <h2>The draft board</h2>

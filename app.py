@@ -309,6 +309,7 @@ def index():
 SORT_OPTIONS = [
     ("value", "Projected value"),
     ("vorp", "VORP"),
+    ("form", "Form (projection change)"),
     ("n", "Games sampled"),
     ("player_name", "Player name"),
     ("team", "Team"),
@@ -317,6 +318,7 @@ SORT_OPTIONS = [
 _SORT_KEY_FNS = {
     "value": lambda p, replacement: p.projected_pir_with_bonus,
     "vorp": lambda p, replacement: p.projected_pir_with_bonus - replacement[p.position],
+    "form": lambda p, replacement: p.projection_change,
     "n": lambda p, replacement: p.games_sampled,
     "player_name": lambda p, replacement: p.player_name,
     "team": lambda p, replacement: p.team or "",

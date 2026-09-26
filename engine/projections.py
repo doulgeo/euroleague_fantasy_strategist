@@ -17,6 +17,15 @@ ROLLING_WINDOW = 10
 TEAM_WIN_WINDOW = 10
 WIN_BONUS_FRACTION = 0.10
 
+# Form ticker (display only - never feeds into projected_pir or any lineup
+# decision). FORM_WINDOW is the "lately" window; a player is hot/cold when
+# their average over it beats/trails their projection by at least
+# FORM_MIN_GAP PIR and FORM_MIN_FRACTION of the projection, whichever is
+# larger, so a 3-PIR bench player doesn't flip hot on one 6-PIR game.
+FORM_WINDOW = 3
+FORM_MIN_GAP = 3.0
+FORM_MIN_FRACTION = 0.20
+
 
 def actual_fantasy_score(pir: float, team_won: bool | None) -> float:
     """Real PIR plus the official +10% team-win bonus, applied only when
@@ -44,6 +53,26 @@ class Projection:
     volatility: float
     team_win_rate: float | None
     projected_pir_with_bonus: float
+    # Form ticker inputs - defaulted so placeholder Projections (new
+    # players, tracker snapshots) show no form rather than needing them.
+    # recent_pir: plain mean PIR over the last FORM_WINDOW games.
+    # projection_change: projected_pir now minus what it was before the
+    # player's most recent game (0.0 when there was no earlier projection).
+    recent_pir: float | None = None
+    projection_change: float = 0.0
+
+    @property
+    def form(self) -> str | None:
+        """"hot", "cold", or None - recent scoring vs the projection."""
+        if self.recent_pir is None:
+            return None
+        gap = self.recent_pir - self.projected_pir
+        threshold = max(FORM_MIN_GAP, FORM_MIN_FRACTION * self.projected_pir)
+        if gap >= threshold:
+            return "hot"
+        if gap <= -threshold:
+            return "cold"
+        return None
 
     def __repr__(self) -> str:
         return (
@@ -159,6 +188,14 @@ def build_projections(
         minutes_trend = recency_weighted_mean(minutes_values)
         volatility = stdev(pir_values)
 
+        recent_pir = sum(pir_values[-FORM_WINDOW:]) / len(pir_values[-FORM_WINDOW:])
+        earlier = prows_sorted[:-1]
+        if len(earlier) >= min_games:
+            previous_pir = recency_weighted_mean([float(r["pir_official"]) for r in earlier[-rolling_window:]])
+            projection_change = projected_pir - previous_pir
+        else:
+            projection_change = 0.0
+
         team = prows_sorted[-1]["team"]
         team_results = team_game_results.get(team, [])[-team_win_window:]
         known_results = [win for _game, win in team_results if win is not None]
@@ -177,6 +214,8 @@ def build_projections(
             volatility=volatility,
             team_win_rate=team_win_rate,
             projected_pir_with_bonus=projected_pir + bonus,
+            recent_pir=recent_pir,
+            projection_change=projection_change,
         )
 
     return projections

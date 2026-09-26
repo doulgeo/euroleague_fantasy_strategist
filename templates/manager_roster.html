@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_form.html" as form_macros %}
 {% block title %}{{ manager.name }}'s Roster{% endblock %}
 {% block content %}
   <h1>{{ manager.name }}'s Roster ({{ total }} / 13)</h1>
@@ -23,7 +24,7 @@
           <tr class="{{ 'new-player' if p.player_id in new_ids else '' }}{{ ' gone-player' if p.player_id in gone_ids else '' }}">
             <td>{{ p.player_name }}{% if p.player_id in new_ids %} <span class="new-badge" title="No EuroLeague box-score history in this project's data (E2023+) - new to the league, or a returning player not yet re-synced">NEW</span>{% endif %}{% if p.player_id in estimated_ids %} <span class="new-badge" title="No box-score history, so the projection shown is a manually-set estimate (see set_manual_projection.py), not computed from data.">EST</span>{% endif %}{% if p.player_id in gone_ids %} <span class="gone-badge" title="No longer on any current EuroLeague club roster - their club may have left the competition, or they're unsigned/released. Team shown below is stale. Consider dropping or trading them for a free agent.">GONE</span>{% endif %}{% set injury = injury_status.get(p.player_id) %}{% if injury %} <span class="injury-badge injury-badge-{{ injury.severity }}" title="basketnews injury report{% if injury.round_text %} ({{ injury.round_text }}){% endif %}{% if injury.comment %}: {{ injury.comment }}{% endif %}">{{ injury.status | upper }}</span>{% endif %}</td>
             <td>{{ p.team }}</td>
-            <td>{{ "%.1f"|format(p.projected_pir_with_bonus) }}</td>
+            <td>{{ "%.1f"|format(p.projected_pir_with_bonus) }}{{ form_macros.ticker(p) }}</td>
             <td>{{ p.games_sampled }}</td>
           </tr>
         {% else %}

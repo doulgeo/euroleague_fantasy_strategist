@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_form.html" as form_macros %}
 {% import "_pitch.html" as pitch_macros %}
 {% block title %}Lineup Builder{% endblock %}
 {% block content %}
@@ -82,7 +83,7 @@
         {% for p in excluded %}
           <tr>
             <td>{{ p.player_name }}{{ pitch_macros.injury_badge(p, injury_status) }}</td><td>{{ p.position }}</td><td>{{ p.team }}</td>
-            <td>{{ "%.1f"|format(p.projected_pir_with_bonus) }}</td>
+            <td>{{ "%.1f"|format(p.projected_pir_with_bonus) }}{{ form_macros.ticker(p) }}</td>
           </tr>
         {% endfor %}
       </tbody>
@@ -113,7 +114,7 @@
             <td>Starter{{ " (C)" if p.player_id == initial.captain.player_id else "" }}</td>
             <td>{{ p.position }}</td><td>{{ p.player_name }}{{ pitch_macros.injury_badge(p, injury_status) }}</td><td>{{ p.team }}</td>
             <td>{{ availability_label(p, team_dates) }}</td>
-            <td>{{ "%.1f"|format(p.projected_pir_with_bonus) }}</td>
+            <td>{{ "%.1f"|format(p.projected_pir_with_bonus) }}{{ form_macros.ticker(p) }}</td>
           </tr>
         {% endfor %}
         <tr>
@@ -121,14 +122,14 @@
           <td>{{ initial.sixth_man.position }}</td><td>{{ initial.sixth_man.player_name }}{{ pitch_macros.injury_badge(initial.sixth_man, injury_status) }}</td>
           <td>{{ initial.sixth_man.team }}</td>
           <td>{{ availability_label(initial.sixth_man, team_dates) }}</td>
-          <td>{{ "%.1f"|format(initial.sixth_man.projected_pir_with_bonus) }}</td>
+          <td>{{ "%.1f"|format(initial.sixth_man.projected_pir_with_bonus) }}{{ form_macros.ticker(initial.sixth_man) }}</td>
         </tr>
         {% for p in initial.bench %}
           <tr>
             <td title="Scores at half points automatically - no swap needed to count.">Bench</td>
             <td>{{ p.position }}</td><td>{{ p.player_name }}{{ pitch_macros.injury_badge(p, injury_status) }}</td><td>{{ p.team }}</td>
             <td>{{ availability_label(p, team_dates) }}</td>
-            <td>{{ "%.1f"|format(p.projected_pir_with_bonus) }}</td>
+            <td>{{ "%.1f"|format(p.projected_pir_with_bonus) }}{{ form_macros.ticker(p) }}</td>
           </tr>
         {% endfor %}
       </tbody>
@@ -168,7 +169,7 @@
             <td>Starter{{ " (C)" if p.player_id == recommended.captain.player_id else "" }}{% if p.player_id not in initial_full_ids %} <span class="promoted-badge">PROMOTED</span>{% endif %}</td>
             <td>{{ p.position }}</td><td>{{ p.player_name }}{{ pitch_macros.injury_badge(p, injury_status) }}</td><td>{{ p.team }}</td>
             <td>{{ availability_label(p, team_dates) }}</td>
-            <td>{{ "%.1f"|format(p.projected_pir_with_bonus) }}</td>
+            <td>{{ "%.1f"|format(p.projected_pir_with_bonus) }}{{ form_macros.ticker(p) }}</td>
           </tr>
         {% endfor %}
         <tr>
@@ -176,14 +177,14 @@
           <td>{{ recommended.sixth_man.position }}</td><td>{{ recommended.sixth_man.player_name }}{{ pitch_macros.injury_badge(recommended.sixth_man, injury_status) }}</td>
           <td>{{ recommended.sixth_man.team }}</td>
           <td>{{ availability_label(recommended.sixth_man, team_dates) }}</td>
-          <td>{{ "%.1f"|format(recommended.sixth_man.projected_pir_with_bonus) }}</td>
+          <td>{{ "%.1f"|format(recommended.sixth_man.projected_pir_with_bonus) }}{{ form_macros.ticker(recommended.sixth_man) }}</td>
         </tr>
         {% for p in recommended.bench %}
           <tr class="{{ 'demoted-row' if p.player_id in initial_full_ids else '' }}">
             <td title="Scores at half points automatically - no swap needed to count.">Bench{% if p.player_id in initial_full_ids %} <span class="demoted-badge">DEMOTED</span>{% endif %}</td>
             <td>{{ p.position }}</td><td>{{ p.player_name }}{{ pitch_macros.injury_badge(p, injury_status) }}</td><td>{{ p.team }}</td>
             <td>{{ availability_label(p, team_dates) }}</td>
-            <td>{{ "%.1f"|format(p.projected_pir_with_bonus) }}</td>
+            <td>{{ "%.1f"|format(p.projected_pir_with_bonus) }}{{ form_macros.ticker(p) }}</td>
           </tr>
         {% endfor %}
       </tbody>

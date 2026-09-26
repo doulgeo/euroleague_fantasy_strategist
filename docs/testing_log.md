@@ -2886,3 +2886,42 @@ rendered as "120.2".
 
 **Result**: the tracker shows My score 120.25 and Official 120.25, a
 difference of +0. 68 tests pass.
+
+## 2026-09-26 — Form ticker (projection trend + HOT/COLD)
+
+**What**: user request - show when a player's projection is rising or
+they've been scoring high lately. `engine.projections.Projection` gained
+two defaulted fields, computed in `build_projections`: `recent_pir` (plain
+mean over the last `FORM_WINDOW`=3 games) and `projection_change` (current
+projection minus the projection built from the same history without the
+most recent game; 0.0 if that earlier history had fewer than
+`MIN_GAMES_FOR_PROJECTION` games). A `form` property returns
+`"hot"`/`"cold"` when `recent_pir` beats/trails `projected_pir` by at least
+max(3.0 PIR, 20% of the projection). Rendered by a new
+`templates/_form.html` macro next to Proj+Bonus on the draft board, manager
+roster, watchlist, transfer suggestions, and all lineup-builder tables; the
+draft board also gained a "Form (projection change)" sort. Display only:
+nothing in lineup/transfer logic reads these fields. Placeholder
+projections (NEW/EST players, tracker snapshots) have no form data and
+render nothing. The tracker's round page was left alone on purpose, since
+it shows saved snapshots.
+
+**Tested**:
+- `tests/test_projections.py` (new, 5 tests): a hot streak raises the
+  projection and flags HOT, a cold streak flags COLD, a steady player gets
+  no badge, exactly-min-games history gives a 0.0 change, and placeholder
+  projections have no form. Full suite: 73 passed.
+- Real live pool (E2025+E2026 blend, after round 1): 318 projected players,
+  24 HOT / 44 COLD / 250 neither (~21% flagged, so the threshold isn't
+  noisy); 78 projections up ≥0.5 and 140 down ≥0.5 after round 1. Top riser
+  Shaquille Harrison (+4.1, last-3 avg 25.7 vs 16.7 projected, HOT).
+- All five pages return 200 with tickers rendered against the real DB;
+  the `/draft?sort=form` view was screenshotted in headless Chrome and
+  looked right. It surfaced one case that looks odd, TJ Shorts at ▲2.1 with
+  COLD: the latest game beat the one it pushed out of the 10-game window,
+  but his last-3 average (6.7) is still well under the 9.9 projection.
+  That's correct, so it's explained on `/how-it-works` rather than changed.
+  The value+ticker cell was also wrapping in narrow columns, fixed with a
+  `nowrap` rule.
+- Also corrected `/how-it-works`'s "Which season's data" entry, which still
+  described the pre-2026-09-26 hard season switch rather than the blend.

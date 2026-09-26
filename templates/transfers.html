@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_form.html" as form_macros %}
 {% block title %}Transfer Suggestions{% endblock %}
 {% block content %}
   <h1>Transfer Suggestions</h1>
@@ -34,9 +35,9 @@
           <tr>
             <td>{{ s.drop.player_name }}</td>
             <td>{{ s.drop.position }}</td>
-            <td>{{ "%.1f"|format(s.drop.projected_pir_with_bonus) }}</td>
+            <td>{{ "%.1f"|format(s.drop.projected_pir_with_bonus) }}{{ form_macros.ticker(s.drop) }}</td>
             <td>{{ s.add.player_name }}{% if s.add.player_id in watchlist_ids %} <span class="watch-badge" title="On your watchlist">★</span>{% endif %}</td>
-            <td>{{ "%.1f"|format(s.add.projected_pir_with_bonus) }}</td>
+            <td>{{ "%.1f"|format(s.add.projected_pir_with_bonus) }}{{ form_macros.ticker(s.add) }}</td>
             <td>{{ "%+.1f"|format(s.projected_gain) }}</td>
           </tr>
         {% else %}
