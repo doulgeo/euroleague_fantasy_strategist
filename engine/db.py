@@ -255,6 +255,69 @@ CREATE TABLE IF NOT EXISTS injuries (
 _INJURY_COLUMNS = ("team_name", "team", "position", "player_name", "status", "round_text", "comment", "synced_at")
 
 
+# --- Points tracker (engine.tracker / the /tracker pages) ---
+#
+# The user's REAL per-round lineups, as opposed to /lineup's live-recomputed
+# suggestion. One tracked_lineups row per (season, round, manager, kind):
+# kind is my_day1 / my_final (what the user actually played, before and
+# after the Thu/Fri swap window) or tool_day1 / tool_final (a snapshot of
+# what /lineup suggested at the moment the user saved theirs - recomputing
+# it later would use projections fed by later rounds, i.e. hindsight).
+# tracked_lineup_players snapshots all 13 roster players with their slot,
+# so history survives later trades/drops. Re-saving a kind replaces it.
+# Scores are NOT stored - always recomputed from player_game_stats, so a
+# late box-score sync or a scoring-rule fix flows through automatically.
+
+_CREATE_TRACKED_LINEUPS_SQL = """
+CREATE TABLE IF NOT EXISTS tracked_lineups (
+    lineup_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    season_code TEXT NOT NULL,
+    round INTEGER NOT NULL,
+    manager_id INTEGER NOT NULL REFERENCES managers(manager_id),
+    kind TEXT NOT NULL,
+    formation TEXT NOT NULL,
+    saved_at TEXT NOT NULL,
+    UNIQUE (season_code, round, manager_id, kind)
+)
+"""
+
+_CREATE_TRACKED_LINEUP_PLAYERS_SQL = """
+CREATE TABLE IF NOT EXISTS tracked_lineup_players (
+    lineup_id INTEGER NOT NULL REFERENCES tracked_lineups(lineup_id),
+    player_id TEXT NOT NULL,
+    player_name TEXT NOT NULL,
+    team TEXT,
+    position TEXT,
+    slot TEXT NOT NULL,
+    projected_value REAL,
+    PRIMARY KEY (lineup_id, player_id)
+)
+"""
+
+# Per-round extras the user types in: the official in-game total (to
+# cross-check this project's own scoring model against the real game).
+_CREATE_TRACKED_ROUNDS_SQL = """
+CREATE TABLE IF NOT EXISTS tracked_rounds (
+    season_code TEXT NOT NULL,
+    round INTEGER NOT NULL,
+    manager_id INTEGER NOT NULL REFERENCES managers(manager_id),
+    official_points REAL,
+    notes TEXT,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (season_code, round, manager_id)
+)
+"""
+
+# Tiny key/value store for app-level preferences (e.g. my_manager_id - which
+# of the 12 managers is the user, for the tracker).
+_CREATE_APP_SETTINGS_SQL = """
+CREATE TABLE IF NOT EXISTS app_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT
+)
+"""
+
+
 def get_connection(db_path: Path | str = DB_PATH) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path)
     conn.execute(_CREATE_TABLE_SQL)
@@ -273,6 +336,10 @@ def get_connection(db_path: Path | str = DB_PATH) -> sqlite3.Connection:
     conn.execute(_CREATE_MANUAL_PROJECTIONS_SQL)
     conn.execute(_CREATE_WATCHLIST_SQL)
     conn.execute(_CREATE_INJURIES_SQL)
+    conn.execute(_CREATE_TRACKED_LINEUPS_SQL)
+    conn.execute(_CREATE_TRACKED_LINEUP_PLAYERS_SQL)
+    conn.execute(_CREATE_TRACKED_ROUNDS_SQL)
+    conn.execute(_CREATE_APP_SETTINGS_SQL)
     conn.commit()
     return conn
 
@@ -557,3 +624,97 @@ def all_known_players(conn: sqlite3.Connection) -> list[dict]:
     known player_id from a prior season."""
     cur = conn.execute("SELECT DISTINCT player_id, player_name FROM player_game_stats")
     return [{"player_id": r[0], "player_name": r[1]} for r in cur.fetchall()]
+
+
+def save_tracked_lineup(
+    conn: sqlite3.Connection,
+    season_code: str,
+    round_no: int,
+    manager_id: int,
+    kind: str,
+    formation: str,
+    players: list[dict],
+) -> int:
+    """Replace the (season, round, manager, kind) lineup with `players` -
+    each {player_id, player_name, team, position, slot, projected_value}.
+    One transaction: a failed save never leaves a half-written lineup."""
+    with conn:
+        old = conn.execute(
+            "SELECT lineup_id FROM tracked_lineups WHERE season_code = ? AND round = ? AND manager_id = ? AND kind = ?",
+            (season_code, round_no, manager_id, kind),
+        ).fetchone()
+        if old:
+            conn.execute("DELETE FROM tracked_lineup_players WHERE lineup_id = ?", (old[0],))
+            conn.execute("DELETE FROM tracked_lineups WHERE lineup_id = ?", (old[0],))
+        cur = conn.execute(
+            "INSERT INTO tracked_lineups (season_code, round, manager_id, kind, formation, saved_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (season_code, round_no, manager_id, kind, formation, datetime.now(timezone.utc).isoformat()),
+        )
+        lineup_id = cur.lastrowid
+        conn.executemany(
+            "INSERT INTO tracked_lineup_players "
+            "(lineup_id, player_id, player_name, team, position, slot, projected_value) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [
+                (lineup_id, p["player_id"], p["player_name"], p.get("team"), p.get("position"),
+                 p["slot"], p.get("projected_value"))
+                for p in players
+            ],
+        )
+    return lineup_id
+
+
+def load_tracked_lineups(conn: sqlite3.Connection, season_code: str, manager_id: int) -> dict[tuple[int, str], dict]:
+    """(round, kind) -> {formation, saved_at, players: [row dicts]} for every
+    tracked lineup of one manager in one season."""
+    heads = conn.execute(
+        "SELECT lineup_id, round, kind, formation, saved_at FROM tracked_lineups "
+        "WHERE season_code = ? AND manager_id = ?",
+        (season_code, manager_id),
+    ).fetchall()
+    cols = ("player_id", "player_name", "team", "position", "slot", "projected_value")
+    result: dict[tuple[int, str], dict] = {}
+    for lineup_id, round_no, kind, formation, saved_at in heads:
+        players = conn.execute(
+            f"SELECT {', '.join(cols)} FROM tracked_lineup_players WHERE lineup_id = ?",
+            (lineup_id,),
+        ).fetchall()
+        result[(round_no, kind)] = {
+            "formation": formation,
+            "saved_at": saved_at,
+            "players": [dict(zip(cols, p)) for p in players],
+        }
+    return result
+
+
+def set_official_points(
+    conn: sqlite3.Connection, season_code: str, round_no: int, manager_id: int, official_points: float | None
+) -> None:
+    conn.execute(
+        "INSERT INTO tracked_rounds (season_code, round, manager_id, official_points, updated_at) "
+        "VALUES (?, ?, ?, ?, ?) "
+        "ON CONFLICT (season_code, round, manager_id) DO UPDATE SET "
+        "official_points = excluded.official_points, updated_at = excluded.updated_at",
+        (season_code, round_no, manager_id, official_points, datetime.now(timezone.utc).isoformat()),
+    )
+    conn.commit()
+
+
+def load_tracked_rounds(conn: sqlite3.Connection, season_code: str, manager_id: int) -> dict[int, dict]:
+    """round -> {official_points, notes} for one manager in one season."""
+    cur = conn.execute(
+        "SELECT round, official_points, notes FROM tracked_rounds WHERE season_code = ? AND manager_id = ?",
+        (season_code, manager_id),
+    )
+    return {row[0]: {"official_points": row[1], "notes": row[2]} for row in cur.fetchall()}
+
+
+def get_setting(conn: sqlite3.Connection, key: str) -> str | None:
+    row = conn.execute("SELECT value FROM app_settings WHERE key = ?", (key,)).fetchone()
+    return row[0] if row else None
+
+
+def set_setting(conn: sqlite3.Connection, key: str, value: str | None) -> None:
+    conn.execute("INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)", (key, value))
+    conn.commit()
