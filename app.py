@@ -20,6 +20,7 @@ import subprocess
 import sys
 import sqlite3
 import threading
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -53,6 +54,7 @@ from engine.fantasy_pool import resolve_pool_rows
 from engine.injuries import EXCLUDING_STATUSES, resolve_injury_rows
 from engine.lineup import (
     VALID_FORMATIONS,
+    Lineup,
     availability_label,
     build_lineup,
     choose_active_squad,
@@ -61,7 +63,7 @@ from engine.lineup import (
     team_dates_from_schedule,
 )
 from engine.projections import Projection, actual_fantasy_score, build_projections
-from engine.roster import REQUIRED_COUNTS, Roster
+from engine.roster import REQUIRED_COUNTS, ActiveSquad, Roster
 from engine.dev_draft import randomize_draft
 from engine.rosters import merge_roster
 from engine.transfers import projected_gain, suggest_transfers
@@ -866,6 +868,145 @@ def transfers():
     )
 
 
+@dataclass
+class LineupRecommendation:
+    """Everything the /lineup page shows for one manager + round - also
+    reused by the points tracker (/tracker) to snapshot what the tool
+    suggested at the moment the user saved their own real lineup."""
+
+    roster: Roster | None = None
+    roster_error: str | None = None
+    schedule_error: str | None = None
+    active_squad: ActiveSquad | None = None
+    initial: Lineup | None = None
+    recommended: Lineup | None = None
+    excluded: list[Projection] = field(default_factory=list)
+    team_dates: dict[str, str] = field(default_factory=dict)
+    used_day1_actuals: bool = False
+    initial_full_ids: set[str] = field(default_factory=set)
+    no_swap_total: float | None = None
+    recommended_total: float | None = None
+    injury_status: dict[str, dict] = field(default_factory=dict)
+    pool: dict[str, Projection] = field(default_factory=dict)
+
+
+def compute_recommendation(
+    conn: sqlite3.Connection,
+    manager_id: int,
+    round_no: int,
+    formation: tuple[int, int, int] | None = None,
+) -> LineupRecommendation:
+    roster = None
+    active_squad = None
+    roster_error = None
+    schedule_error = None
+    initial = None
+    recommended = None
+    excluded: list[Projection] = []
+    team_dates: dict[str, str] = {}
+    used_day1_actuals = False
+    initial_full_ids: set[str] = set()
+    no_swap_total = None
+    recommended_total = None
+
+    pool, _new_ids, _gone_ids, _estimated_ids, injury_status = get_pool(conn)
+    out_ids = {pid for pid, inj in injury_status.items() if inj["status"] in EXCLUDING_STATUSES}
+    player_ids = ownership.manager_roster_ids(conn, manager_id)
+    players = [pool[pid] for pid in player_ids if pid in pool]
+    unresolved = len(player_ids) - len(players)
+
+    try:
+        roster = Roster(players=players)
+    except ValueError as e:
+        roster_error = f"{e} (drafted so far: {len(player_ids)}/13, {unresolved} not found in current pool)"
+
+    if roster is not None:
+        schedule_rows = load_schedule(conn, CURRENT_SEASON, round_no=round_no)
+        team_dates = team_dates_from_schedule(schedule_rows, round_no)
+
+        if not team_dates:
+            schedule_error = (
+                f"No scheduled games found for round {round_no} of {CURRENT_SEASON}. "
+                f"Either the schedule hasn't been synced yet (see Sync) or this round genuinely "
+                f"has no games - try a different round."
+            )
+        else:
+            # An "Out" player (basketnews injury report - see
+            # engine.injuries) is zeroed here rather than hard-excluded:
+            # they genuinely can't outscore anyone, so choose_active_squad's
+            # brute-force search naturally benches/excludes them on its
+            # own merit - including gracefully handling more "Out"
+            # players than there are exclusion slots (they'd just fill
+            # the least-bad bench spots at a real 0, correctly modeled).
+            projected_value = (
+                lambda pid: 0.0 if pid in out_ids else pool[pid].projected_pir_with_bonus
+            )  # noqa: E731
+            try:
+                active_squad = choose_active_squad(roster, team_dates, projected_value, formation=formation)
+                initial = build_lineup(active_squad, team_dates, projected_value, formation=formation)
+
+                # The real swap decision is made AFTER day 1's games are
+                # actually over, using their real results - not their
+                # pre-round projection (see engine.lineup's 2026-09-16
+                # correction: demoting a day-1 player now genuinely
+                # halves their score, so blindly trusting a projection
+                # that may since have been proven wrong is a real risk,
+                # not just a missed upside). player_game_stats only ever
+                # has played games, so if day 1's box scores have been
+                # synced (see Sync) by the time this page is visited,
+                # use their actual fantasy score (PIR + the real +10%
+                # win bonus, now that the real outcome is known - see
+                # engine.projections.actual_fantasy_score, confirmed
+                # 2026-09-22) for the swap decision instead of the
+                # projection; day-2 teams always use their projection
+                # (which already includes an *expected* win bonus based
+                # on recent win rate) since their games haven't happened
+                # yet.
+                min_date = min(team_dates.values())
+                day1_teams = {team for team, date in team_dates.items() if date == min_date}
+                day1_actual = {
+                    r["player_id"]: actual_fantasy_score(r["pir_official"], r.get("team_win"))
+                    for r in load_rows(conn, CURRENT_SEASON)
+                    if r.get("round") == round_no and r.get("team") in day1_teams
+                }
+                used_day1_actuals = bool(day1_actual)
+                decision_value = (
+                    lambda pid: day1_actual[pid] if pid in day1_actual else projected_value(pid)
+                )  # noqa: E731
+
+                recommended = swap_after_day1(initial, team_dates, decision_value, formation=formation)
+                excluded = active_squad.excluded
+                initial_full_ids = {p.player_id for p in initial.starters} | {initial.sixth_man.player_id}
+
+                # Total projected score box: what the round is worth
+                # under each lineup, using actual PIR for anyone who's
+                # already played (day1_actual) and projections for
+                # everyone else - the same "best information available
+                # right now" values used for the swap decision above.
+                score_value = {p.player_id: decision_value(p.player_id) for p in active_squad.active}
+                no_swap_total = compute_round_score(initial, score_value)
+                recommended_total = compute_round_score(recommended, score_value)
+            except RuntimeError as e:
+                schedule_error = f"Could not build a lineup for this round: {e}"
+
+    return LineupRecommendation(
+        roster=roster,
+        roster_error=roster_error,
+        schedule_error=schedule_error,
+        active_squad=active_squad,
+        initial=initial,
+        recommended=recommended,
+        excluded=excluded,
+        team_dates=team_dates,
+        used_day1_actuals=used_day1_actuals,
+        initial_full_ids=initial_full_ids,
+        no_swap_total=no_swap_total,
+        recommended_total=recommended_total,
+        injury_status=injury_status,
+        pool=pool,
+    )
+
+
 @app.route("/lineup")
 def lineup():
     conn = get_db()
@@ -887,98 +1028,9 @@ def lineup():
     if selected_formation not in VALID_FORMATIONS:
         selected_formation = None  # "Auto" or a garbled/unrecognized value - fall back to auto-search
 
-    roster = None
-    roster_error = None
-    schedule_error = None
-    initial = None
-    recommended = None
-    excluded: list[Projection] = []
-    team_dates: dict[str, str] = {}
-    used_day1_actuals = False
-    initial_full_ids: set[str] = set()
-    no_swap_total = None
-    recommended_total = None
-
+    rec = LineupRecommendation()
     if selected_manager_id and selected_round:
-        pool, _new_ids, _gone_ids, _estimated_ids, injury_status = get_pool(conn)
-        out_ids = {pid for pid, inj in injury_status.items() if inj["status"] in EXCLUDING_STATUSES}
-        player_ids = ownership.manager_roster_ids(conn, selected_manager_id)
-        players = [pool[pid] for pid in player_ids if pid in pool]
-        unresolved = len(player_ids) - len(players)
-
-        try:
-            roster = Roster(players=players)
-        except ValueError as e:
-            roster_error = f"{e} (drafted so far: {len(player_ids)}/13, {unresolved} not found in current pool)"
-
-        if roster is not None:
-            schedule_rows = load_schedule(conn, CURRENT_SEASON, round_no=selected_round)
-            team_dates = team_dates_from_schedule(schedule_rows, selected_round)
-
-            if not team_dates:
-                schedule_error = (
-                    f"No scheduled games found for round {selected_round} of {CURRENT_SEASON}. "
-                    f"Either the schedule hasn't been synced yet (see Sync) or this round genuinely "
-                    f"has no games - try a different round."
-                )
-            else:
-                # An "Out" player (basketnews injury report - see
-                # engine.injuries) is zeroed here rather than hard-excluded:
-                # they genuinely can't outscore anyone, so choose_active_squad's
-                # brute-force search naturally benches/excludes them on its
-                # own merit - including gracefully handling more "Out"
-                # players than there are exclusion slots (they'd just fill
-                # the least-bad bench spots at a real 0, correctly modeled).
-                projected_value = (
-                    lambda pid: 0.0 if pid in out_ids else pool[pid].projected_pir_with_bonus
-                )  # noqa: E731
-                try:
-                    active_squad = choose_active_squad(roster, team_dates, projected_value, formation=selected_formation)
-                    initial = build_lineup(active_squad, team_dates, projected_value, formation=selected_formation)
-
-                    # The real swap decision is made AFTER day 1's games are
-                    # actually over, using their real results - not their
-                    # pre-round projection (see engine.lineup's 2026-09-16
-                    # correction: demoting a day-1 player now genuinely
-                    # halves their score, so blindly trusting a projection
-                    # that may since have been proven wrong is a real risk,
-                    # not just a missed upside). player_game_stats only ever
-                    # has played games, so if day 1's box scores have been
-                    # synced (see Sync) by the time this page is visited,
-                    # use their actual fantasy score (PIR + the real +10%
-                    # win bonus, now that the real outcome is known - see
-                    # engine.projections.actual_fantasy_score, confirmed
-                    # 2026-09-22) for the swap decision instead of the
-                    # projection; day-2 teams always use their projection
-                    # (which already includes an *expected* win bonus based
-                    # on recent win rate) since their games haven't happened
-                    # yet.
-                    min_date = min(team_dates.values())
-                    day1_teams = {team for team, date in team_dates.items() if date == min_date}
-                    day1_actual = {
-                        r["player_id"]: actual_fantasy_score(r["pir_official"], r.get("team_win"))
-                        for r in load_rows(conn, CURRENT_SEASON)
-                        if r.get("round") == selected_round and r.get("team") in day1_teams
-                    }
-                    used_day1_actuals = bool(day1_actual)
-                    decision_value = (
-                        lambda pid: day1_actual[pid] if pid in day1_actual else projected_value(pid)
-                    )  # noqa: E731
-
-                    recommended = swap_after_day1(initial, team_dates, decision_value, formation=selected_formation)
-                    excluded = active_squad.excluded
-                    initial_full_ids = {p.player_id for p in initial.starters} | {initial.sixth_man.player_id}
-
-                    # Total projected score box: what the round is worth
-                    # under each lineup, using actual PIR for anyone who's
-                    # already played (day1_actual) and projections for
-                    # everyone else - the same "best information available
-                    # right now" values used for the swap decision above.
-                    score_value = {p.player_id: decision_value(p.player_id) for p in active_squad.active}
-                    no_swap_total = compute_round_score(initial, score_value)
-                    recommended_total = compute_round_score(recommended, score_value)
-                except RuntimeError as e:
-                    schedule_error = f"Could not build a lineup for this round: {e}"
+        rec = compute_recommendation(conn, selected_manager_id, selected_round, selected_formation)
 
     return render_template(
         "lineup.html",
@@ -986,22 +1038,22 @@ def lineup():
         rounds=rounds,
         selected_manager_id=selected_manager_id,
         selected_round=selected_round,
-        roster=roster,
-        roster_error=roster_error,
-        schedule_error=schedule_error,
-        initial=initial,
-        recommended=recommended,
-        excluded=excluded,
-        team_dates=team_dates,
+        roster=rec.roster,
+        roster_error=rec.roster_error,
+        schedule_error=rec.schedule_error,
+        initial=rec.initial,
+        recommended=rec.recommended,
+        excluded=rec.excluded,
+        team_dates=rec.team_dates,
         availability_label=availability_label,
         current_season=CURRENT_SEASON,
-        used_day1_actuals=used_day1_actuals,
-        initial_full_ids=initial_full_ids,
+        used_day1_actuals=rec.used_day1_actuals,
+        initial_full_ids=rec.initial_full_ids,
         valid_formations=VALID_FORMATIONS,
         selected_formation=selected_formation,
-        no_swap_total=no_swap_total,
-        recommended_total=recommended_total,
-        injury_status=injury_status if (selected_manager_id and selected_round) else {},
+        no_swap_total=rec.no_swap_total,
+        recommended_total=rec.recommended_total,
+        injury_status=rec.injury_status,
     )
 
 
