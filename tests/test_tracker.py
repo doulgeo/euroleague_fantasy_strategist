@@ -13,7 +13,7 @@ from engine.projections import Projection
 from engine.tracker import (
     actual_scores,
     best_possible_lineup,
-    final_rule_warnings,
+    final_rule_violations,
     lineup_from_slots,
     lineup_to_slots,
     score_round,
@@ -137,21 +137,21 @@ def test_best_possible_is_exact_and_dominates():
     assert result.best >= result.tool
 
 
-def test_final_rule_warnings():
+def test_final_rule_violations():
     day1 = dict(VALID_SLOTS)
-    assert final_rule_warnings(day1, day1, ROSTER, TEAM_DATES) == []
+    assert final_rule_violations(day1, day1, ROSTER, TEAM_DATES) == []
 
     # f2 is a DAY1 Forward on the bench at the lock - promoting them is illegal
     promoted = {**day1, "f2": "starter", "f1": "bench"}
-    assert any("Promoted" in w for w in final_rule_warnings(day1, promoted, ROSTER, TEAM_DATES))
+    assert any("Promoted" in w for w in final_rule_violations(day1, promoted, ROSTER, TEAM_DATES))
 
     # swapping an exclusion
     re_excluded = {**day1, "g4": "bench", "g3": "excluded"}
-    assert any("excluded" in w for w in final_rule_warnings(day1, re_excluded, ROSTER, TEAM_DATES))
+    assert any("excluded" in w for w in final_rule_violations(day1, re_excluded, ROSTER, TEAM_DATES))
 
     # captaincy to g1 (a DAY1 starter who already played) is illegal ...
     bad_captain = {**day1, "g0": "starter", "g1": "captain"}
-    assert any("Captaincy" in w for w in final_rule_warnings(day1, bad_captain, ROSTER, TEAM_DATES))
+    assert any("Captaincy" in w for w in final_rule_violations(day1, bad_captain, ROSTER, TEAM_DATES))
 
 
 def test_saved_lineup_round_trip(tmp_path):

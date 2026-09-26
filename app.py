@@ -78,7 +78,7 @@ from engine.tracker import (
     SLOTS,
     RoundScore,
     actual_scores,
-    final_rule_warnings,
+    final_rule_violations,
     formation_str,
     lineup_formation,
     lineup_from_slots,
@@ -198,6 +198,15 @@ def get_db() -> sqlite3.Connection:
     if "db" not in g:
         g.db = get_connection()
     return g.db
+
+
+@app.context_processor
+def static_version():
+    """?v=<mtime> on the stylesheet link, so a browser never keeps serving a
+    stale cached style.css after it changes (found 2026-09-26: new pages
+    can render broken against an old cached copy)."""
+    css = BASE_DIR / "static" / "style.css"
+    return {"css_version": int(css.stat().st_mtime)}
 
 
 @app.teardown_appcontext
@@ -1139,7 +1148,9 @@ CHART_SERIES = [
 def _cumulative_chart(scores: list[RoundScore]) -> dict | None:
     """Geometry for templates/_line_chart.html: cumulative points per series
     over the rounds that have box scores. A series skips a round it has no
-    value for (e.g. no tool snapshot) by carrying its running total."""
+    value for (e.g. no tool snapshot) by carrying its running total. Every
+    series starts from a "Start" point at 0, so there's a visible line even
+    after a single round (a one-point polyline draws nothing)."""
     scored = [sc for sc in scores if sc.has_box_scores and sc.my_final is not None]
     if not scored:
         return None
@@ -1147,7 +1158,7 @@ def _cumulative_chart(scores: list[RoundScore]) -> dict | None:
     width, height = 720, 260
     left, right, top, bottom = 48, 120, 16, 32
     totals = {key: 0.0 for key, _l, _c in CHART_SERIES}
-    points: dict[str, list[float]] = {key: [] for key, _l, _c in CHART_SERIES}
+    points: dict[str, list[float]] = {key: [0.0] for key, _l, _c in CHART_SERIES}
     for sc in scored:
         for key, _l, _c in CHART_SERIES:
             value = {"mine": sc.my_final, "tool": sc.tool, "best": sc.best}[key]
@@ -1157,7 +1168,7 @@ def _cumulative_chart(scores: list[RoundScore]) -> dict | None:
     y_max = max(max(v) for v in points.values()) or 1.0
     step = 10 ** max(0, len(str(int(y_max))) - 1)
     y_top = (int(y_max / step) + 1) * step
-    n = len(scored)
+    n = len(scored) + 1  # + the Start point
     plot_w, plot_h = width - left - right, height - top - bottom
     x = lambda i: left + (plot_w * i / (n - 1) if n > 1 else plot_w / 2)  # noqa: E731
     y = lambda v: top + plot_h * (1 - v / y_top)  # noqa: E731
@@ -1184,12 +1195,12 @@ def _cumulative_chart(scores: list[RoundScore]) -> dict | None:
     hovers = [
         {
             "x": x(i),
-            "band_x": x(i) - band / 2,
-            "band_w": band,
+            "band_x": max(x(i) - band / 2, left),
+            "band_w": min(band, left + plot_w - (x(i) - band / 2)),
             "round": sc.round_no,
             "values": [(label, points[key][i]) for key, label, _c in CHART_SERIES],
         }
-        for i, sc in enumerate(scored)
+        for i, sc in enumerate(scored, start=1)
     ]
     return {
         "width": width,
@@ -1199,7 +1210,7 @@ def _cumulative_chart(scores: list[RoundScore]) -> dict | None:
         "plot_w": plot_w,
         "plot_h": plot_h,
         "y_ticks": [(y(v), v) for v in range(0, int(y_top) + 1, int(y_top / 4) or 1)],
-        "x_ticks": [(x(i), sc.round_no) for i, sc in enumerate(scored)],
+        "x_ticks": [(x(0), "Start")] + [(x(i), f"R{sc.round_no}") for i, sc in enumerate(scored, start=1)],
         "series": series,
         "hovers": hovers,
     }
@@ -1367,6 +1378,13 @@ def tracker_save(round_no: int):
         flash(f"Not saved - {e}", "error")
         return _render_tracker_round(conn, my_id, round_no, kind, slots)
 
+    if kind == "final" and day1_slots is not None:
+        violations = final_rule_violations(day1_slots, slots, players, rec.team_dates)
+        if violations:
+            for violation in violations:
+                flash(f"Not saved - {violation}", "error")
+            return _render_tracker_round(conn, my_id, round_no, kind, slots)
+
     save_tracked_lineup(
         conn, CURRENT_SEASON, round_no, my_id, f"my_{kind}",
         formation_str(lineup_formation(lineup)), snapshot_rows(players, slots),
@@ -1381,9 +1399,10 @@ def tracker_save(round_no: int):
             snapshot_rows(rec.roster.players, lineup_to_slots(tool_lineup, rec.excluded)),
         )
 
-    if kind == "final" and day1_slots is not None:
-        for warning in final_rule_warnings(day1_slots, slots, players, rec.team_dates):
-            flash(f"Saved, but check: {warning}", "warning")
+    if kind == "day1" and "my_final" in lineups:
+        final_slots = players_from_snapshot(lineups["my_final"])[1]
+        for violation in final_rule_violations(slots, final_slots, players, rec.team_dates):
+            flash(f"Your saved final lineup no longer fits this day-1 lineup - re-save it: {violation}", "warning")
     flash(f"Round {round_no} {'day-1' if kind == 'day1' else 'final'} lineup saved.", "success")
     return redirect(url_for("tracker_round", round_no=round_no))
 

@@ -141,17 +141,18 @@ def players_from_snapshot(snapshot: dict) -> tuple[list[Projection], dict[str, s
     return players, {r["player_id"]: r["slot"] for r in snapshot["players"]}
 
 
-def final_rule_warnings(
+def final_rule_violations(
     day1_slots: dict[str, str],
     final_slots: dict[str, str],
     players: list[Projection],
     team_dates: dict[str, str],
 ) -> list[str]:
-    """Soft checks of a final lineup against its day-1 lock (see
-    docs/game_rules.md, "The turn-based substitution mechanic"). Warnings,
-    not errors: the real game already enforces these, so a mismatch most
-    likely means a typo in what was entered here - but it's the user's
-    record to keep."""
+    """Swap-window rules a final lineup must respect relative to its day-1
+    lock (see docs/game_rules.md, "The turn-based substitution mechanic").
+    Empty list = legal. The /tracker save route refuses a final lineup
+    with any violation (made a hard restriction 2026-09-26, per the user -
+    it was a soft warning at first); the same captain rule is enforced in
+    engine.lineup.swap_after_day1 for the tool's own suggestion."""
     warnings = []
     names = {p.player_id: p.player_name for p in players}
 

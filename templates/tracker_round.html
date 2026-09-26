@@ -72,7 +72,8 @@
           <th>Day 1{% if lineups.my_day1 %} <span class="saved-tag">saved</span>{% endif %}</th>
           <th>Final{% if lineups.my_final %} <span class="saved-tag">saved</span>{% endif %}</th>
           {% if score.has_box_scores %}
-            <th title="Real PIR + real 10% win bonus, before the slot multiplier.">Actual</th>
+            <th title="Real PIR, plus the real 10% bonus if their team won - before any captain/bench multiplier.">PIR+bonus</th>
+            <th title="What this player actually earned you: PIR+bonus x their slot in your final lineup (captain 1.5x, starter/6th 1x, bench 0.5x, excluded 0).">Pts</th>
             <th title="Where this player sits in the best possible lineup.">Best</th>
           {% endif %}
         </tr>
@@ -99,6 +100,7 @@
             {% if score.has_box_scores %}
               {% set line = actual_by_id.get(p.player_id) %}
               <td>{{ "%.1f"|format(line.fantasy) if line and line.played else "DNP" }}</td>
+              <td title="{{ slot_labels[line.slot] if line }} x{{ slot_multipliers[line.slot] if line }}"><strong>{{ "%.1f"|format(line.points) if line else "-" }}</strong></td>
               <td>{{ slot_labels.get(score.best_slots.get(p.player_id), "-") }}</td>
             {% endif %}
           </tr>
@@ -109,7 +111,11 @@
           <td colspan="5"></td>
           <td><button type="submit" form="day1-form">Save Day 1</button></td>
           <td><button type="submit" form="final-form">Save Final</button></td>
-          {% if score.has_box_scores %}<td colspan="2"></td>{% endif %}
+          {% if score.has_box_scores %}
+            <td><strong>Total</strong></td>
+            <td><strong>{{ "%.1f"|format(score.my_final) if score.my_final is not none else "-" }}</strong></td>
+            <td></td>
+          {% endif %}
         </tr>
       </tfoot>
     </table>
@@ -133,26 +139,4 @@
     </div>
   {% endif %}
 
-  {% if score.breakdown %}
-    <h2>Points breakdown (final lineup)</h2>
-    <table>
-      <thead>
-        <tr><th>Player</th><th>Slot</th><th>Actual</th><th>x</th><th>Points</th></tr>
-      </thead>
-      <tbody>
-        {% for line in score.breakdown %}
-          <tr class="{{ 'row-muted' if line.slot == 'excluded' }}">
-            <td>{{ line.player_name }} <span class="muted">{{ line.team }}</span></td>
-            <td>{{ slot_labels[line.slot] }}</td>
-            <td>{{ "%.1f"|format(line.fantasy) if line.played else "DNP" }}</td>
-            <td>{{ slot_multipliers[line.slot] }}</td>
-            <td><strong>{{ "%.1f"|format(line.points) }}</strong></td>
-          </tr>
-        {% endfor %}
-      </tbody>
-      <tfoot>
-        <tr><th colspan="4">Total</th><th>{{ "%.1f"|format(score.my_final) }}</th></tr>
-      </tfoot>
-    </table>
-  {% endif %}
 {% endblock %}
