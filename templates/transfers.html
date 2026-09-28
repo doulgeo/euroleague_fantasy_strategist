@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% import "_form.html" as form_macros %}
+{% import "_points.html" as points_macros %}
 {% block title %}Transfer Suggestions{% endblock %}
 {% block content %}
   <h1>Transfer Suggestions</h1>
@@ -25,8 +26,10 @@
           <th title="A player on this manager's roster suggested as the weaker side of a same-position upgrade.">Drop</th>
           <th title="Shared position for the swap - only same-position players are compared.">Position</th>
           <th title="The rostered player's projected PIR for their next game.">Current proj.</th>
+          <th title="The rostered player's real fantasy points this season (PIR + 10% win bonus), and per game.">Current pts</th>
           <th title="A free agent (unowned) at the same position, projected higher.">Add</th>
           <th title="That free agent's projected PIR for their next game.">Available proj.</th>
+          <th title="That free agent's real fantasy points this season (PIR + 10% win bonus), and per game.">Available pts</th>
           <th title="Available proj. minus Current proj. - only shown above a minimum threshold.">Gain</th>
         </tr>
       </thead>
@@ -36,12 +39,14 @@
             <td>{{ s.drop.player_name }}</td>
             <td>{{ s.drop.position }}</td>
             <td>{{ "%.1f"|format(s.drop.projected_pir_with_bonus) }}{{ form_macros.ticker(s.drop) }}</td>
+            <td class="nowrap">{{ points_macros.short(points, s.drop.player_id) }}</td>
             <td>{{ s.add.player_name }}{% if s.add.player_id in watchlist_ids %} <span class="watch-badge" title="On your watchlist">★</span>{% endif %}</td>
             <td>{{ "%.1f"|format(s.add.projected_pir_with_bonus) }}{{ form_macros.ticker(s.add) }}</td>
+            <td class="nowrap">{{ points_macros.short(points, s.add.player_id) }}</td>
             <td>{{ "%+.1f"|format(s.projected_gain) }}</td>
           </tr>
         {% else %}
-          <tr><td colspan="6">No upgrade suggestions above the minimum gap.</td></tr>
+          <tr><td colspan="8">No upgrade suggestions above the minimum gap.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -54,10 +59,12 @@
         <div class="stat-box-item">
           <span class="stat-box-label">Drop: {{ compare.drop.player_name }}</span>
           <span class="stat-box-value">{{ "%.1f"|format(compare.drop.projected_pir_with_bonus) }}</span>
+          <span class="stat-box-label">{{ points_macros.short(points, compare.drop.player_id) }}</span>
         </div>
         <div class="stat-box-item">
           <span class="stat-box-label">Add: {{ compare.add.player_name }}</span>
           <span class="stat-box-value">{{ "%.1f"|format(compare.add.projected_pir_with_bonus) }}</span>
+          <span class="stat-box-label">{{ points_macros.short(points, compare.add.player_id) }}</span>
         </div>
         <div class="stat-box-item">
           <span class="stat-box-label">Gain</span>
@@ -72,7 +79,7 @@
         <select name="drop_id" onchange="this.form.submit()">
           <option value="">Choose a player...</option>
           {% for p in roster.players|sort(attribute="projected_pir_with_bonus", reverse=True) %}
-            <option value="{{ p.player_id }}" {% if selected_drop and selected_drop.player_id == p.player_id %}selected{% endif %}>{{ p.player_name }} ({{ p.position }}, {{ p.team }}, {{ "%.1f"|format(p.projected_pir_with_bonus) }})</option>
+            <option value="{{ p.player_id }}" {% if selected_drop and selected_drop.player_id == p.player_id %}selected{% endif %}>{{ p.player_name }} ({{ p.position }}, {{ p.team }}, {{ "%.1f"|format(p.projected_pir_with_bonus) }} proj; {{ points_macros.short(points, p.player_id) }})</option>
           {% endfor %}
         </select>
       </label>
@@ -82,7 +89,7 @@
             <option value="">Choose a player...</option>
             {% for p in add_candidates %}
               {% set owner_id = owners.get(p.player_id) %}
-              <option value="{{ p.player_id }}" {% if compare and compare.add.player_id == p.player_id %}selected{% endif %}>{{ '★ ' if p.player_id in watchlist_ids else '' }}{{ p.player_name }} ({{ p.team }}, {{ "%.1f"|format(p.projected_pir_with_bonus) }}) - {{ manager_names.get(owner_id, owner_id) if owner_id else 'Free agent' }}</option>
+              <option value="{{ p.player_id }}" {% if compare and compare.add.player_id == p.player_id %}selected{% endif %}>{{ '★ ' if p.player_id in watchlist_ids else '' }}{{ p.player_name }} ({{ p.team }}, {{ "%.1f"|format(p.projected_pir_with_bonus) }} proj; {{ points_macros.short(points, p.player_id) }}) - {{ manager_names.get(owner_id, owner_id) if owner_id else 'Free agent' }}</option>
             {% endfor %}
           </select>
         </label>

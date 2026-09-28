@@ -447,3 +447,4 @@ button:hover, input[type="submit"]:hover { background: var(--orange-dark); }
 .form-hot { background: #c4572a; }
 .form-cold { background: #4a6f8a; }
 td:has(> .form-tick) { white-space: nowrap; }
+.nowrap { white-space: nowrap; }

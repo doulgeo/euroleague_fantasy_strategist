@@ -82,6 +82,43 @@ class Projection:
         )
 
 
+@dataclass
+class SeasonPoints:
+    """A player's real fantasy points so far this season - PIR plus the
+    real +10% win bonus per game (actual_fantasy_score), before any slot
+    multiplier (no captain 1.5x, no bench halving). Display only."""
+
+    games: int
+    total: float
+    last: float  # most recent played game's points
+    last_round: int | None
+
+    @property
+    def avg(self) -> float:
+        return self.total / self.games if self.games else 0.0
+
+
+def season_points(rows: list[dict]) -> dict[str, SeasonPoints]:
+    """player_id -> SeasonPoints over the played games in `rows` (pass one
+    season's rows). DNPs don't count as games."""
+    played = sorted(
+        (r for r in rows if r.get("played") and r.get("round") is not None),
+        key=lambda r: (r["round"], r.get("game_date") or "", str(r.get("game_code"))),
+    )
+    out: dict[str, SeasonPoints] = {}
+    for r in played:
+        pts = actual_fantasy_score(float(r["pir_official"]), r.get("team_win"))
+        sp = out.get(r["player_id"])
+        if sp is None:
+            out[r["player_id"]] = SeasonPoints(games=1, total=pts, last=pts, last_round=r["round"])
+        else:
+            sp.games += 1
+            sp.total += pts
+            sp.last = pts
+            sp.last_round = r["round"]
+    return out
+
+
 def parse_date(s: str | None) -> datetime | None:
     if not s:
         return None

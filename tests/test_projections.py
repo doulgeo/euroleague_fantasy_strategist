@@ -39,3 +39,16 @@ def test_no_previous_projection_means_zero_change():
 def test_placeholder_projection_has_no_form():
     p = Projection("X", "X", "Guard", "AAA", 0, 0.0, 0.0, 0.0, None, 0.0)
     assert p.form is None and p.recent_pir is None
+
+
+def test_season_points_totals_win_bonus_and_last_game():
+    from engine.projections import season_points
+
+    rows = _rows([10, 20])
+    rows[1]["team_win"] = False
+    rows.append({**rows[0], "round": 3, "game_code": 3, "played": False, "pir_official": 0})
+    sp = season_points(rows)["P1"]
+    assert sp.games == 2  # the DNP doesn't count
+    assert sp.total == 11 + 20  # +10% only on the win
+    assert sp.avg == 15.5
+    assert sp.last == 20 and sp.last_round == 2

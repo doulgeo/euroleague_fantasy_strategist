@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% import "_form.html" as form_macros %}
+{% import "_points.html" as points_macros %}
 {% block title %}Draft Board{% endblock %}
 {% block content %}
   <h1>Draft Board</h1>
@@ -57,6 +58,7 @@
           <th title="Projected PIR for this player's next game: recency-weighted average of their last 10 games, plus a team win-rate bonus.">Proj+Bonus</th>
           <th title="Value over replacement: projected value minus the last plausibly-drafted player at this position across all 12 managers.">VORP</th>
           <th title="Games sampled to build the projection (up to 10, most recent weighted highest).">n</th>
+          {{ points_macros.headers() }}
           <th title="Manager who has already drafted this player, if any.">Owner</th>
           <th title="Log a draft pick for this player.">Action</th>
         </tr>
@@ -70,6 +72,7 @@
             <td>{{ "%.1f"|format(row.player.projected_pir_with_bonus) }}{{ form_macros.ticker(row.player) }}</td>
             <td>{{ "%+.1f"|format(row.vorp) }}</td>
             <td>{{ row.player.games_sampled }}</td>
+            {{ points_macros.cells(points, row.player.player_id) }}
             <td>
               {% if row.owner_id %}
                 {{ manager_names.get(row.owner_id, row.owner_id) }}
@@ -110,7 +113,7 @@
             </td>
           </tr>
           {% if row.tier_break_after %}
-            <tr class="tier-break"><td colspan="8">&mdash; tier break &mdash;</td></tr>
+            <tr class="tier-break"><td colspan="11">&mdash; tier break &mdash;</td></tr>
           {% endif %}
         {% endfor %}
       </tbody>

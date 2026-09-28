@@ -1,0 +1,29 @@
+{# Real fantasy points scored so far this season (engine.projections.
+   season_points): PIR + the real +10% win bonus per game, before any slot
+   multiplier - no captain 1.5x, no bench halving. `points` is the
+   player_id -> SeasonPoints dict every page using these gets from
+   app.py::get_season_points. A player with no games this season shows a
+   dash. #}
+{% macro headers() -%}
+  <th title="Real fantasy points scored this season (PIR + 10% win bonus per game), before captain/bench multipliers.">Pts</th>
+  <th title="Real fantasy points per game played this season.">Avg</th>
+  <th title="Real fantasy points in their most recent game (hover a value for the round).">Last</th>
+{%- endmacro %}
+
+{% macro cells(points, player_id) -%}
+  {%- set sp = points.get(player_id) -%}
+  {%- if sp -%}
+    <td title="{{ sp.games }} game{{ '' if sp.games == 1 else 's' }} played">{{ "%.1f"|format(sp.total) }}</td>
+    <td>{{ "%.1f"|format(sp.avg) }}</td>
+    <td title="Round {{ sp.last_round }}">{{ "%.1f"|format(sp.last) }}</td>
+  {%- else -%}
+    <td class="muted" title="No games played this season">&mdash;</td><td class="muted">&mdash;</td><td class="muted">&mdash;</td>
+  {%- endif -%}
+{%- endmacro %}
+
+{# Compact one-liner for places a table column doesn't fit (dropdown
+   options, stat boxes): "37.3 pts, 12.4/g". #}
+{% macro short(points, player_id) -%}
+  {%- set sp = points.get(player_id) -%}
+  {%- if sp -%}{{ "%.1f"|format(sp.total) }} pts, {{ "%.1f"|format(sp.avg) }}/g{%- else -%}no games yet{%- endif -%}
+{%- endmacro %}

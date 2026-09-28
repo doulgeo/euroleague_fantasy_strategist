@@ -15,6 +15,10 @@ for personal use among friends — never monetized or redistributed.
   recent form plus a team win-rate bonus. A **form ticker** next to every
   projection shows how it moved after the player's last game (▲/▼) and
   flags players scoring well above/below it over their last 3 (HOT/COLD).
+- **Season points** — every player's real fantasy points so far this season
+  (PIR + the 10% win bonus, before captain/bench multipliers): season total,
+  per-game average, and last game, shown on the draft board (sortable),
+  transfer suggestions/compare tool, and lineup builder.
 - **Draft board** — every player ranked per position, with VORP
   (scarcity-adjusted value) and tiering (where the drop-off to the next
   player actually matters).

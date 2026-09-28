@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% import "_form.html" as form_macros %}
+{% import "_points.html" as points_macros %}
 {% import "_pitch.html" as pitch_macros %}
 {% block title %}Lineup Builder{% endblock %}
 {% block content %}
@@ -77,6 +78,7 @@
         <tr>
           <th>Player</th><th>Position</th><th>Team</th>
           <th title="Projected PIR for this player's next game.">Proj+Bonus</th>
+          {{ points_macros.headers() }}
         </tr>
       </thead>
       <tbody>
@@ -84,6 +86,7 @@
           <tr>
             <td>{{ p.player_name }}{{ pitch_macros.injury_badge(p, injury_status) }}</td><td>{{ p.position }}</td><td>{{ p.team }}</td>
             <td>{{ "%.1f"|format(p.projected_pir_with_bonus) }}{{ form_macros.ticker(p) }}</td>
+            {{ points_macros.cells(points, p.player_id) }}
           </tr>
         {% endfor %}
       </tbody>
@@ -106,6 +109,7 @@
           <th>Slot</th><th>Position</th><th>Player</th><th>Team</th>
           <th title="day1 = plays on this round's earliest date; later = plays a subsequent date this round; not playing = no game this round.">Availability</th>
           <th title="Projected PIR for this player's next game.">Proj+Bonus</th>
+          {{ points_macros.headers() }}
         </tr>
       </thead>
       <tbody>
@@ -115,6 +119,7 @@
             <td>{{ p.position }}</td><td>{{ p.player_name }}{{ pitch_macros.injury_badge(p, injury_status) }}</td><td>{{ p.team }}</td>
             <td>{{ availability_label(p, team_dates) }}</td>
             <td>{{ "%.1f"|format(p.projected_pir_with_bonus) }}{{ form_macros.ticker(p) }}</td>
+            {{ points_macros.cells(points, p.player_id) }}
           </tr>
         {% endfor %}
         <tr>
@@ -123,6 +128,7 @@
           <td>{{ initial.sixth_man.team }}</td>
           <td>{{ availability_label(initial.sixth_man, team_dates) }}</td>
           <td>{{ "%.1f"|format(initial.sixth_man.projected_pir_with_bonus) }}{{ form_macros.ticker(initial.sixth_man) }}</td>
+          {{ points_macros.cells(points, initial.sixth_man.player_id) }}
         </tr>
         {% for p in initial.bench %}
           <tr>
@@ -130,6 +136,7 @@
             <td>{{ p.position }}</td><td>{{ p.player_name }}{{ pitch_macros.injury_badge(p, injury_status) }}</td><td>{{ p.team }}</td>
             <td>{{ availability_label(p, team_dates) }}</td>
             <td>{{ "%.1f"|format(p.projected_pir_with_bonus) }}{{ form_macros.ticker(p) }}</td>
+            {{ points_macros.cells(points, p.player_id) }}
           </tr>
         {% endfor %}
       </tbody>
@@ -161,6 +168,7 @@
           <th>Slot</th><th>Position</th><th>Player</th><th>Team</th>
           <th title="day1 = plays on this round's earliest date; later = plays a subsequent date this round; not playing = no game this round.">Availability</th>
           <th title="Projected PIR for this player's next game.">Proj+Bonus</th>
+          {{ points_macros.headers() }}
         </tr>
       </thead>
       <tbody>
@@ -170,6 +178,7 @@
             <td>{{ p.position }}</td><td>{{ p.player_name }}{{ pitch_macros.injury_badge(p, injury_status) }}</td><td>{{ p.team }}</td>
             <td>{{ availability_label(p, team_dates) }}</td>
             <td>{{ "%.1f"|format(p.projected_pir_with_bonus) }}{{ form_macros.ticker(p) }}</td>
+            {{ points_macros.cells(points, p.player_id) }}
           </tr>
         {% endfor %}
         <tr>
@@ -178,6 +187,7 @@
           <td>{{ recommended.sixth_man.team }}</td>
           <td>{{ availability_label(recommended.sixth_man, team_dates) }}</td>
           <td>{{ "%.1f"|format(recommended.sixth_man.projected_pir_with_bonus) }}{{ form_macros.ticker(recommended.sixth_man) }}</td>
+          {{ points_macros.cells(points, recommended.sixth_man.player_id) }}
         </tr>
         {% for p in recommended.bench %}
           <tr class="{{ 'demoted-row' if p.player_id in initial_full_ids else '' }}">
@@ -185,6 +195,7 @@
             <td>{{ p.position }}</td><td>{{ p.player_name }}{{ pitch_macros.injury_badge(p, injury_status) }}</td><td>{{ p.team }}</td>
             <td>{{ availability_label(p, team_dates) }}</td>
             <td>{{ "%.1f"|format(p.projected_pir_with_bonus) }}{{ form_macros.ticker(p) }}</td>
+            {{ points_macros.cells(points, p.player_id) }}
           </tr>
         {% endfor %}
       </tbody>

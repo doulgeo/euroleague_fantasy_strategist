@@ -68,7 +68,14 @@ from engine.lineup import (
     swap_after_day1,
     team_dates_from_schedule,
 )
-from engine.projections import Projection, actual_fantasy_score, blend_season_rows, build_projections
+from engine.projections import (
+    Projection,
+    SeasonPoints,
+    actual_fantasy_score,
+    blend_season_rows,
+    build_projections,
+    season_points,
+)
 from engine.roster import REQUIRED_COUNTS, ActiveSquad, Roster
 from engine.dev_draft import randomize_draft
 from engine.rosters import merge_roster
@@ -298,6 +305,20 @@ def get_pool(
     return result
 
 
+def get_season_points(conn: sqlite3.Connection) -> dict[str, SeasonPoints]:
+    """player_id -> real fantasy points so far this season (see
+    engine.projections.season_points) - shown next to projections on the
+    draft board, transfers and lineup pages. Cached like get_pool."""
+    key = ("season_points", CURRENT_SEASON)
+    mtime_ns = DB_PATH.stat().st_mtime_ns
+    cached = _projection_cache.get(key)
+    if cached and cached[0] == mtime_ns:
+        return cached[1]
+    result = season_points(load_rows(conn, season_code=CURRENT_SEASON))
+    _projection_cache[key] = (mtime_ns, result)
+    return result
+
+
 @app.route("/")
 def index():
     conn = get_db()
@@ -310,18 +331,22 @@ SORT_OPTIONS = [
     ("value", "Projected value"),
     ("vorp", "VORP"),
     ("form", "Form (projection change)"),
+    ("pts", "Season points"),
+    ("avg", "Points per game"),
     ("n", "Games sampled"),
     ("player_name", "Player name"),
     ("team", "Team"),
 ]
 
 _SORT_KEY_FNS = {
-    "value": lambda p, replacement: p.projected_pir_with_bonus,
-    "vorp": lambda p, replacement: p.projected_pir_with_bonus - replacement[p.position],
-    "form": lambda p, replacement: p.projection_change,
-    "n": lambda p, replacement: p.games_sampled,
-    "player_name": lambda p, replacement: p.player_name,
-    "team": lambda p, replacement: p.team or "",
+    "value": lambda p, replacement, pts: p.projected_pir_with_bonus,
+    "vorp": lambda p, replacement, pts: p.projected_pir_with_bonus - replacement[p.position],
+    "form": lambda p, replacement, pts: p.projection_change,
+    "pts": lambda p, replacement, pts: pts[p.player_id].total if p.player_id in pts else 0.0,
+    "avg": lambda p, replacement, pts: pts[p.player_id].avg if p.player_id in pts else 0.0,
+    "n": lambda p, replacement, pts: p.games_sampled,
+    "player_name": lambda p, replacement, pts: p.player_name,
+    "team": lambda p, replacement, pts: p.team or "",
 }
 
 
@@ -481,6 +506,7 @@ def draft():
     managers = ownership.list_managers(conn)
     owned_ids = ownership.all_owned_ids(conn)
     watchlist_ids = set(load_watchlist(conn).keys())
+    points = get_season_points(conn)
 
     hide_drafted = request.args.get("hide_drafted") == "1"
     position_filter = request.args.get("position")
@@ -507,7 +533,7 @@ def draft():
         breaks = tier_breaks(ranked)  # meaningful only in this natural value order
         tier_break_ids = {ranked[i].player_id for i in breaks}
 
-        display_list = sorted(ranked, key=lambda p: key_fn(p, replacement), reverse=(sort_dir == "desc"))
+        display_list = sorted(ranked, key=lambda p: key_fn(p, replacement, points), reverse=(sort_dir == "desc"))
 
         rows_out = []
         for i, p in enumerate(display_list):
@@ -540,6 +566,7 @@ def draft():
         sort_key=sort_key,
         sort_dir=sort_dir,
         sort_options=SORT_OPTIONS,
+        points=points,
     )
 
 
@@ -907,6 +934,7 @@ def transfers():
         manager_names=manager_names,
         watchlist_ids=watchlist_ids,
         compare=compare,
+        points=get_season_points(conn),
     )
 
 
@@ -1097,6 +1125,7 @@ def lineup():
         no_swap_total=rec.no_swap_total,
         recommended_total=rec.recommended_total,
         injury_status=rec.injury_status,
+        points=get_season_points(conn),
     )
 
 

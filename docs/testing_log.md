@@ -2925,3 +2925,30 @@ it shows saved snapshots.
   `nowrap` rule.
 - Also corrected `/how-it-works`'s "Which season's data" entry, which still
   described the pre-2026-09-26 hard season switch rather than the blend.
+
+## 2026-09-28 — Season points on the draft board, transfers and lineup builder
+
+**What**: user asked to see every player's real fantasy points so far
+(overall, not bench- or captain-adjusted) on the transfer list, the lineup
+predictor and the draft board. New `engine.projections.season_points(rows)`
+returns player_id -> `SeasonPoints` (games, total, avg, last, last_round),
+scoring each played game with the existing `actual_fantasy_score` (PIR +
+10% win bonus, the same function the tracker's scoring was confirmed with).
+DNPs don't count as games. `app.py::get_season_points` computes it over
+CURRENT_SEASON rows, cached on DB mtime like `get_pool`. New
+`templates/_points.html` macros: Pts/Avg/Last columns on the draft board
+and all three lineup-builder tables, and a compact "X pts, Y/g" in the
+transfer suggestions table, the compare box and both compare dropdowns.
+The draft board gained "Season points" and "Points per game" sorts.
+
+**Tested**:
+- `tests/test_projections.py::test_season_points_totals_win_bonus_and_last_game`:
+  win bonus only on wins, DNP excluded, avg/last correct. Full suite: 74
+  passed.
+- Real DB (E2026 after round 1): top scorer 36.3 pts, spot-checked
+  against his raw row (33 PIR, team won: 33 x 1.1 = 36.3).
+- `/draft`, `/transfers?manager_id=40` (+ a drop selected) and
+  `/lineup?manager_id=40` all 200 and screenshotted in headless Chrome:
+  columns render, players with no game this season (e.g. injured Musa,
+  Larkin) show dashes, `/draft?sort=pts` puts Carlik Jones (36.3) first
+  among guards. The transfer pts cells wrapped, fixed with a `nowrap` class.
