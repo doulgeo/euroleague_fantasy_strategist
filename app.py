@@ -787,12 +787,41 @@ def transactions():
     conn = get_db()
     managers = ownership.list_managers(conn)
     manager_names = {m["manager_id"]: m["name"] for m in managers}
-    pool, _new_ids, _gone_ids, _estimated_ids, _injury_status = get_pool(conn)
+    pool, _new_ids, gone_ids, _estimated_ids, _injury_status = get_pool(conn)
     history = ownership.transaction_history(conn, limit=200)
     for t in history:
         p = pool.get(t["player_id"])
         t["player_name"] = p.player_name if p else t["player_id"]
-    return render_template("transactions.html", managers=managers, manager_names=manager_names, history=history)
+
+    # Player pickers, so nobody has to know an internal player_id: free
+    # agents for the add form, and every owned player grouped by manager for
+    # the drop/trade forms (a trade's managers are inferred from ownership).
+    owners = ownership.owner_map(conn)
+    free_agents = sorted(
+        (p for pid, p in pool.items() if pid not in owners and pid not in gone_ids),
+        key=lambda p: p.player_name,
+    )
+    owned_by_manager = []
+    for m in managers:
+        pids = [pid for pid, mid in owners.items() if mid == m["manager_id"]]
+        players = sorted(
+            ({"player_id": pid, "player_name": pool[pid].player_name if pid in pool else pid,
+              "position": pool[pid].position if pid in pool else None,
+              "team": pool[pid].team if pid in pool else None} for pid in pids),
+            key=lambda d: d["player_name"],
+        )
+        if players:
+            owned_by_manager.append((m["name"], players))
+
+    return render_template(
+        "transactions.html",
+        managers=managers,
+        manager_names=manager_names,
+        history=history,
+        free_agents=free_agents,
+        owned_by_manager=owned_by_manager,
+        default_round=next_unplayed_round(conn, CURRENT_SEASON),
+    )
 
 
 @app.route("/transactions/add", methods=["POST"])
@@ -834,9 +863,15 @@ def transactions_drop():
 def transactions_trade():
     conn = get_db()
     player_a_id = request.form["player_a_id"].strip()
-    manager_a_id = int(request.form["manager_a_id"])
     player_b_id = request.form["player_b_id"].strip()
-    manager_b_id = int(request.form["manager_b_id"])
+    manager_a_id = ownership.current_owner(conn, player_a_id)
+    manager_b_id = ownership.current_owner(conn, player_b_id)
+    if manager_a_id is None or manager_b_id is None:
+        flash("Both players in a trade must currently be owned.", "error")
+        return redirect(url_for("transactions"))
+    if manager_a_id == manager_b_id:
+        flash("Both players belong to the same manager - pick one player from each side.", "error")
+        return redirect(url_for("transactions"))
     round_raw = request.form.get("round", "").strip()
     round_ = int(round_raw) if round_raw else None
     notes = request.form.get("notes", "").strip() or None

@@ -2952,3 +2952,40 @@ The draft board gained "Season points" and "Points per game" sorts.
   columns render, players with no game this season (e.g. injured Musa,
   Larkin) show dashes, `/draft?sort=pts` puts Carlik Jones (36.3) first
   among guards. The transfer pts cells wrapped, fixed with a `nowrap` class.
+
+## 2026-09-28 — Transactions page: player dropdowns instead of raw player IDs
+
+**What**: the user couldn't use `/transactions` because the add, drop and
+trade forms asked for a raw EuroLeague `player_id` (e.g. `013369`), which
+the app never shows anywhere. Replaced every ID box with a `<select>`:
+- **Add** lists free agents only (unowned and not GONE), with position and
+  team.
+- **Drop** and **trade** list owned players inside an `<optgroup>` per
+  manager.
+
+The trade form no longer asks for the managers. `/transactions/trade` now
+infers each side's manager from current ownership and rejects the trade
+if either player is unowned or both belong to the same manager. The Round
+field defaults to `next_unplayed_round`.
+
+**Tested** (Flask test client against a copy of `euroleague.db`): the page
+renders 12 manager groups in each of the 3 owned-player dropdowns (36) and
+169 free agents. A trade swapped both players' owners, with two linked
+`trade` transaction rows. A same-manager trade was rejected. A drop
+removed ownership, and a free-agent add to the manager who then had space
+re-added the player. The real DB's md5 was unchanged after the run.
+
+**Correction, test mishap**: the first attempt at this test patched
+`app.DB_PATH`, but `engine.db.get_connection` binds its default path when
+the function is defined. So that run wrote to the **real** `euroleague.db`:
+- one test trade (player 003469, manager 40 <-> player 012640, manager 41);
+- then a drop of 003469.
+
+This was caught immediately, because the copy's ownership didn't change.
+The fix was to restore both `ownership` rows exactly (including the
+original `acquired_at`/`acquired_via`) from the snapshot copied just
+before the test, and to delete the three test transaction rows
+(1152-1154). Both tables were then verified identical to the pre-test
+snapshot. The only lasting trace is that SQLite's AUTOINCREMENT counter
+has moved on, so the next real transaction id will be 1155 rather than
+1152 (harmless). The rerun patched `app.get_connection` itself.

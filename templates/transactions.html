@@ -6,46 +6,63 @@
 
   <h2>Log a free-agent add</h2>
   <form method="post" action="{{ url_for('transactions_add') }}" class="stacked-form">
-    <label>Player ID: <input type="text" name="player_id" required></label>
-    <label>Manager:
+    <label>Player:
+      <select name="player_id" required>
+        <option value="">Choose a free agent...</option>
+        {% for p in free_agents %}<option value="{{ p.player_id }}">{{ p.player_name }} ({{ p.position }}, {{ p.team }})</option>{% endfor %}
+      </select>
+    </label>
+    <label>To manager:
       <select name="manager_id" required>
         {% for m in managers %}<option value="{{ m.manager_id }}">{{ m.name }}</option>{% endfor %}
       </select>
     </label>
-    <label>Round: <input type="number" name="round"></label>
+    <label>Round: <input type="number" name="round" value="{{ default_round or '' }}"></label>
     <label>Notes: <input type="text" name="notes"></label>
     <button type="submit">Add</button>
   </form>
 
   <h2>Log a drop</h2>
   <form method="post" action="{{ url_for('transactions_drop') }}" class="stacked-form">
-    <label>Player ID: <input type="text" name="player_id" required></label>
-    <label>Round: <input type="number" name="round"></label>
+    <label>Player:
+      <select name="player_id" required>
+        <option value="">Choose a player...</option>
+        {% for manager_name, players in owned_by_manager %}
+          <optgroup label="{{ manager_name }}">
+            {% for p in players %}<option value="{{ p.player_id }}">{{ p.player_name }}{% if p.position %} ({{ p.position }}, {{ p.team }}){% endif %}</option>{% endfor %}
+          </optgroup>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Round: <input type="number" name="round" value="{{ default_round or '' }}"></label>
     <label>Notes: <input type="text" name="notes"></label>
     <button type="submit">Drop</button>
   </form>
 
   <h2>Log a 1-for-1 trade</h2>
   <form method="post" action="{{ url_for('transactions_trade') }}" class="stacked-form">
-    <fieldset>
-      <legend>Player A (currently owned by Manager A)</legend>
-      <label>Player A ID: <input type="text" name="player_a_id" required></label>
-      <label>Manager A:
-        <select name="manager_a_id" required>
-          {% for m in managers %}<option value="{{ m.manager_id }}">{{ m.name }}</option>{% endfor %}
-        </select>
-      </label>
-    </fieldset>
-    <fieldset>
-      <legend>Player B (currently owned by Manager B)</legend>
-      <label>Player B ID: <input type="text" name="player_b_id" required></label>
-      <label>Manager B:
-        <select name="manager_b_id" required>
-          {% for m in managers %}<option value="{{ m.manager_id }}">{{ m.name }}</option>{% endfor %}
-        </select>
-      </label>
-    </fieldset>
-    <label>Round: <input type="number" name="round"></label>
+    <p class="note">Pick one player from each side - players are grouped by their current manager, and each goes to the other player's manager.</p>
+    <label>Player A:
+      <select name="player_a_id" required>
+        <option value="">Choose a player...</option>
+        {% for manager_name, players in owned_by_manager %}
+          <optgroup label="{{ manager_name }}">
+            {% for p in players %}<option value="{{ p.player_id }}">{{ p.player_name }}{% if p.position %} ({{ p.position }}, {{ p.team }}){% endif %}</option>{% endfor %}
+          </optgroup>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Player B:
+      <select name="player_b_id" required>
+        <option value="">Choose a player...</option>
+        {% for manager_name, players in owned_by_manager %}
+          <optgroup label="{{ manager_name }}">
+            {% for p in players %}<option value="{{ p.player_id }}">{{ p.player_name }}{% if p.position %} ({{ p.position }}, {{ p.team }}){% endif %}</option>{% endfor %}
+          </optgroup>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Round: <input type="number" name="round" value="{{ default_round or '' }}"></label>
     <label>Notes: <input type="text" name="notes"></label>
     <button type="submit">Trade</button>
   </form>
