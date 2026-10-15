@@ -77,3 +77,30 @@ def in_main_window(game_date: str | None, window: tuple[str | None, str | None, 
 
 def next_day(d: str) -> str:
     return (date.fromisoformat(d) + timedelta(days=1)).isoformat()
+
+
+def classify_phase(rows: list[dict]) -> dict[int, str]:
+    """round -> 'regular' or 'playoffs', per season.
+
+    EuroLeague round-robin regular season has every team playing each round
+    (games_this_round == teams_this_round / 2, at the season's max team
+    count). Playoffs/Final Four are elimination rounds with far fewer teams
+    (down to 2, for a single Final-Four game). Detected from the data rather
+    than hardcoded round numbers, since team count changed between seasons
+    (18 teams through E2024, 20 from E2025) and playoff round numbering
+    isn't fixed either.
+    """
+    teams_per_round: dict[int, int] = {}
+    windows = round_windows(rows)
+    for r in rows:
+        round_no = r.get("round")
+        if round_no is None or not in_main_window(r.get("game_date"), windows.get(round_no)):
+            continue  # a postponed game doesn't make its nominal round look populated
+        teams_per_round.setdefault(round_no, set()).add(r["team"])  # type: ignore[arg-type]
+    teams_per_round = {r: len(teams) for r, teams in teams_per_round.items()}  # type: ignore[assignment]
+
+    full_teams = max(teams_per_round.values())
+    return {
+        r: ("regular" if count >= full_teams * 0.9 else "playoffs")
+        for r, count in teams_per_round.items()
+    }

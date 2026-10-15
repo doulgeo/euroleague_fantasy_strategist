@@ -46,7 +46,7 @@ from engine.db import get_connection, load_rows
 from engine.lineup import _game_dates, build_lineup, choose_active_squad, compute_round_score, swap_after_day1, team_dates_for_round
 from engine.ml_features import build_feature_table
 from engine.ml_projections import build_ensemble_projections, build_ml_projections, train_model
-from engine.rounds import in_main_window, round_main_window, round_start_dates, round_windows
+from engine.rounds import classify_phase, in_main_window, round_main_window, round_start_dates  # noqa: F401 (classify_phase re-exported for team_strength_backtest)
 from engine.projections import ROLLING_WINDOW, actual_fantasy_score, build_projections
 from engine.roster import DRAFT_POOL_SIZE, build_draft_pool, sample_roster
 
@@ -390,33 +390,6 @@ def loss_case_report(trials: list[Trial]) -> None:
     print("  Expected/documented case: the swap decision was made on a projection that turned out wrong for "
           "that round - not a logic bug (the no-swap <= best-possible structural guarantee, checked separately "
           "above, is what would indicate an actual bug).")
-
-
-def classify_phase(rows: list[dict]) -> dict[int, str]:
-    """round -> 'regular' or 'playoffs', per season.
-
-    EuroLeague round-robin regular season has every team playing each round
-    (games_this_round == teams_this_round / 2, at the season's max team
-    count). Playoffs/Final Four are elimination rounds with far fewer teams
-    (down to 2, for a single Final-Four game). Detected from the data rather
-    than hardcoded round numbers, since team count changed between seasons
-    (18 teams through E2024, 20 from E2025) and playoff round numbering
-    isn't fixed either.
-    """
-    teams_per_round: dict[int, int] = {}
-    windows = round_windows(rows)
-    for r in rows:
-        round_no = r.get("round")
-        if round_no is None or not in_main_window(r.get("game_date"), windows.get(round_no)):
-            continue  # a postponed game doesn't make its nominal round look populated
-        teams_per_round.setdefault(round_no, set()).add(r["team"])  # type: ignore[arg-type]
-    teams_per_round = {r: len(teams) for r, teams in teams_per_round.items()}  # type: ignore[assignment]
-
-    full_teams = max(teams_per_round.values())
-    return {
-        r: ("regular" if count >= full_teams * 0.9 else "playoffs")
-        for r, count in teams_per_round.items()
-    }
 
 
 def phase_breakdown(trials: list[Trial], phase_of: dict[tuple[str, int], str]) -> None:

@@ -3138,3 +3138,45 @@ answered.
 - 83 tests pass (5 new).
 
 **Not yet done**: the harness (Phase 0) that re-measures MAE after the fix.
+
+---
+
+## 2026-10-15: Projection overhaul Phase 0 - projection-accuracy harness
+
+**What**: `engine/proj_eval.py` + `projection_eval.py` CLI. For every
+regular-season round of the target seasons it builds the projections the live
+app would have had at that round's main-window start (prior seasons + current
+season, date cutoff from Phase 1, game codes shifted per season), pairs each
+with the real round result, and reports MAE/RMSE/bias (conditional on playing,
+and unconditional with DNPs/absences as 0), calibration slope + deciles,
+ranking (Spearman, top-10/30 hit rate, actual PIR of the projected top 30,
+hindsight ceiling), segments (games before, rounds 1-5, position,
+team-changer), zeroed-player cost and a paired bootstrap over rounds.
+Estimators are pluggable callables; `live`, `season_mean`, `last5` ship.
+`classify_phase` moved to `engine/rounds.py` (re-exported by `backtest_eval`).
+`tests/test_proj_eval.py`: hand-computed metrics, targets equal a direct
+`build_projections` call and respect the date cutoff (a postponed game is
+neither history nor an actual), bootstrap sanity.
+
+**Baseline ("before"), after the Phase 1 leakage fix**, `--seasons E2024
+E2025`, live config, 17,619 targets (13,701 played):
+
+| view | MAE | RMSE | bias | slope | top-30 actual | top-30 hit | Spearman |
+|---|---|---|---|---|---|---|---|
+| conditional on playing | 5.724 | 7.372 | -0.06 | 0.76 | 15.41 | 40.5% | 0.473 |
+| unconditional | 5.691 | 7.418 | +1.17 | 0.72 | | | |
+
+Hindsight ceiling (true top 10/30 mean actual): 28.39 / 22.95. Deciles run
+0.97 -> 2.81 up to 18.82 -> 16.35 (over-dispersed). Season-to-date mean vs live:
+dMAE -0.032 [-0.083, +0.021], so not distinguishable here; last-5 is worse
+(+0.134 [+0.111, +0.156]).
+
+**Versus the review**: slope 0.76, top-30 15.4, Spearman 0.47, unconditional
+bias ~+1.1 all reproduce. MAE 5.724 vs the review's 5.835 because the review's
+figure was on the 8,921 targets common to its baselines (incl. prior-season
+mean) and before the leak fix; the review's "as deployed" figure was 5.735.
+Zero-projected players: only 10 played targets here (3.4 mean) because this
+run starts from R1 of E2024/E2025 with prior-season history; the 19% E2026
+R1-5 zeroing is a live-pool-only effect, measured in Phase 2.
+
+A run takes ~2 minutes (one `build_projections` per round).
