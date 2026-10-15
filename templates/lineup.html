@@ -94,6 +94,11 @@
     </table>
 
     <h2 title="Lock this in before the round starts.">Day 1: starting lineup</h2>
+    {% if day1_from_tracker %}
+    <p><strong>This is the day-1 lineup you saved in the
+      <a href="{{ url_for('tracker_round', round_no=selected_round) }}">Points Tracker</a></strong>,
+      not the tool's own pick - so the swap plan below starts from what you actually locked in.</p>
+    {% endif %}
     <p>The "golden rule": each full-scoring slot (5 starters + 6th man)
       prefers a player whose team plays on this round's earliest date over
       one who only plays later - projected value only breaks ties within
@@ -155,7 +160,8 @@
       no cost, since they hadn't played yet).
       {% if used_day1_actuals %}
         Day 1's actual results for this round have already been synced, so this swap plan is using their real
-        scores (not just projections) for anyone who's already played.
+        scores (not just projections) for anyone who's already played - a day-1 player who didn't play at all
+        counts as 0. Re-sync after more day-1 games finish and this plan updates.
       {% else %}
         Day 1 hasn't been played yet (or its results aren't synced - see <a href="{{ url_for('sync_page') }}">Sync</a>),
         so this plan is a pre-round best guess using projections for everyone - revisit it once day 1's actual

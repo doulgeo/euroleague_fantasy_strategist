@@ -10,7 +10,14 @@ import random
 
 import pytest
 
-from engine.lineup import VALID_FORMATIONS, Lineup, choose_active_squad, compute_round_score, swap_after_day1
+from engine.lineup import (
+    VALID_FORMATIONS,
+    Lineup,
+    choose_active_squad,
+    compute_round_score,
+    day1_results,
+    swap_after_day1,
+)
 from engine.projections import Projection
 from engine.roster import ActiveSquad, Roster
 
@@ -90,3 +97,34 @@ def test_exclusion_is_one_per_position():
     guards = roster.by_position("Guard")
     with pytest.raises(ValueError, match="exactly 1 Guard, 1 Forward and 1 Center"):
         ActiveSquad(active=[p for p in roster.players if p not in guards[2:]], excluded=guards[2:])
+
+
+def test_day1_results_scores_played_and_zeroes_no_shows():
+    team_dates = {"D1": "2026-10-01", "X1": "2026-10-01", "D2": "2026-10-02", "Y1": "2026-10-01"}
+    schedule = [
+        {"round": 1, "game_date": "2026-10-01T20:00:00", "local_team_code": "D1", "road_team_code": "X1", "played": 1},
+        {"round": 1, "game_date": "2026-10-01T21:00:00", "local_team_code": "Y1", "road_team_code": "Z1", "played": 0},
+        {"round": 1, "game_date": "2026-10-02T20:00:00", "local_team_code": "D2", "road_team_code": "W2", "played": 1},
+    ]
+    rows = [
+        {"player_id": "a", "team": "D1", "pir_official": 20, "team_win": True},
+        {"player_id": "b", "team": "X1", "pir_official": 5, "team_win": False},
+        {"player_id": "c", "team": "D2", "pir_official": 30, "team_win": True},  # day 2: never visible
+    ]
+    scores, done = day1_results(rows, schedule, team_dates)
+    assert scores == {"a": pytest.approx(22.0), "b": 5.0}
+    assert done == {"D1", "X1"}  # Y1's game isn't over, D2 isn't day 1
+
+
+def test_swap_uses_day1_reality():
+    # same day-1 lock, different day-1 results -> different swap plan: g1
+    # (day-1 starter) flopped with 0, so day-2 g3 takes his slot at no cost,
+    # while g0's real 40 keeps him captain
+    lineup = _day1_lineup()
+    values = {p.player_id: 10.0 for p in [*lineup.starters, lineup.sixth_man, *lineup.bench]}
+    values["g3"] = 15.0
+    before = swap_after_day1(lineup, TEAM_DATES, values.get)
+    after = swap_after_day1(lineup, TEAM_DATES, (values | {"g0": 40.0, "g1": 0.0}).get)
+    assert before != after
+    assert after.captain.player_id == "g0"
+    assert "g1" not in {p.player_id for p in after.starters}

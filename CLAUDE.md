@@ -449,6 +449,12 @@ Full context for a fresh session, in order of what to read:
   (`check_exclusion=False`), so round 1's old tool suggestion (which
   excluded 2 Forwards) still scores. Also makes the backtest headline
   above stale once more.
+- **Swap plan from real day-1 results**, 2026-10-15: `/lineup` freezes
+  projections at the round start (`before_round`), plans the swap from
+  the user's tracker-saved day 1 when there is one (`day1_snapshot`), and
+  counts a no-show on a finished day-1 team as 0
+  (`engine.lineup.day1_results`). The tracker's unsaved Final starts from
+  that plan. Re-sync after day 1 to update it. See the testing log.
 - **Pages can be screenshotted for real**: headless Chrome from the Windows
   install works from WSL. Run
   `"/mnt/c/Program Files/Google/Chrome/Application/chrome.exe" --headless=new

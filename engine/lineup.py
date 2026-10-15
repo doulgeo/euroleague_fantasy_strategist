@@ -71,7 +71,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
-from engine.projections import Projection
+from engine.projections import Projection, actual_fantasy_score
 from engine.roster import ActiveSquad, Roster, legal_exclusions
 
 VALID_FORMATIONS: list[tuple[int, int, int]] = [(2, 2, 1), (2, 1, 2), (3, 1, 1)]  # (Guard, Forward, Center)
@@ -135,6 +135,40 @@ def team_dates_from_schedule(schedule_rows: list[dict], round_no: int) -> dict[s
             if team and team not in dates:
                 dates[team] = date
     return dates
+
+
+def day1_results(
+    round_rows: list[dict], schedule_rows: list[dict], team_dates: dict[str, str]
+) -> tuple[dict[str, float], set[str]]:
+    """(player_id -> real fantasy score, teams whose day-1 game is over) for
+    a round's day-1 games - what the real swap decision gets to see.
+
+    A team counts as done once the schedule marks its day-1 game played,
+    and every player of a done team is known: one with a box-score row gets
+    PIR + the real win bonus (engine.projections.actual_fantasy_score), one
+    without a row (didn't dress) is a real 0, not their projection. Later-
+    date games are ignored even if already synced: the swap window closes
+    before they start, so their results were never available to it.
+    """
+    min_date = _min_date(team_dates)
+    day1_teams = {team for team, date in team_dates.items() if date == min_date}
+    done_teams = {
+        team
+        for r in schedule_rows
+        if r.get("played") and _date_only(r.get("game_date")) == min_date
+        for team in (r.get("local_team_code"), r.get("road_team_code"))
+        if team in day1_teams
+    }
+    scores: dict[str, float] = {}
+    for r in round_rows:
+        if r.get("team") in day1_teams:
+            scores[r["player_id"]] = scores.get(r["player_id"], 0.0) + actual_fantasy_score(
+                r["pir_official"], r.get("team_win")
+            )
+    # a synced box score proves the game is over even if the schedule's
+    # played flag is stale
+    done_teams |= {r.get("team") for r in round_rows if r.get("team") in day1_teams}
+    return scores, done_teams
 
 
 def _availability_rank(player: Projection, team_dates: dict[str, str], min_date: str | None) -> int:

@@ -3026,3 +3026,50 @@ strict.
 
 **Not rerun**: `backtest_eval.py`. The headline in CLAUDE.md was already
 stale, and this rule changes it again.
+
+## 2026-10-15 — Swap plan re-plans from day 1's real results
+
+**Request**: the swap plan should change once day 1's box scores are
+synced and the T1 scores are known.
+
+`compute_recommendation` already fed synced day-1 results into
+`swap_after_day1`. The gaps were around it:
+- **It planned from the tool's own day 1, not the user's.** It now takes a
+  `day1_snapshot`. For the user's own team, `/lineup` passes the tracker's
+  saved `my_day1`, so the swap plan starts from what was actually locked
+  in. The page says so above the Day 1 table.
+- **The tracker's Final form just copied Day 1.** With Day 1 saved and no
+  Final yet, the form now starts from the tool's swap plan for that saved
+  Day 1, using the real day-1 results once synced.
+- **No-shows used their projection.** A day-1 player with no box-score
+  row (didn't dress) kept his projection. New
+  `engine.lineup.day1_results` returns the scores plus the day-1 teams
+  whose game is over, and anyone on a finished team without a row now
+  counts as 0. A team counts as finished when the schedule marks its game
+  played, or when it has synced rows. Later-date results are ignored even
+  if synced, since the real swap window closes before they start.
+- `/lineup` now passes `before_round=round`, so projections are frozen at
+  the round's start. In the simulation below, the old uncut path did
+  **not** change any day-1 lock (0 of 11 managers), so this is a guarantee
+  rather than a fix for an observed bug.
+
+**Tested**:
+- 78 tests pass. New ones: `day1_results`, where only finished day-1
+  teams count, no-shows are 0 and day-2 rows are ignored; and the same
+  day-1 lock with different day-1 results giving a different swap.
+- Simulated round 5 mid-round on a DB copy:
+  - **pre-round**: deleted round 5's box scores, marked all its games
+    unplayed;
+  - **after day 1**: re-inserted only the 2026-10-13 rows and marked
+    those games played.
+
+  For 11 managers:
+  - day-1 lock identical before and after: 11/11;
+  - `used_day1_actuals` False then True: 11/11;
+  - swap plan changed: 10/11.
+
+  Example totals: 124.6 → 110.2, 108.5 → 135.9.
+- Saving a `my_day1` that differs from the tool's (different captain) via
+  the real save route: `/lineup` then showed that saved lineup and its
+  captain, and the "you saved" note. `/tracker/5` rendered.
+- Real DB md5 unchanged.

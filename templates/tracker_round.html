@@ -59,7 +59,8 @@
       G-F-C formation, captain included), 1 sixth man, 4 bench, 3 excluded.
       <strong>Day 1</strong> is what you lock before the round. <strong>Final</strong>
       is how it stood after the swap window (leave it matching Day 1 if you made no swaps).
-      Unsaved columns start from the tool's suggestion.
+      Unsaved columns start from the tool's suggestion. Once Day 1 is saved, an unsaved Final starts
+      from the tool's swap plan for <em>your</em> Day 1, using day 1's real results once they're synced.
       {% if not lineups.my_day1 %}Saving Day 1 also snapshots the tool's suggestion for comparison.{% endif %}</p>
     <form id="day1-form" method="post" action="{{ url_for('tracker_save', round_no=round_no) }}"><input type="hidden" name="kind" value="day1"></form>
     <form id="final-form" method="post" action="{{ url_for('tracker_save', round_no=round_no) }}"><input type="hidden" name="kind" value="final"></form>

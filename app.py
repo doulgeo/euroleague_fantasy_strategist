@@ -65,6 +65,7 @@ from engine.lineup import (
     build_lineup,
     choose_active_squad,
     compute_round_score,
+    day1_results,
     swap_after_day1,
     team_dates_from_schedule,
 )
@@ -988,6 +989,7 @@ class LineupRecommendation:
     excluded: list[Projection] = field(default_factory=list)
     team_dates: dict[str, str] = field(default_factory=dict)
     used_day1_actuals: bool = False
+    day1_from_tracker: bool = False
     initial_full_ids: set[str] = field(default_factory=set)
     no_swap_total: float | None = None
     recommended_total: float | None = None
@@ -1001,7 +1003,11 @@ def compute_recommendation(
     round_no: int,
     formation: tuple[int, int, int] | None = None,
     before_round: int | None = None,
+    day1_snapshot: dict | None = None,
 ) -> LineupRecommendation:
+    """/lineup's suggestion for one manager and round. `day1_snapshot` (a
+    saved tracker lineup) replaces the tool's own day-1 lock, so the swap
+    plan is made from the lineup the user actually locked in."""
     roster = None
     active_squad = None
     roster_error = None
@@ -1044,44 +1050,47 @@ def compute_recommendation(
             # own merit - including gracefully handling more "Out"
             # players than there are exclusion slots (they'd just fill
             # the least-bad bench spots at a real 0, correctly modeled).
-            projected_value = (
-                lambda pid: 0.0 if pid in out_ids else pool[pid].projected_pir_with_bonus
-            )  # noqa: E731
             try:
-                active_squad = choose_active_squad(roster, team_dates, projected_value, formation=formation)
-                initial = build_lineup(active_squad, team_dates, projected_value, formation=formation)
+                if day1_snapshot is not None:
+                    # the lineup actually locked in: pool objects where we have
+                    # them (richer), the saved snapshot's otherwise
+                    snap_players, snap_slots = players_from_snapshot(day1_snapshot)
+                    snap_players = [pool.get(p.player_id, p) for p in snap_players]
+                    initial, excluded = lineup_from_slots(snap_players, snap_slots, check_exclusion=False)
+                    by_id = {p.player_id: p for p in snap_players}
+                else:
+                    by_id = pool
+                projected_value = (
+                    lambda pid: 0.0 if pid in out_ids else by_id[pid].projected_pir_with_bonus
+                )  # noqa: E731
+                if day1_snapshot is None:
+                    active_squad = choose_active_squad(roster, team_dates, projected_value, formation=formation)
+                    initial = build_lineup(active_squad, team_dates, projected_value, formation=formation)
+                    excluded = active_squad.excluded
 
                 # The real swap decision is made AFTER day 1's games are
                 # actually over, using their real results - not their
                 # pre-round projection (see engine.lineup's 2026-09-16
-                # correction: demoting a day-1 player now genuinely
-                # halves their score, so blindly trusting a projection
-                # that may since have been proven wrong is a real risk,
-                # not just a missed upside). player_game_stats only ever
-                # has played games, so if day 1's box scores have been
-                # synced (see Sync) by the time this page is visited,
-                # use their actual fantasy score (PIR + the real +10%
-                # win bonus, now that the real outcome is known - see
-                # engine.projections.actual_fantasy_score, confirmed
-                # 2026-09-22) for the swap decision instead of the
-                # projection; day-2 teams always use their projection
-                # (which already includes an *expected* win bonus based
-                # on recent win rate) since their games haven't happened
-                # yet.
-                min_date = min(team_dates.values())
-                day1_teams = {team for team, date in team_dates.items() if date == min_date}
-                day1_actual = {
-                    r["player_id"]: actual_fantasy_score(r["pir_official"], r.get("team_win"))
-                    for r in load_rows(conn, CURRENT_SEASON)
-                    if r.get("round") == round_no and r.get("team") in day1_teams
-                }
-                used_day1_actuals = bool(day1_actual)
-                decision_value = (
-                    lambda pid: day1_actual[pid] if pid in day1_actual else projected_value(pid)
-                )  # noqa: E731
+                # correction: demoting a day-1 player genuinely halves
+                # their score). Once day 1 is synced, a day-1 player's value
+                # is his real score (0 if he didn't dress - see
+                # engine.lineup.day1_results); day-2 players keep their
+                # projection, since their games haven't happened yet.
+                day1_actual, day1_done_teams = day1_results(
+                    [r for r in load_rows(conn, CURRENT_SEASON) if r.get("round") == round_no],
+                    schedule_rows,
+                    team_dates,
+                )
+                used_day1_actuals = bool(day1_done_teams)
+
+                def decision_value(pid: str) -> float:
+                    if pid in day1_actual:
+                        return day1_actual[pid]
+                    if by_id[pid].team in day1_done_teams:
+                        return 0.0
+                    return projected_value(pid)
 
                 recommended = swap_after_day1(initial, team_dates, decision_value, formation=formation)
-                excluded = active_squad.excluded
                 initial_full_ids = {p.player_id for p in initial.starters} | {initial.sixth_man.player_id}
 
                 # Total projected score box: what the round is worth
@@ -1089,10 +1098,11 @@ def compute_recommendation(
                 # already played (day1_actual) and projections for
                 # everyone else - the same "best information available
                 # right now" values used for the swap decision above.
-                score_value = {p.player_id: decision_value(p.player_id) for p in active_squad.active}
+                active_players = [*initial.starters, initial.sixth_man, *initial.bench]
+                score_value = {p.player_id: decision_value(p.player_id) for p in active_players}
                 no_swap_total = compute_round_score(initial, score_value)
                 recommended_total = compute_round_score(recommended, score_value)
-            except RuntimeError as e:
+            except (RuntimeError, ValueError) as e:
                 schedule_error = f"Could not build a lineup for this round: {e}"
 
     return LineupRecommendation(
@@ -1105,6 +1115,7 @@ def compute_recommendation(
         excluded=excluded,
         team_dates=team_dates,
         used_day1_actuals=used_day1_actuals,
+        day1_from_tracker=day1_snapshot is not None and initial is not None,
         initial_full_ids=initial_full_ids,
         no_swap_total=no_swap_total,
         recommended_total=recommended_total,
@@ -1136,7 +1147,17 @@ def lineup():
 
     rec = LineupRecommendation()
     if selected_manager_id and selected_round:
-        rec = compute_recommendation(conn, selected_manager_id, selected_round, selected_formation)
+        # Projections frozen at the round's start (before_round), so syncing
+        # day 1's box scores doesn't reshuffle the day-1 lock itself - it
+        # only feeds the swap decision. For the user's own team, plan the
+        # swap from the day-1 lineup they actually saved in the tracker.
+        my_day1 = None
+        if selected_manager_id == _my_manager_id(conn):
+            my_day1 = _lineups_by_round(conn, selected_manager_id).get(selected_round, {}).get("my_day1")
+        rec = compute_recommendation(
+            conn, selected_manager_id, selected_round, selected_formation,
+            before_round=selected_round, day1_snapshot=my_day1,
+        )
 
     return render_template(
         "lineup.html",
@@ -1154,6 +1175,7 @@ def lineup():
         availability_label=availability_label,
         current_season=CURRENT_SEASON,
         used_day1_actuals=rec.used_day1_actuals,
+        day1_from_tracker=rec.day1_from_tracker,
         initial_full_ids=rec.initial_full_ids,
         valid_formations=VALID_FORMATIONS,
         selected_formation=selected_formation,
@@ -1378,7 +1400,15 @@ def _render_tracker_round(
     if "my_final" in lineups:
         final_slots = players_from_snapshot(lineups["my_final"])[1]
     elif "my_day1" in lineups:
-        final_slots = dict(day1_slots)
+        # the tool's swap plan from the day 1 actually locked in (using
+        # day 1's real results once synced); unchanged day 1 if it can't
+        mine = compute_recommendation(
+            conn, my_id, round_no, before_round=round_no, day1_snapshot=lineups["my_day1"]
+        )
+        if mine.recommended is not None:
+            final_slots = lineup_to_slots(mine.recommended, mine.excluded)
+        else:
+            final_slots = dict(day1_slots)
     elif rec.recommended is not None:
         final_slots = lineup_to_slots(rec.recommended, rec.excluded)
     else:
