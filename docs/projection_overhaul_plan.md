@@ -1,6 +1,6 @@
 # Projection overhaul plan
 
-**Status:** PLAN ONLY. Nothing here is implemented yet. Written 2026-10-15.
+**Status:** Phases 0, 1 and 2 (except P7, P8) implemented 2026-10-15; see the "Implementation notes" section at the end for deviations. Phases 3, 6, 7, 8 are blocked on the open questions; Phase 4 and 5b-d are not started.
 
 **Source:** a three-agent review of the PIR projection mechanism, run
 2026-10-15. The agents were a master statistician, a backtest analyst, and a
@@ -27,25 +27,25 @@ Severity is the reviewers' rating.
 | ID | Sev | Finding (short) | Phase | Done |
 |---|---|---|---|---|
 | P1 | High | Projections assume the player plays. ~21.5% of projected player-rounds score 0, giving about +1.0 PIR per game of overshoot | 3 | [ ] |
-| P2 | High | Over-dispersed: calibration slope 0.76, top decile +2.55 PIR. No shrinkage | 2 | [ ] |
-| P3 | High | Estimator mid-pack: the season-to-date mean beats it. A 10-game linear ramp window is too short | 2 | [ ] |
-| P4 | High | The 3-game minimum zeroes players. 19% of E2026 R1–5 played-games were projected 0; those players actually averaged 7.05 | 2 | [ ] |
-| P5 | Med | Known gap: players with only E2023/E2024 history, or 1–2 games in the window, get 0.0 with no flag. 28 players at round 6 | 2 | [ ] |
-| P6 | Low | Manual overrides get no win bonus (`rosters.py:106`), so they run about 5% low vs everyone else | 2 | [ ] |
+| P2 | High | Over-dispersed: calibration slope 0.76, top decile +2.55 PIR. No shrinkage | 2 | [x] |
+| P3 | High | Estimator mid-pack: the season-to-date mean beats it. A 10-game linear ramp window is too short | 2 | [x] |
+| P4 | High | The 3-game minimum zeroes players. 19% of E2026 R1–5 played-games were projected 0; those players actually averaged 7.05 | 2 | [x] |
+| P5 | Med | Known gap: players with only E2023/E2024 history, or 1–2 games in the window, get 0.0 with no flag. 28 players at round 6 | 2 | [x] |
+| P6 | Low | Manual overrides get no win bonus (`rosters.py:106`), so they run about 5% low vs everyone else | 2 | [x] |
 | P7 | Low | A manual override can't lift a *known* player who has only 1–2 games | 2 | [ ] |
 | P8 | Low–Med | Team-changers: projection R² −0.04, slope 0.47 (noisier, though not biased on average) | 2 | [ ] |
-| P9 | Low | The early-season blend window includes last season's playoff games | 2 | [ ] |
-| L1 | High | Postponed games leak future data. The cutoff is by round number, not date (E2025 game 134: round 14, played 2026-03-17). Affects the backtest and, latently, the live app | 1 | [ ] |
-| L2 | Low | Team win-rate window orders by `game_code`, not date (`projections.py:192`) | 1 | [ ] |
-| L3 | Low | Rescheduled games distort day-1/day-2 team assignment (`lineup.py:98-136`); E2025 R34 and R14 are examples | 1 | [ ] |
+| P9 | Low | The early-season blend window includes last season's playoff games | 2 | [x] |
+| L1 | High | Postponed games leak future data. The cutoff is by round number, not date (E2025 game 134: round 14, played 2026-03-17). Affects the backtest and, latently, the live app | 1 | [x] |
+| L2 | Low | Team win-rate window orders by `game_code`, not date (`projections.py:192`) | 1 | [x] |
+| L3 | Low | Rescheduled games distort day-1/day-2 team assignment (`lineup.py:98-136`); E2025 R34 and R14 are examples | 1 | [x] |
 | W1 | Med | Win-probability stand-in (team last-10 win rate) has Brier 0.265, worse than a flat 0.5 (0.250). Home/away alone gets 0.236; logistic on home + form gets 0.219 | 4 | [ ] |
 | W2 | Low | Home/away PIR effect (+0.38 / −0.34) is ignored | 4 | [ ] |
 | W3 | Low | A transferred player keeps the old team's win rate and bonus (`rosters.py:88-89`). 68 players at R1 | 4 | [ ] |
 | B1 | Med | Backtest values day-1 no-shows at their projection; live values them at 0 (`backtest_eval.py:127-129` vs `app.py:1086-1091`) | 5 | [ ] |
 | B2 | Med | Backtest never runs the live path: single season, `min_round=6`, no blend, no early rounds | 5 | [ ] |
 | B3 | Med | Backtest metric (swap gain over no-swap with the *same* projections) can't see projection quality. The ML rejection may be unsound (Ridge R² 0.238 vs heuristic 0.181) | 5 | [ ] |
-| B4 | Low | Backtest `actual_pir_lookup` keeps only the last row per player per round; the tracker sums. Latent | 5 | [ ] |
-| B5 | Low | Backtest `classify_phase` treats rescheduled rounds as regular season | 1/5 | [ ] |
+| B4 | Low | Backtest `actual_pir_lookup` keeps only the last row per player per round; the tracker sums. Latent | 5 | [x] |
+| B5 | Low | Backtest `classify_phase` treats rescheduled rounds as regular season | 1/5 | [x] |
 | U1 | Med | Decisions ignore uncertainty, so the exclusion search's claimed swap "option value" is ~0 with fixed values | 6 | [ ] |
 | T1 | Med | Tracker re-renders and snapshots past rounds with *today's* injury report and today's rosters | 7 | [ ] |
 | R1 | ? | 3-date rounds (E2026 R4, 7, 10, 11, 21, 28, 35): only the earliest date is treated as known. Wrong if there is a second swap window | 8 | [ ] |
@@ -1025,3 +1025,37 @@ backtest swap-gain metric cancels projection quality; CIs weren't paired.
 - backtest last-row vs tracker sum for two rows per round;
 - mtime cache staleness;
 - an override can't lift a known 1–2-game player.
+
+
+---
+
+## Implementation notes (2026-10-15)
+
+Deviations and findings while implementing, so the plan text above stays as
+originally written.
+
+- **Phase 0:** `engine/proj_eval.py` + `projection_eval.py`; `classify_phase`
+  moved to `engine/rounds.py`. Baseline on E2024+E2025 after the leak fix:
+  MAE 5.724 (conditional), slope 0.76, unconditional bias +1.17. The review's
+  5.835 was on a different target subset; everything else reproduces.
+- **Phase 1:** `round_main_window` lives in `engine/rounds.py` (re-exporting
+  it from `engine.lineup` was not needed). Postponed games are excluded from
+  a round's actuals everywhere until open question 3 is answered. B4 (summed
+  actuals) and B5 landed here too; the rest of Phase 5a is not done.
+- **Phase 2:** `shrink_target` ("position" | "position_replacement") was
+  replaced by `shrink_target_scale` (1.0 or 0.6 x the position mean); only
+  the position mean is implemented. The tuned config is `TUNED_CONFIG` (exp,
+  half-life 10, window 60, season-age weight 0.25, k=1, min_games=1); k=1
+  rather than the plan's 2 was the E2024 pick, scale 0.6 and a longer
+  window gained <0.02 MAE and were not adopted. All seasons in the DB feed
+  the live pool (E2025 check: using two seasons back vs one made no
+  difference, MAE 5.6678 vs 5.6675, but covers 19 more players).
+  `exclude_prior_playoffs` is implemented; the E2024 sweep kept it off.
+  **P7** (override applies to any player) waits for open question 5.
+  **P8** (extra shrink for team-changers) is NOT done: the tuned config
+  leaves a +1.08 (E2025, n=77) / +1.25 (E2026, n=81) team-changer bias, which
+  breaks the plan's +-0.5 segment criterion, as does the 3-5-games-before
+  bucket in E2025 (+0.71, but -0.35 in E2024, so season noise). Every other
+  acceptance criterion passed (see the testing log).
+- **Not started:** Phase 3 (blocked: questions 1, 4, 7), Phase 4, Phase 5a
+  parity items B1/B2 and 5b-d, Phases 6-9.

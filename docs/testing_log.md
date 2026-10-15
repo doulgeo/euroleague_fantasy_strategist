@@ -3180,3 +3180,56 @@ run starts from R1 of E2024/E2025 with prior-season history; the 19% E2026
 R1-5 zeroing is a live-pool-only effect, measured in Phase 2.
 
 A run takes ~2 minutes (one `build_projections` per round).
+
+---
+
+## 2026-10-15: Projection overhaul Phase 2 - tuned estimator (P2-P6, P9)
+
+**What**: `engine.projections.ProjectionConfig` (weighting ramp/exp, half-life,
+window, per-season age weight, shrinkage k toward the position mean using the
+Kish effective sample size, `shrink_target_scale`, `min_games`,
+`exclude_prior_playoffs`). `LEGACY_CONFIG` reproduces the old estimator
+exactly (max abs difference 0.0 on projected PIR, bonus value, volatility,
+minutes and projection change, E2025 R5/20/30 against the pre-change code).
+`Projection.n_eff` added. `blend_seasons` (N seasons) replaces the 2-season
+blend in the live pool, so every synced season (E2023+) feeds projections.
+Manual overrides now carry the club's trailing win bonus (P6).
+`tune_projection.py`: coordinate descent on E2024 only (E2023 as prior).
+
+**Tuning (E2024 only, conditional MAE, 6,299 played targets)**: the plan's
+start (hl 10, W 60, age 0.25, k 2) gave MAE 5.5497; k=1 gave 5.5234; a 0.6x
+shrink target 5.5068 and window 100 5.5061 (<0.02 gain, not adopted).
+Half-life, window, season weight and prior-playoffs were flat or noise.
+Adopted `TUNED_CONFIG`: exp, hl 10, W 60, age 0.25, k 1, scale 1.0, min_games 1.
+
+**Evaluation, once, on held-out seasons** (`projection_eval.py --estimators
+legacy tuned season_mean`; both on Phase-1 leak-free data; paired bootstrap
+over rounds):
+
+| season | metric | legacy | tuned | tuned - legacy |
+|---|---|---|---|---|
+| E2025 | MAE (played, n=7,595) | 5.810 | 5.680 | -0.130 [-0.163, -0.100] |
+| E2025 | calibration slope | 0.75 | 0.91 | |
+| E2025 | top-30 actual PIR | 15.10 | 15.50 | +0.401 [-0.075, +0.917] |
+| E2025 | top-30 hit / Spearman | 36.7% / .462 | 38.2% / .484 | |
+| E2026 R1-5 | MAE (n=962) | 5.709 | 5.522 | -0.186 [-0.275, -0.100] |
+| E2026 R1-5 | slope / top-30 | 0.63 / 13.16 | 0.79 / 13.96 | top-30 +0.800 [-0.056, +3.178] |
+
+Season-to-date mean vs legacy: E2025 -0.042 [-0.105, +0.033]; E2026 +0.276
+[-0.051, +0.612] - the tuned estimator beats it on both.
+
+**Acceptance vs the plan**: dMAE <= -0.10 with CI excluding 0 PASS; slope in
+[0.9, 1.05] PASS (0.91); top-30 actual >= 0 with CI lower bound > -0.1 PASS
+(-0.075); E2026 R1-5 dMAE < 0 PASS; **no segment bias beyond +-0.5 FAIL** -
+team-changers +1.08 (E2025) / +1.25 (E2026) and the 3-5-games bucket +0.71
+(E2025; it was -0.35 on E2024, so noise-like). The team-changer bias is what
+P8 (extra shrinkage) is for; not built. Unconditional bias is unchanged or
+slightly worse (+1.45 vs +1.32, E2025) - that is the availability problem
+(Phase 3), not the estimator.
+
+**Live pool check** (real DB): 604 players, 13 new, 279 gone, top projection
+Bryant 20.9 (n_eff 11.5); 7 non-new players still show a flat 0.0 - they have
+box-score rows but never played (DNP-only), so no estimate exists.
+
+The default switch changes every projection in the app (part-timers and
+small-sample players move most). Tests: 93 pass.
