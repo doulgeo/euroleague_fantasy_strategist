@@ -45,6 +45,7 @@ from engine.db import (
     load_fantasy_pool,
     load_manual_projections,
     load_roster,
+    next_unplayed_round,
     set_manual_projection,
 )
 from engine.fantasy_pool import resolve_pool_rows
@@ -82,6 +83,9 @@ def main() -> None:
     parser.add_argument("query", nargs="?", help="Player name (or substring) to match")
     parser.add_argument("projected_pir", nargs="?", type=float, help="Projected PIR estimate to set")
     parser.add_argument("--note", default=None, help="Reasoning/sources for this estimate")
+    parser.add_argument("--through-round", type=int, default=None,
+                        help="Override stops applying once this round is fully played (default: the next unplayed round)")
+    parser.add_argument("--no-expiry", action="store_true", help="Keep the override until cleared")
     parser.add_argument("--clear", action="store_true", help="Remove an existing manual override instead of setting one")
     parser.add_argument("--list", action="store_true", help="List all current manual overrides and exit")
     args = parser.parse_args()
@@ -94,7 +98,8 @@ def main() -> None:
             print("No manual projection overrides set.")
         for pid, row in sorted(overrides.items(), key=lambda kv: kv[1]["player_name"]):
             note = f" - {row['note']}" if row["note"] else ""
-            print(f"{row['player_name']} ({pid}): {row['projected_pir']:.1f}{note} [set {row['set_at'][:10]}]")
+            print(f"{row['player_name']} ({pid}): {row['projected_pir']:.1f}{note} [set {row['set_at'][:10]}, "
+              f"{'no expiry' if row['expires_after_round'] is None else 'through round ' + str(row['expires_after_round'])}]")
         conn.close()
         return
 
@@ -124,8 +129,10 @@ def main() -> None:
     if args.projected_pir is None:
         parser.error("projected_pir is required unless --clear or --list is given")
 
-    set_manual_projection(conn, player["player_id"], player["player_name"], args.projected_pir, args.note)
-    print(f"Set {player['player_name']} ({player['player_id']}) to a manual projection of {args.projected_pir:.1f}.")
+    expires = None if args.no_expiry else (args.through_round or next_unplayed_round(conn, CURRENT_SEASON))
+    set_manual_projection(conn, player["player_id"], player["player_name"], args.projected_pir, args.note, expires)
+    print(f"Set {player['player_name']} ({player['player_id']}) to a manual projection of {args.projected_pir:.1f}"
+          + (f", expiring once round {expires} is fully played." if expires else ", no expiry."))
     if args.note:
         print(f"Note: {args.note}")
     conn.close()

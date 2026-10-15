@@ -91,6 +91,17 @@ def merge_roster(
             existing = merged[pid]
             if existing.team != r["team"] or existing.position != r["position"]:
                 merged[pid] = replace(existing, team=r["team"], position=r["position"] or existing.position)
+            manual = manual_projections.get(pid)
+            if manual:
+                # an active override beats the model for any player (user
+                # decision 2026-10-15); it stands for "PIR if he plays"
+                pir = manual["projected_pir"]
+                rate = merged[pid].team_win_rate
+                merged[pid] = replace(
+                    merged[pid], projected_pir=pir,
+                    projected_pir_with_bonus=pir * (1 + WIN_BONUS_FRACTION * (rate or 0.0)),
+                )
+                estimated_player_ids.add(pid)
         else:
             manual = manual_projections.get(pid)
             pir = manual["projected_pir"] if manual else 0.0

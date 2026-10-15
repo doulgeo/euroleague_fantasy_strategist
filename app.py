@@ -41,7 +41,7 @@ from engine.db import (
     latest_game_date,
     load_fantasy_pool,
     load_injuries,
-    load_manual_projections,
+    active_manual_projections,
     load_roster,
     load_rows,
     load_schedule,
@@ -308,7 +308,7 @@ def get_pool(
 
     roster_rows = load_roster(conn, CURRENT_SEASON)
     seen = known_player_ids(conn)
-    manual = load_manual_projections(conn)
+    manual = active_manual_projections(conn, CURRENT_SEASON, before_round)
     historical_players = all_known_players(conn)
 
     fantasy_pool_rows = load_fantasy_pool(conn)

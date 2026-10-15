@@ -206,7 +206,8 @@ CREATE TABLE IF NOT EXISTS manual_projections (
     player_name TEXT NOT NULL,
     projected_pir REAL NOT NULL,
     note TEXT,
-    set_at TEXT NOT NULL
+    set_at TEXT NOT NULL,
+    expires_after_round INTEGER
 )
 """
 
@@ -334,6 +335,10 @@ def get_connection(db_path: Path | str = DB_PATH) -> sqlite3.Connection:
     conn.execute(_CREATE_SCHEDULE_SQL)
     conn.execute(_CREATE_SCHEDULE_ROUND_INDEX_SQL)
     conn.execute(_CREATE_MANUAL_PROJECTIONS_SQL)
+    try:  # tables created before overrides could expire
+        conn.execute("ALTER TABLE manual_projections ADD COLUMN expires_after_round INTEGER")
+    except sqlite3.OperationalError:
+        pass
     conn.execute(_CREATE_WATCHLIST_SQL)
     conn.execute(_CREATE_INJURIES_SQL)
     conn.execute(_CREATE_TRACKED_LINEUPS_SQL)
@@ -536,11 +541,23 @@ def known_player_ids(conn: sqlite3.Connection) -> set[str]:
     return {row[0] for row in cur.fetchall()}
 
 
-def set_manual_projection(conn: sqlite3.Connection, player_id: str, player_name: str, projected_pir: float, note: str | None = None) -> None:
+def set_manual_projection(
+    conn: sqlite3.Connection,
+    player_id: str,
+    player_name: str,
+    projected_pir: float,
+    note: str | None = None,
+    expires_after_round: int | None = None,
+) -> None:
+    """Set an override. It applies to any player (known or not) and stops
+    applying once round `expires_after_round` of the current season has been
+    fully played (user decision 2026-10-15: overrides expire after a round,
+    so a stale estimate can't outlive the real games that replace it). None
+    = never expires."""
     conn.execute(
-        "INSERT OR REPLACE INTO manual_projections (player_id, player_name, projected_pir, note, set_at) "
-        "VALUES (?, ?, ?, ?, ?)",
-        (player_id, player_name, projected_pir, note, datetime.now(timezone.utc).isoformat()),
+        "INSERT OR REPLACE INTO manual_projections "
+        "(player_id, player_name, projected_pir, note, set_at, expires_after_round) VALUES (?, ?, ?, ?, ?, ?)",
+        (player_id, player_name, projected_pir, note, datetime.now(timezone.utc).isoformat(), expires_after_round),
     )
     conn.commit()
 
@@ -552,13 +569,44 @@ def clear_manual_projection(conn: sqlite3.Connection, player_id: str) -> bool:
 
 
 def load_manual_projections(conn: sqlite3.Connection) -> dict[str, dict]:
-    """player_id -> {player_name, projected_pir, note, set_at} for every
-    player with a manually-set projection override."""
-    cur = conn.execute("SELECT player_id, player_name, projected_pir, note, set_at FROM manual_projections")
+    """player_id -> {player_name, projected_pir, note, set_at,
+    expires_after_round} for every override, expired or not."""
+    cur = conn.execute(
+        "SELECT player_id, player_name, projected_pir, note, set_at, expires_after_round FROM manual_projections"
+    )
     return {
-        row[0]: {"player_name": row[1], "projected_pir": row[2], "note": row[3], "set_at": row[4]}
+        row[0]: {
+            "player_name": row[1], "projected_pir": row[2], "note": row[3], "set_at": row[4],
+            "expires_after_round": row[5],
+        }
         for row in cur.fetchall()
     }
+
+
+def round_complete(conn: sqlite3.Connection, season_code: str, round_no: int) -> bool:
+    row = conn.execute(
+        "SELECT COUNT(*), SUM(played) FROM schedule WHERE season_code = ? AND round = ?", (season_code, round_no)
+    ).fetchone()
+    return bool(row and row[0] and row[1] == row[0])
+
+
+def active_manual_projections(
+    conn: sqlite3.Connection, season_code: str, before_round: int | None = None
+) -> dict[str, dict]:
+    """load_manual_projections minus expired overrides (their round is fully
+    played). With `before_round` (a past-round re-render), an override that
+    expired before that round started is also dropped - whether it was
+    already played then is judged by the round number alone."""
+    out = {}
+    for pid, row in load_manual_projections(conn).items():
+        exp = row["expires_after_round"]
+        if exp is not None:
+            if before_round is not None and exp < before_round:
+                continue
+            if before_round is None and round_complete(conn, season_code, exp):
+                continue
+        out[pid] = row
+    return out
 
 
 def add_to_watchlist(conn: sqlite3.Connection, player_id: str, player_name: str, note: str | None = None) -> None:
