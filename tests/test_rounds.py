@@ -1,5 +1,5 @@
 from engine.lineup import team_dates_for_round, team_dates_from_schedule
-from engine.projections import build_projections
+from engine.projections import LEGACY_CONFIG, build_projections
 from engine.rounds import in_main_window, round_main_window, round_start_dates
 
 
@@ -39,8 +39,8 @@ def test_postponed_game_does_not_leak_into_later_round_projection():
     by_round = {r: [x for x in rows if x["round"] == r] for r in (1, 2, 3)}
     assert len(by_round[2]) == 2
     starts = round_start_dates(rows + [_row("Q", "BBB", 4, 5, "2025-10-29")])
-    leaky = build_projections(rows, as_of_round=4, min_games=1)["P"]
-    fixed = build_projections(rows, as_of_round=4, min_games=1, cutoff_date=starts[4])["P"]
+    leaky = build_projections(rows, as_of_round=4, min_games=1, config=LEGACY_CONFIG)["P"]
+    fixed = build_projections(rows, as_of_round=4, min_games=1, cutoff_date=starts[4], config=LEGACY_CONFIG)["P"]
     assert leaky.projected_pir > 10 and fixed.projected_pir == 5.0
 
 

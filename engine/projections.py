@@ -206,7 +206,15 @@ class ProjectionConfig:
 
 # Reproduces the pre-2026-10-15 estimator exactly (checked in tests).
 LEGACY_CONFIG = ProjectionConfig()
-DEFAULT_CONFIG = LEGACY_CONFIG
+# Tuned 2026-10-15 on E2024 only (tune_projection.py; E2023 as prior), then
+# evaluated once on E2025 / E2026 (see docs/testing_log.md). Shrinkage k=1 (the
+# plan's start was 2); a 0.6x shrink target and a longer window gained <0.02
+# MAE and were not adopted (prefer the simpler config inside the noise).
+TUNED_CONFIG = ProjectionConfig(
+    weighting="exp", half_life_games=10, window_games=60, season_age_weight=0.25,
+    shrink_k=1.0, shrink_target_scale=1.0, min_games=1,
+)
+DEFAULT_CONFIG = TUNED_CONFIG  # switched from LEGACY_CONFIG 2026-10-15 (docs/testing_log.md, Phase 2)
 
 
 def _season_ranks(rows: list[dict]) -> dict[str, int]:
@@ -293,6 +301,24 @@ def _estimate(prows: list[dict], config: ProjectionConfig, ranks: dict[str, int]
             var = (n_eff * var + config.shrink_k * pvar) / (n_eff + config.shrink_k)
         vol = var ** 0.5
     return projected, minutes, vol, n_eff, len(recent)
+
+
+def blend_seasons(rows_by_season: dict[str, list[dict]]) -> tuple[list[dict], int]:
+    """N-season generalization of blend_season_rows: seasons in code order,
+    each one's rounds renumbered after the previous one's and its game codes
+    shifted into its own range. Returns (rows, as_of_round) like
+    blend_season_rows. With a date cutoff (build_projections(cutoff_date=...))
+    the renumbering only matters for the as_of_round compatibility filter."""
+    out: list[dict] = []
+    round_offset = 0
+    for i, season in enumerate(sorted(rows_by_season)):
+        rows = [r for r in rows_by_season[season] if r.get("round") is not None]
+        out += [
+            {**r, "round": r["round"] + round_offset, "game_code": r["game_code"] + i * SEASON_GAME_CODE_OFFSET}
+            for r in rows
+        ]
+        round_offset = max([round_offset] + [r["round"] + round_offset for r in rows])
+    return out, round_offset + 1
 
 
 def build_projections(

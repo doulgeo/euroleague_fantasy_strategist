@@ -1,4 +1,4 @@
-from engine.projections import Projection, build_projections
+from engine.projections import LEGACY_CONFIG, Projection, ProjectionConfig, build_projections
 
 
 def _rows(pir_values):
@@ -32,7 +32,7 @@ def test_steady_player_has_no_form_badge():
 
 def test_no_previous_projection_means_zero_change():
     # exactly min_games games: no projection existed before the latest one
-    p = build_projections(_rows([5, 5, 30]), as_of_round=99)["P1"]
+    p = build_projections(_rows([5, 5, 30]), as_of_round=99, config=LEGACY_CONFIG)["P1"]
     assert p.projection_change == 0.0
 
 
@@ -54,7 +54,6 @@ def test_season_points_totals_win_bonus_and_last_game():
     assert sp.last == 20 and sp.last_round == 2
 
 
-from engine.projections import LEGACY_CONFIG, ProjectionConfig  # noqa: E402
 import pytest  # noqa: E402
 
 
@@ -80,7 +79,7 @@ def test_min_games_one_and_shrinkage_toward_position_mean():
     pos_mean = (30 + 5 * 4 * 10) / 21
     assert p.n_eff == pytest.approx(1.0)
     assert p.projected_pir == pytest.approx((1 * 30 + 2 * pos_mean) / 3)
-    assert "P1" not in build_projections(rows, as_of_round=99)  # legacy min_games=3 still drops him
+    assert "P1" not in build_projections(rows, as_of_round=99, config=LEGACY_CONFIG)  # legacy min_games=3 still drops him
 
 
 def test_season_age_weight_discounts_older_seasons():

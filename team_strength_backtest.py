@@ -35,7 +35,7 @@ from dataclasses import dataclass, field
 
 from backtest_eval import classify_phase
 from engine.db import get_connection, load_rows
-from engine.projections import build_projections
+from engine.projections import LEGACY_CONFIG, build_projections
 from engine.team_strength import build_team_strength, league_average_pir_allowed
 
 CANDIDATE_WEIGHTS = [0.0, 0.05, 0.10, 0.15, 0.20, 0.30, 0.50]
@@ -78,7 +78,7 @@ def run_backtest(seasons: list[str], min_round: int, include_playoffs: bool) -> 
             if not round_rows:
                 continue
 
-            projections = build_projections(rows, as_of_round=round_no)
+            projections = build_projections(rows, as_of_round=round_no, config=LEGACY_CONFIG)
             strengths = build_team_strength(rows, as_of_round=round_no)
             if not projections or not strengths:
                 results.rounds_skipped_no_history += 1

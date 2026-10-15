@@ -17,7 +17,7 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from engine.db import get_connection, load_rows
 from engine.ml_features import FEATURE_COLUMNS, build_feature_table
 from engine.ml_projections import build_pipeline, design_matrix
-from engine.projections import build_projections
+from engine.projections import LEGACY_CONFIG, build_projections
 
 
 def main() -> None:
@@ -46,7 +46,7 @@ def main() -> None:
     for i, r in enumerate(test):
         round_no = r["round"]
         if round_no not in proj_cache:
-            proj_cache[round_no] = build_projections(e2025_rows, as_of_round=round_no)
+            proj_cache[round_no] = build_projections(e2025_rows, as_of_round=round_no, config=LEGACY_CONFIG)
         proj = proj_cache[round_no].get(r["player_id"])
         if proj is None:
             continue  # heuristic's own min_games gate excluded this player at this round

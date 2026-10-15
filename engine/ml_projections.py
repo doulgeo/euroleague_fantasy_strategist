@@ -34,6 +34,7 @@ from sklearn.preprocessing import FunctionTransformer, OneHotEncoder, StandardSc
 
 from engine.ml_features import FEATURE_SETS, build_current_features
 from engine.projections import (
+    LEGACY_CONFIG,
     ROLLING_WINDOW,
     TEAM_WIN_WINDOW,
     MIN_GAMES_FOR_PROJECTION,
@@ -148,7 +149,7 @@ def build_ml_projections(
     build_projections - only projected_pir/projected_pir_with_bonus differ,
     coming from `model` instead of the recency-weighted mean. `feature_set`
     must match what `model` was trained with."""
-    baseline = build_projections(rows, as_of_round, rolling_window, team_win_window, min_games)
+    baseline = build_projections(rows, as_of_round, rolling_window, team_win_window, min_games, config=LEGACY_CONFIG)
     if not baseline:
         return {}
 
@@ -183,7 +184,7 @@ def build_ensemble_projections(
     averaged value) - applying the bonus per-source first and then averaging
     would double-count team_win_rate's effect for no reason, since it's the
     same team_win_rate for every source."""
-    baseline = build_projections(rows, as_of_round, rolling_window, team_win_window, min_games)
+    baseline = build_projections(rows, as_of_round, rolling_window, team_win_window, min_games, config=LEGACY_CONFIG)
     if not baseline:
         return {}
 

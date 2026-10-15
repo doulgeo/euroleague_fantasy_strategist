@@ -21,7 +21,7 @@ import random
 from dataclasses import dataclass, field
 from typing import Callable
 
-from engine.projections import SEASON_GAME_CODE_OFFSET, build_projections
+from engine.projections import LEGACY_CONFIG, SEASON_GAME_CODE_OFFSET, TUNED_CONFIG, build_projections
 from engine.rounds import classify_phase, date_only, in_main_window, round_start_dates, round_windows
 
 Estimator = Callable[[list[dict], str], dict[str, float]]
@@ -93,7 +93,9 @@ def last5_estimator(history: list[dict], cutoff_date: str) -> dict[str, float]:
 
 
 ESTIMATORS: dict[str, Estimator] = {
-    "live": live_estimator,
+    "live": live_estimator,  # whatever DEFAULT_CONFIG currently is
+    "legacy": lambda h, c: config_estimator(LEGACY_CONFIG)(h, c),
+    "tuned": lambda h, c: config_estimator(TUNED_CONFIG)(h, c),
     "season_mean": season_mean_estimator,
     "last5": last5_estimator,
 }
@@ -313,3 +315,10 @@ def top_actual_metric(n: int = 30) -> Callable[[list[Target], str], float]:
 
 def common_targets(targets: list[Target], names: list[str]) -> list[Target]:
     return [t for t in targets if all(t.proj.get(n) is not None for n in names)]
+
+
+def config_estimator(config) -> Estimator:
+    """Estimator running engine.projections.build_projections with `config`."""
+    def est(history: list[dict], cutoff_date: str) -> dict[str, float]:
+        return {pid: p.projected_pir for pid, p in build_projections(history, cutoff_date=cutoff_date, config=config).items()}
+    return est

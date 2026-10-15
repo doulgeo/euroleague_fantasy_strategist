@@ -47,7 +47,7 @@ from engine.lineup import _game_dates, build_lineup, choose_active_squad, comput
 from engine.ml_features import build_feature_table
 from engine.ml_projections import build_ensemble_projections, build_ml_projections, train_model
 from engine.rounds import classify_phase, in_main_window, round_main_window, round_start_dates  # noqa: F401 (classify_phase re-exported for team_strength_backtest)
-from engine.projections import ROLLING_WINDOW, actual_fantasy_score, build_projections
+from engine.projections import LEGACY_CONFIG, ROLLING_WINDOW, TUNED_CONFIG, actual_fantasy_score, build_projections
 from engine.roster import DRAFT_POOL_SIZE, build_draft_pool, sample_roster
 
 Z_95 = 1.96
@@ -165,10 +165,11 @@ def evaluate_season(
     min_round: int,
     trials_per_round: int,
     base_seed: int,
-    rolling_window: int = ROLLING_WINDOW,
-    min_games: int = 3,
+    rolling_window: int | None = None,
+    min_games: int | None = None,
     include_playoffs: bool = False,
     pool_size: int = DRAFT_POOL_SIZE,
+    config=LEGACY_CONFIG,
 ) -> SeasonSummary:
     rows = load_rows(conn, season)
     if not rows:
@@ -200,7 +201,7 @@ def evaluate_season(
 
         projections = build_projections(
             rows, as_of_round=round_no, rolling_window=rolling_window, min_games=min_games,
-            cutoff_date=round_starts.get(round_no),
+            cutoff_date=round_starts.get(round_no), config=config,
         )
         if len(projections) < 20:  # not enough of a pool this early in the season
             summary.rounds_skipped += 1
@@ -474,6 +475,11 @@ def main() -> None:
              "(regular season only, same exclusion as the main run)",
     )
     parser.add_argument(
+        "--config", choices=["legacy", "tuned"], default="legacy",
+        help="engine.projections.ProjectionConfig for the heuristic projections (default legacy, so old "
+             "headlines stay reproducible; tuned = the Phase-2 estimator). Single-season history here.",
+    )
+    parser.add_argument(
         "--pool-size", type=int, default=DRAFT_POOL_SIZE,
         help="Restrict roster sampling to the top N draft-worthy players (by PIR+minutes composite, see "
              "engine.roster.build_draft_pool), instead of a uniform random draw from the whole league pool. "
@@ -514,6 +520,7 @@ def main() -> None:
             summary = evaluate_season(
                 conn, season, args.min_round, args.trials_per_round, args.seed,
                 include_playoffs=args.include_playoffs, pool_size=args.pool_size,
+                config=TUNED_CONFIG if args.config == "tuned" else LEGACY_CONFIG,
             )
             print_summary(summary)
             all_summaries.append(summary)

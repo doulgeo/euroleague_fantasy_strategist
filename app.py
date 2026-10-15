@@ -74,7 +74,7 @@ from engine.projections import (
     Projection,
     SeasonPoints,
     actual_fantasy_score,
-    blend_season_rows,
+    blend_seasons,
     build_projections,
     season_points,
 )
@@ -237,8 +237,10 @@ def close_db(exception=None) -> None:
 def _load_pool_rows(
     conn: sqlite3.Connection, before_round: int | None = None
 ) -> tuple[list[dict], int, str | None]:
-    """(rows, as_of_round) to build the player pool from right now: the
-    prior season blended with whatever of the current season has been
+    """(rows, as_of_round) to build the player pool from right now: every
+    synced season (the estimator discounts older ones by ProjectionConfig.
+    season_age_weight, so a player with only E2023/E2024 history still gets
+    a projection) blended with whatever of the current season has been
     played so far (see engine.projections.blend_season_rows for why - a
     hard switch to the current season zeroed nearly every projection the
     day after round 1 was synced). `before_round` drops current-season
@@ -249,14 +251,21 @@ def _load_pool_rows(
     start of `before_round` (engine.rounds), so a postponed game from an
     earlier round that was only played after that round started stays out
     too. None when there's no before_round (everything played is history)."""
-    prior_rows = load_rows(conn, season_code=PRIOR_SEASON)
-    current_rows = load_rows(conn, season_code=CURRENT_SEASON)
+    by_season = {
+        s: load_rows(conn, season_code=s)
+        for (s,) in conn.execute(
+            "SELECT DISTINCT season_code FROM player_game_stats WHERE season_code <= ?", (CURRENT_SEASON,)
+        ).fetchall()
+    }
+    by_season.setdefault(CURRENT_SEASON, [])
     cutoff_date = None
     if before_round is not None:
-        current_rows = [r for r in current_rows if r.get("round") is not None and r["round"] < before_round]
+        by_season[CURRENT_SEASON] = [
+            r for r in by_season[CURRENT_SEASON] if r.get("round") is not None and r["round"] < before_round
+        ]
         starts = round_start_dates(load_schedule(conn, CURRENT_SEASON, round_no=before_round))
         cutoff_date = starts.get(before_round)
-    rows, as_of_round = blend_season_rows(prior_rows, current_rows)
+    rows, as_of_round = blend_seasons(by_season)
     return rows, as_of_round, cutoff_date
 
 
