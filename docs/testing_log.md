@@ -3233,3 +3233,15 @@ box-score rows but never played (DNP-only), so no estimate exists.
 
 The default switch changes every projection in the app (part-timers and
 small-sample players move most). Tests: 93 pass.
+
+---
+
+## 2026-10-15: Backtest B1 - day-1 no-shows are 0 (plan Phase 5a, partly)
+
+`backtest_eval.run_one_trial` now values a day-1 team's player with no box-score
+row at 0, as the live app does (`engine.lineup.day1_results`), instead of his
+projection. Smoke run only (`--seasons E2025 --trials-per-round 5 --config
+tuned`, 160 trials: mean swap gain +9.37 PIR +-1.74, 11.2% losses); not a
+headline. B2 (multi-season history, `min_round` 1, roster merge) and 5b-d (paired
+realized-points comparison, ML re-ask, new headline) are not done, so the
+CLAUDE.md backtest headline is still the old, stale one.

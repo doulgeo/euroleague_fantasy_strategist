@@ -41,7 +41,7 @@ Severity is the reviewers' rating.
 | W1 | Med | Win-probability stand-in (team last-10 win rate) has Brier 0.265, worse than a flat 0.5 (0.250). Home/away alone gets 0.236; logistic on home + form gets 0.219 | 4 | [ ] |
 | W2 | Low | Home/away PIR effect (+0.38 / −0.34) is ignored | 4 | [ ] |
 | W3 | Low | A transferred player keeps the old team's win rate and bonus (`rosters.py:88-89`). 68 players at R1 | 4 | [ ] |
-| B1 | Med | Backtest values day-1 no-shows at their projection; live values them at 0 (`backtest_eval.py:127-129` vs `app.py:1086-1091`) | 5 | [ ] |
+| B1 | Med | Backtest values day-1 no-shows at their projection; live values them at 0 (`backtest_eval.py:127-129` vs `app.py:1086-1091`) | 5 | [x] |
 | B2 | Med | Backtest never runs the live path: single season, `min_round=6`, no blend, no early rounds | 5 | [ ] |
 | B3 | Med | Backtest metric (swap gain over no-swap with the *same* projections) can't see projection quality. The ML rejection may be unsound (Ridge R² 0.238 vs heuristic 0.181) | 5 | [ ] |
 | B4 | Low | Backtest `actual_pir_lookup` keeps only the last row per player per round; the tracker sums. Latent | 5 | [x] |

@@ -138,7 +138,9 @@ def run_one_trial(
     actual = actual_pir_lookup(rows, round_no)
     min_date = min(team_dates.values()) if team_dates else None
     day1_teams = {team for team, date in team_dates.items() if date == min_date}
-    day1_actual = {pid: pir for pid, pir in actual.items() if pid in pool and pool[pid].team in day1_teams}
+    # a day-1 player with no box-score row didn't play: a real 0 (as in the
+    # live app, engine.lineup.day1_results), not their projection
+    day1_actual = {pid: actual.get(pid, 0.0) for pid in pool if pool[pid].team in day1_teams}
     decision_value = lambda pid: day1_actual[pid] if pid in day1_actual else projected_value(pid)  # noqa: E731
     recommended = swap_after_day1(initial, team_dates, decision_value)
 
