@@ -69,6 +69,7 @@ from engine.lineup import (
     swap_after_day1,
     team_dates_from_schedule,
 )
+from engine.rounds import in_main_window, round_main_window, round_start_dates
 from engine.projections import (
     Projection,
     SeasonPoints,
@@ -233,19 +234,30 @@ def close_db(exception=None) -> None:
         db.close()
 
 
-def _load_pool_rows(conn: sqlite3.Connection, before_round: int | None = None) -> tuple[list[dict], int]:
+def _load_pool_rows(
+    conn: sqlite3.Connection, before_round: int | None = None
+) -> tuple[list[dict], int, str | None]:
     """(rows, as_of_round) to build the player pool from right now: the
     prior season blended with whatever of the current season has been
     played so far (see engine.projections.blend_season_rows for why - a
     hard switch to the current season zeroed nearly every projection the
     day after round 1 was synced). `before_round` drops current-season
     rounds >= it - the points tracker uses this so a suggestion computed
-    after a round was played never sees that round's own results."""
+    after a round was played never sees that round's own results.
+
+    Third value: the cutoff date for build_projections - the main-window
+    start of `before_round` (engine.rounds), so a postponed game from an
+    earlier round that was only played after that round started stays out
+    too. None when there's no before_round (everything played is history)."""
     prior_rows = load_rows(conn, season_code=PRIOR_SEASON)
     current_rows = load_rows(conn, season_code=CURRENT_SEASON)
+    cutoff_date = None
     if before_round is not None:
         current_rows = [r for r in current_rows if r.get("round") is not None and r["round"] < before_round]
-    return blend_season_rows(prior_rows, current_rows)
+        starts = round_start_dates(load_schedule(conn, CURRENT_SEASON, round_no=before_round))
+        cutoff_date = starts.get(before_round)
+    rows, as_of_round = blend_season_rows(prior_rows, current_rows)
+    return rows, as_of_round, cutoff_date
 
 
 def get_pool(
@@ -282,8 +294,8 @@ def get_pool(
     if cached and cached[0] == mtime_ns:
         return cached[1]
 
-    rows, as_of_round = _load_pool_rows(conn, before_round)
-    projections = build_projections(rows, as_of_round=as_of_round)
+    rows, as_of_round, cutoff_date = _load_pool_rows(conn, before_round)
+    projections = build_projections(rows, as_of_round=as_of_round, cutoff_date=cutoff_date)
 
     roster_rows = load_roster(conn, CURRENT_SEASON)
     seen = known_player_ids(conn)
@@ -1204,6 +1216,10 @@ def _round_actuals(conn: sqlite3.Connection, round_no: int) -> tuple[dict[str, f
     """(player_id -> real fantasy score, round complete?) for a CURRENT_SEASON round."""
     round_rows = [r for r in load_rows(conn, CURRENT_SEASON) if r.get("round") == round_no]
     schedule_rows = load_schedule(conn, CURRENT_SEASON, round_no=round_no)
+    # postponed games (outside the round's main window) don't count toward it
+    window = round_main_window([r["game_date"] for r in schedule_rows if r.get("game_date")])
+    round_rows = [r for r in round_rows if in_main_window(r.get("game_date"), window)]
+    schedule_rows = [r for r in schedule_rows if in_main_window(r.get("game_date"), window)]
     complete = bool(schedule_rows) and all(r["played"] for r in schedule_rows)
     return actual_scores(round_rows), complete
 

@@ -72,6 +72,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from engine.projections import Projection, actual_fantasy_score
+from engine.rounds import in_main_window, round_main_window
 from engine.roster import ActiveSquad, Roster, legal_exclusions
 
 VALID_FORMATIONS: list[tuple[int, int, int]] = [(2, 2, 1), (2, 1, 2), (3, 1, 1)]  # (Guard, Forward, Center)
@@ -99,16 +100,32 @@ def team_dates_for_round(rows: list[dict], round_no: int) -> dict[str, str]:
     """team_code -> date (YYYY-MM-DD) they play in the given round.
 
     Built from the flat player-game rows rather than a separate games list -
-    every team appears at least once per round it plays in.
+    every team appears at least once per round it plays in. Games outside
+    the round's main window (postponed/rescheduled, see engine.rounds) are
+    ignored, so such a team counts as not playing this round; a team's date
+    is its earliest in-window one.
     """
+    round_rows = [r for r in rows if r.get("round") == round_no]
+    window = round_main_window(_game_dates(round_rows))
     dates: dict[str, str] = {}
-    for r in rows:
-        if r.get("round") != round_no:
-            continue
+    for r in round_rows:
         date = _date_only(r.get("game_date"))
-        if date and r.get("team") not in dates:
-            dates[r["team"]] = date
+        if not date or not in_main_window(date, window):
+            continue
+        team = r.get("team")
+        if team not in dates or date < dates[team]:
+            dates[team] = date
     return dates
+
+
+def _game_dates(game_rows: list[dict]) -> list[str]:
+    """One date per distinct game (game_code) - the input round_main_window wants."""
+    seen: dict = {}
+    for r in game_rows:
+        d = _date_only(r.get("game_date"))
+        if d:
+            seen.setdefault(r.get("game_code"), d)
+    return list(seen.values())
 
 
 def team_dates_from_schedule(schedule_rows: list[dict], round_no: int) -> dict[str, str]:
@@ -122,17 +139,18 @@ def team_dates_from_schedule(schedule_rows: list[dict], round_no: int) -> dict[s
     hasn't been played yet - the actual case a lineup *decision* needs.
     Produces the exact same dict[str, str] shape, so build_lineup/
     choose_active_squad/swap_after_day1/availability_label consume either
-    interchangeably without caring which one built it.
+    interchangeably without caring which one built it. Like its sibling it
+    drops rescheduled games outside the round's main window.
     """
+    round_rows = [r for r in schedule_rows if r.get("round") == round_no]
+    window = round_main_window(_game_dates(round_rows))
     dates: dict[str, str] = {}
-    for r in schedule_rows:
-        if r.get("round") != round_no:
-            continue
+    for r in round_rows:
         date = _date_only(r.get("game_date"))
-        if not date:
+        if not date or not in_main_window(date, window):
             continue
         for team in (r.get("local_team_code"), r.get("road_team_code")):
-            if team and team not in dates:
+            if team and (team not in dates or date < dates[team]):
                 dates[team] = date
     return dates
 
@@ -161,13 +179,17 @@ def day1_results(
     }
     scores: dict[str, float] = {}
     for r in round_rows:
-        if r.get("team") in day1_teams:
+        if r.get("team") in day1_teams and _date_only(r.get("game_date")) in (min_date, None):
             scores[r["player_id"]] = scores.get(r["player_id"], 0.0) + actual_fantasy_score(
                 r["pir_official"], r.get("team_win")
             )
     # a synced box score proves the game is over even if the schedule's
     # played flag is stale
-    done_teams |= {r.get("team") for r in round_rows if r.get("team") in day1_teams}
+    done_teams |= {
+        r.get("team")
+        for r in round_rows
+        if r.get("team") in day1_teams and _date_only(r.get("game_date")) in (min_date, None)
+    }
     return scores, done_teams
 
 

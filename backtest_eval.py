@@ -43,9 +43,10 @@ from dataclasses import dataclass, field
 import sqlite3
 
 from engine.db import get_connection, load_rows
-from engine.lineup import build_lineup, choose_active_squad, compute_round_score, swap_after_day1, team_dates_for_round
+from engine.lineup import _game_dates, build_lineup, choose_active_squad, compute_round_score, swap_after_day1, team_dates_for_round
 from engine.ml_features import build_feature_table
 from engine.ml_projections import build_ensemble_projections, build_ml_projections, train_model
+from engine.rounds import in_main_window, round_main_window, round_start_dates, round_windows
 from engine.projections import ROLLING_WINDOW, actual_fantasy_score, build_projections
 from engine.roster import DRAFT_POOL_SIZE, build_draft_pool, sample_roster
 
@@ -75,11 +76,17 @@ def actual_pir_lookup(rows: list[dict], round_no: int) -> dict[str, float]:
     engine.projections.actual_fantasy_score, confirmed 2026-09-22; this
     function's name predates that fix and is kept for the existing call
     sites, but it's no longer just raw PIR)."""
-    return {
-        r["player_id"]: actual_fantasy_score(float(r["pir_official"]), r.get("team_win"))
-        for r in rows
-        if r.get("round") == round_no
-    }
+    round_rows = [r for r in rows if r.get("round") == round_no]
+    window = round_main_window(_game_dates(round_rows))
+    out: dict[str, float] = {}
+    for r in round_rows:
+        if not in_main_window(r.get("game_date"), window):
+            continue  # postponed game (see engine.rounds) - not part of this round
+        # summed, like engine.tracker.actual_scores, if a player has two rows
+        out[r["player_id"]] = out.get(r["player_id"], 0.0) + actual_fantasy_score(
+            float(r["pir_official"]), r.get("team_win")
+        )
+    return out
 
 
 def run_one_trial(
@@ -171,6 +178,7 @@ def evaluate_season(
     rounds_present = sorted({r["round"] for r in rows if r.get("round") is not None})
     phase_of_round = classify_phase(rows)
     summary = SeasonSummary(season=season)
+    round_starts = round_start_dates(rows)
 
     for round_no in rounds_present:
         if round_no < min_round:
@@ -191,7 +199,8 @@ def evaluate_season(
             continue
 
         projections = build_projections(
-            rows, as_of_round=round_no, rolling_window=rolling_window, min_games=min_games
+            rows, as_of_round=round_no, rolling_window=rolling_window, min_games=min_games,
+            cutoff_date=round_starts.get(round_no),
         )
         if len(projections) < 20:  # not enough of a pool this early in the season
             summary.rounds_skipped += 1
@@ -395,10 +404,11 @@ def classify_phase(rows: list[dict]) -> dict[int, str]:
     isn't fixed either.
     """
     teams_per_round: dict[int, int] = {}
+    windows = round_windows(rows)
     for r in rows:
         round_no = r.get("round")
-        if round_no is None:
-            continue
+        if round_no is None or not in_main_window(r.get("game_date"), windows.get(round_no)):
+            continue  # a postponed game doesn't make its nominal round look populated
         teams_per_round.setdefault(round_no, set()).add(r["team"])  # type: ignore[arg-type]
     teams_per_round = {r: len(teams) for r, teams in teams_per_round.items()}  # type: ignore[assignment]
 

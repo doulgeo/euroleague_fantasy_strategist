@@ -3109,3 +3109,32 @@ a copy of `euroleague.db`. No repo code changed.
 
 Full findings and numbers, and the phased fix plan, are in
 `docs/projection_overhaul_plan.md`. Nothing is implemented yet.
+
+---
+
+## 2026-10-15: Projection overhaul Phase 1 - date-correct cutoffs (L1, L2, L3, B5)
+
+**What changed**: new `engine/rounds.py` (`round_main_window`: the dense
+cluster of a round's game dates, within 3 days of the median game date;
+anything else is a rescheduled outlier). `build_projections` gained
+`cutoff_date` (history = games strictly before it); the live pool
+(`app._load_pool_rows`) and the backtest pass the target round's main-window
+start. A team's win-rate window is now ordered by date (L2).
+`team_dates_for_round`/`team_dates_from_schedule` drop postponed games, so
+day 1 is the earliest date *within the main window* and such a team counts as
+not playing that round (L3); `day1_results` ignores rows outside day 1's date.
+Backtest/tracker actuals exclude postponed games, the backtest actuals sum per
+player (B4), and `classify_phase` ignores postponed games (B5). Per plan,
+postponed games are excluded from a round's actuals until open question 3 is
+answered.
+
+**Validated** (live DB):
+- Round-only cutoff leaked rows into projections for rounds >= 6: E2023 96,
+  E2024 210, E2025 769 (the review's 1,465 for E2025 counted differently); a
+  date cutoff leaks 0 by construction (`tests/test_rounds.py` checks it on a
+  synthetic postponed game).
+- E2025 R20, Fournier: 13.49 round-cutoff vs 8.15 date-cutoff, as the review found.
+- Outlier windows found: E2023 R2/R6, E2024 R17, E2025 R14/21/30/33/34.
+- 83 tests pass (5 new).
+
+**Not yet done**: the harness (Phase 0) that re-measures MAE after the fix.

@@ -12,6 +12,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
+from engine.rounds import date_only
+
 MIN_GAMES_FOR_PROJECTION = 3
 ROLLING_WINDOW = 10
 TEAM_WIN_WINDOW = 10
@@ -176,19 +178,34 @@ def blend_season_rows(prior_rows: list[dict], current_rows: list[dict]) -> tuple
 
 def build_projections(
     rows: list[dict],
-    as_of_round: int,
+    as_of_round: int | None = None,
     rolling_window: int = ROLLING_WINDOW,
     team_win_window: int = TEAM_WIN_WINDOW,
     min_games: int = MIN_GAMES_FOR_PROJECTION,
+    cutoff_date: str | None = None,
 ) -> dict[str, Projection]:
     """Build one projection per player using only games strictly before as_of_round.
+
+    `cutoff_date` (YYYY-MM-DD, optional) additionally drops every game on or
+    after that date. Round numbers alone leak: a postponed game keeps its
+    nominal round but is played months later (see engine.rounds), so a
+    round-based cutoff shows a projection for round 20 a game from round 14
+    that was played after round 20 started. Callers that know the target
+    round's start date (engine.rounds.round_start_dates) should pass it;
+    rows with no date are dropped when it's set. `as_of_round` may then be
+    None.
 
     `rows` is the flat player-game table from engine.data.fetch_season for a
     single season. Rounds are assumed comparable as integers within that season
     (true for the v2 source, which is what this is built against).
     """
     history_rows = [
-        r for r in rows if r.get("round") is not None and r["round"] < as_of_round and r.get("played")
+        r
+        for r in rows
+        if r.get("round") is not None
+        and (as_of_round is None or r["round"] < as_of_round)
+        and r.get("played")
+        and (cutoff_date is None or (date_only(r.get("game_date")) or "9999") < cutoff_date)
     ]
 
     by_player: dict[str, list[dict]] = {}
@@ -202,11 +219,14 @@ def build_projections(
     # de-dup team-level rows down to one row per (team, game) for win-rate calc
     team_game_results: dict[str, list[tuple]] = {}
     for team, trows in team_games.items():
-        seen_games: dict[int, bool | None] = {}
+        seen_games: dict[int, tuple[str, bool | None]] = {}
         for r in trows:
-            seen_games.setdefault(r["game_code"], r.get("team_win"))
-        # sort by game_code as a proxy for chronological order within a team
-        ordered = sorted(seen_games.items(), key=lambda kv: kv[0])
+            seen_games.setdefault(r["game_code"], (r.get("game_date") or "", r.get("team_win")))
+        # chronological by date (game_code breaks ties): game_code alone is
+        # not date-ordered when a game was postponed
+        ordered = [
+            (code, win) for code, (_d, win) in sorted(seen_games.items(), key=lambda kv: (kv[1][0], kv[0]))
+        ]
         team_game_results[team] = ordered
 
     projections: dict[str, Projection] = {}
