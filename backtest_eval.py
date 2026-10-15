@@ -43,7 +43,7 @@ from dataclasses import dataclass, field
 import sqlite3
 
 from engine.db import get_connection, load_rows
-from engine.lineup import _game_dates, build_lineup, choose_active_squad, compute_round_score, swap_after_day1, team_dates_for_round
+from engine.lineup import _game_dates, build_lineup, choose_active_squad, compute_round_score, plan_round, swap_after_day1, team_dates_for_round
 from engine.ml_features import build_feature_table
 from engine.ml_projections import build_ensemble_projections, build_ml_projections, train_model
 from engine.rounds import classify_phase, in_main_window, round_main_window, round_start_dates  # noqa: F401 (classify_phase re-exported for team_strength_backtest)
@@ -136,13 +136,10 @@ def run_one_trial(
     # are deliberately withheld from this lookup - peeking at those would be
     # hindsight leakage into a decision that, in reality, precedes them.)
     actual = actual_pir_lookup(rows, round_no)
-    min_date = min(team_dates.values()) if team_dates else None
-    day1_teams = {team for team, date in team_dates.items() if date == min_date}
-    # a day-1 player with no box-score row didn't play: a real 0 (as in the
-    # live app, engine.lineup.day1_results), not their projection
-    day1_actual = {pid: actual.get(pid, 0.0) for pid in pool if pool[pid].team in day1_teams}
-    decision_value = lambda pid: day1_actual[pid] if pid in day1_actual else projected_value(pid)  # noqa: E731
-    recommended = swap_after_day1(initial, team_dates, decision_value)
+    # every swap window is replayed in order (3-date rounds have two); a
+    # player whose game is over is valued at his real score, a no-show at a
+    # real 0 (as in the live app), later players at their projection
+    recommended = plan_round(initial, team_dates, projected_value, actual)
 
     no_swap_score = compute_round_score(initial, actual)
     recommended_score = compute_round_score(recommended, actual)

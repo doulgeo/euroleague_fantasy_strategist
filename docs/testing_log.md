@@ -3274,3 +3274,21 @@ Brier 0.1201 vs always-plays 0.2436 and flat rate 0.1842. Reliability: predicted
 
 **Not measured**: realized-points effect in the backtest (Phase 5 not done), so the plan's
 "no regression in realized points" check for Phase 3 is deferred. The injury multipliers are unvalidated guesses.
+
+---
+
+## 2026-10-15: Projection overhaul Phase 8 - swap after every date (R1)
+
+User confirmed rounds with 3 dates allow a swap after each date. `swap_after_day1` is now a wrapper over
+`swap_after_date(lineup, team_dates, value_fn, known_through)`: "already played" means the team's date is on/before
+`known_through`, so a played player on the bench is locked, and the captaincy may only move to a player who
+hasn't played. `plan_round` replays all windows (every date but the last), using real results for games that are
+over and projections for the rest; `/lineup` and the backtest use it, with the day-1 no-show-is-0 rule extended to
+every finished date (`results_through`).
+
+Tests (`tests/test_lineup.py`, 104 pass overall): a 2-date `plan_round` equals the old `swap_after_day1` with
+day-1 actuals; over 60 random 3-date rounds the final lineup keeps a valid formation, never promotes a bench
+player who had already played and only re-captains to a player from a later date. Live check on a real manager's
+roster: E2026 round 4 (3 dates, 10-07/08/09) and round 6 render without error. Existing behaviour for 2-date rounds is
+unchanged (all prior swap tests still pass). Not done: the tracker still validates a saved final against the day-1
+lock only, and the backtest headline has not been rerun.

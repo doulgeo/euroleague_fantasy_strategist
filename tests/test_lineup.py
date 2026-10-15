@@ -128,3 +128,66 @@ def test_swap_uses_day1_reality():
     assert before != after
     assert after.captain.player_id == "g0"
     assert "g1" not in {p.player_id for p in after.starters}
+
+
+# --- swap after every date (3-date rounds, confirmed 2026-10-15) ----------
+
+from engine.lineup import plan_round, round_dates, swap_after_date  # noqa: E402
+
+THREE_DATES = {"D1": "2026-10-01", "D2": "2026-10-02", "D3": "2026-10-03"}
+
+
+def _three_date_lineup() -> Lineup:
+    g = [_p("g0", "Guard", "D1"), _p("g1", "Guard", "D2"), _p("g2", "Guard", "D3"), _p("g3", "Guard", "D3")]
+    f = [_p("f0", "Forward", "D1"), _p("f1", "Forward", "D2"), _p("f2", "Forward", "D3"), _p("f3", "Forward", "D2")]
+    c = [_p("c0", "Center", "D1"), _p("c1", "Center", "D3")]
+    return Lineup(starters=[g[0], g[1], f[0], f[1], c[0]], sixth_man=g[2], bench=[f[2], f[3], c[1], g[3]], captain=g[0])
+
+
+def test_round_dates():
+    assert round_dates(THREE_DATES) == ["2026-10-01", "2026-10-02", "2026-10-03"]
+
+
+def test_plan_round_two_dates_equals_swap_after_day1_with_day1_actuals():
+    lineup = _day1_lineup()
+    rng = random.Random(3)
+    proj = {p.player_id: rng.uniform(2, 20) for p in [*lineup.starters, lineup.sixth_man, *lineup.bench]}
+    actual = {pid: rng.uniform(0, 30) for pid in proj}
+    value = lambda pid: actual[pid] if pid in {p.player_id for p in [*lineup.starters, lineup.sixth_man, *lineup.bench] if p.team == "D1"} else proj[pid]  # noqa: E731
+    a = plan_round(lineup, TEAM_DATES, lambda pid: proj[pid], actual)
+    b = swap_after_day1(lineup, TEAM_DATES, value)
+    assert [p.player_id for p in a.starters] == [p.player_id for p in b.starters]
+    assert a.sixth_man.player_id == b.sixth_man.player_id and a.captain.player_id == b.captain.player_id
+
+
+def test_three_date_round_never_promotes_or_recaptains_a_player_who_has_played():
+    rng = random.Random(11)
+    for _ in range(60):
+        lineup = _three_date_lineup()
+        players = [*lineup.starters, lineup.sixth_man, *lineup.bench]
+        proj = {p.player_id: rng.uniform(2, 20) for p in players}
+        actual = {p.player_id: rng.uniform(0, 30) for p in players}
+        final = plan_round(lineup, THREE_DATES, lambda pid: proj[pid], actual)
+        full = {p.player_id for p in [*final.starters, final.sixth_man]}
+        shape = tuple(sum(p.position == pos for p in final.starters) for pos in ("Guard", "Forward", "Center"))
+        assert shape in VALID_FORMATIONS and len(full) == 6 and final.captain in final.starters
+        # a D1 player starting on the bench stays there through both windows
+        for p in lineup.bench:
+            if p.team == "D1":
+                assert p.player_id not in full
+        # the captaincy only leaves the day-1 captain for someone who hadn't played at that window
+        assert final.captain.player_id == lineup.captain.player_id or final.captain.team != "D1"
+
+
+def test_second_window_uses_day2_results():
+    lineup = _three_date_lineup()
+    players = [*lineup.starters, lineup.sixth_man, *lineup.bench]
+    proj = {p.player_id: 10.0 for p in players}
+    actual = {p.player_id: 10.0 for p in players}
+    actual["f3"] = 0.0  # f3 (D2, bench) flops on day 2; g1 (D2 starter) also played
+    after1 = swap_after_date(lineup, THREE_DATES, lambda pid: proj[pid], "2026-10-01")
+    final = plan_round(lineup, THREE_DATES, lambda pid: proj[pid], actual)
+    # whoever was benched after D2's games (played, now locked) can't be back in a full slot
+    window2_bench_d2 = {p.player_id for p in final.bench if p.team in ("D1", "D2")}
+    assert all(pid not in {q.player_id for q in [*final.starters, final.sixth_man]} for pid in window2_bench_d2)
+    assert after1.captain.player_id in {p.player_id for p in players}

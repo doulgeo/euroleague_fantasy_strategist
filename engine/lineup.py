@@ -17,7 +17,7 @@ model that was wrong on several points):
 - The starting five must be one of exactly three valid formations (Guard,
   Forward, Center): (2,2,1), (2,1,2), (3,1,1) - confirmed by the user
   (minimum 2 Guards; Forward and Center each capped at 2, floored at 1).
-- A round spans 1-2 match days. **Corrected 2026-09-16**: an earlier
+- A round spans 1-3 match days (a swap is allowed after each date but the last, confirmed 2026-10-15 - see plan_round). **Corrected 2026-09-16**: an earlier
   assumption here - that a full-scoring slot's day-1 points were "banked
   permanently," untouchable by a later swap - was wrong. The user confirmed
   (against both the official rules and their own live experience) that
@@ -155,42 +155,67 @@ def team_dates_from_schedule(schedule_rows: list[dict], round_no: int) -> dict[s
     return dates
 
 
+def known_through_date(
+    round_rows: list[dict], schedule_rows: list[dict], team_dates: dict[str, str]
+) -> str | None:
+    """Latest date of the round (not counting the final one - nothing is left
+    to decide after it) whose games are all over, given every earlier date is
+    too; None if even the first date isn't finished. A date's game counts as
+    over if the schedule marks it played or a box score for the team exists."""
+    dates = round_dates(team_dates)
+    teams_with_rows = {r.get("team") for r in round_rows}
+    played_games = {
+        (_date_only(r.get("game_date")), team)
+        for r in schedule_rows if r.get("played")
+        for team in (r.get("local_team_code"), r.get("road_team_code"))
+    }
+    known = None
+    for d in dates[:-1]:
+        teams = [t for t, td in team_dates.items() if td == d]
+        if all((d, t) in played_games or t in teams_with_rows for t in teams):
+            known = d
+        else:
+            break
+    return known
+
+
+def results_through(
+    round_rows: list[dict], schedule_rows: list[dict], team_dates: dict[str, str], known_through: str | None
+) -> tuple[dict[str, float], set[str]]:
+    """(player_id -> real fantasy score, teams whose game is over) for the
+    games on/before `known_through` - what a swap window at that date gets
+    to see. A player of a finished team with no box-score row didn't play: a
+    real 0, not his projection. Later games are ignored even if synced: the
+    window closes before they start."""
+    if known_through is None:
+        return {}, set()
+    teams = {team for team, date in team_dates.items() if date <= known_through}
+    scores: dict[str, float] = {}
+    for r in round_rows:
+        d = _date_only(r.get("game_date"))
+        if r.get("team") in teams and (d is None or d == team_dates[r["team"]]):
+            scores[r["player_id"]] = scores.get(r["player_id"], 0.0) + actual_fantasy_score(
+                r["pir_official"], r.get("team_win")
+            )
+    return scores, teams
+
+
 def day1_results(
     round_rows: list[dict], schedule_rows: list[dict], team_dates: dict[str, str]
 ) -> tuple[dict[str, float], set[str]]:
-    """(player_id -> real fantasy score, teams whose day-1 game is over) for
-    a round's day-1 games - what the real swap decision gets to see.
-
-    A team counts as done once the schedule marks its day-1 game played,
-    and every player of a done team is known: one with a box-score row gets
-    PIR + the real win bonus (engine.projections.actual_fantasy_score), one
-    without a row (didn't dress) is a real 0, not their projection. Later-
-    date games are ignored even if already synced: the swap window closes
-    before they start, so their results were never available to it.
-    """
+    """results_through the round's first date, but only once those games are
+    actually over (the original day-1 view, kept for callers/tests)."""
     min_date = _min_date(team_dates)
     day1_teams = {team for team, date in team_dates.items() if date == min_date}
-    done_teams = {
+    done = {
         team
         for r in schedule_rows
         if r.get("played") and _date_only(r.get("game_date")) == min_date
         for team in (r.get("local_team_code"), r.get("road_team_code"))
         if team in day1_teams
-    }
-    scores: dict[str, float] = {}
-    for r in round_rows:
-        if r.get("team") in day1_teams and _date_only(r.get("game_date")) in (min_date, None):
-            scores[r["player_id"]] = scores.get(r["player_id"], 0.0) + actual_fantasy_score(
-                r["pir_official"], r.get("team_win")
-            )
-    # a synced box score proves the game is over even if the schedule's
-    # played flag is stale
-    done_teams |= {
-        r.get("team")
-        for r in round_rows
-        if r.get("team") in day1_teams and _date_only(r.get("game_date")) in (min_date, None)
-    }
-    return scores, done_teams
+    } | {r.get("team") for r in round_rows if r.get("team") in day1_teams}
+    scores, _teams = results_through(round_rows, schedule_rows, team_dates, min_date)
+    return scores, done
 
 
 def _availability_rank(player: Projection, team_dates: dict[str, str], min_date: str | None) -> int:
@@ -329,13 +354,73 @@ def build_lineup(
     return best_initial
 
 
+def round_dates(team_dates: dict[str, str]) -> list[str]:
+    """The round's distinct game dates, earliest first (2 or 3 in practice)."""
+    return sorted(set(team_dates.values()))
+
+
+def has_played(player: Projection, team_dates: dict[str, str], known_through: str | None) -> bool:
+    """True if the player's game for this round is on or before `known_through`."""
+    date = team_dates.get(player.team)
+    return date is not None and known_through is not None and date <= known_through
+
+
 def swap_after_day1(
     lineup: Lineup,
     team_dates: dict[str, str],
     value_fn: ValueFn,
     formation: tuple[int, int, int] | None = None,
 ) -> Lineup:
-    """The day-2 decision: given the day-1 lock, re-solve for the best final
+    """The swap window after the round's first date - see swap_after_date."""
+    return swap_after_date(lineup, team_dates, value_fn, _min_date(team_dates), formation)
+
+
+def plan_round(
+    initial: Lineup,
+    team_dates: dict[str, str],
+    projected_value: ValueFn,
+    actual: dict[str, float],
+    formation: tuple[int, int, int] | None = None,
+    actual_through: str | None = None,
+) -> Lineup:
+    """The final lineup after EVERY swap window of the round, replaying them
+    in order (a swap is allowed after each date but the last - confirmed
+    2026-10-15, matters for 3-date rounds). At the window after date d a
+    player whose game is on/before d is valued at his real score (0 if he
+    didn't play), everyone else at the projection. For a 2-date round this
+    is exactly swap_after_day1 with day-1 actuals.
+
+    `actual_through` limits which results are real: only games on/before it
+    have happened (pass "" for none - a pre-round plan - or the latest
+    finished date mid-round); later windows then plan with projections.
+    None (backtests) means every result is known."""
+    lineup = initial
+    for d in round_dates(team_dates)[:-1]:
+        def value(pid: str, d: str = d, lineup_now: Lineup = lineup) -> float:
+            date = _player_date(pid, lineup_now, team_dates)
+            if date is not None and date <= d and (actual_through is None or date <= actual_through):
+                return actual.get(pid, 0.0)
+            return projected_value(pid)
+
+        lineup = swap_after_date(lineup, team_dates, value, d, formation)
+    return lineup
+
+
+def _player_date(pid: str, lineup: Lineup, team_dates: dict[str, str]) -> str | None:
+    for p in _all_players(lineup):
+        if p.player_id == pid:
+            return team_dates.get(p.team)
+    return None
+
+
+def swap_after_date(
+    lineup: Lineup,
+    team_dates: dict[str, str],
+    value_fn: ValueFn,
+    known_through: str | None,
+    formation: tuple[int, int, int] | None = None,
+) -> Lineup:
+    """One swap window: given the current lineup and that every game on/before `known_through` is over, re-solve for the best final
     lineup now that both formation and full-slot occupants can change.
 
     A day-1 player who started on the BENCH is locked there for good - the
@@ -361,11 +446,7 @@ def swap_after_day1(
     manually locked a formation on the /lineup page and wants the day-2
     plan to keep using it rather than switch shape.
     """
-    min_date = _min_date(team_dates)
-
-    day1_bench_locked_ids = {
-        p.player_id for p in lineup.bench if _availability_rank(p, team_dates, min_date) == 0
-    }
+    day1_bench_locked_ids = {p.player_id for p in lineup.bench if has_played(p, team_dates, known_through)}
     flexible = [p for p in _all_players(lineup) if p.player_id not in day1_bench_locked_ids]
     day1_bench_locked = [p for p in lineup.bench if p.player_id in day1_bench_locked_ids]
 
@@ -375,7 +456,7 @@ def swap_after_day1(
     # still to come. Previously the captain was simply the top final
     # starter by value, which could illegally hand the 1.5x to a day-1
     # player after their (actual, known) score was in.
-    day1_ids = {p.player_id for p in _all_players(lineup) if _availability_rank(p, team_dates, min_date) == 0}
+    day1_ids = {p.player_id for p in _all_players(lineup) if has_played(p, team_dates, known_through)}
 
     def captain_allowed(p: Projection) -> bool:
         return p.player_id == lineup.captain.player_id or p.player_id not in day1_ids

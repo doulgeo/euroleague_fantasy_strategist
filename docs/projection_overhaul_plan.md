@@ -48,7 +48,7 @@ Severity is the reviewers' rating.
 | B5 | Low | Backtest `classify_phase` treats rescheduled rounds as regular season | 1/5 | [x] |
 | U1 | Med | Decisions ignore uncertainty, so the exclusion search's claimed swap "option value" is ~0 with fixed values | 6 | [ ] |
 | T1 | Med | Tracker re-renders and snapshots past rounds with *today's* injury report and today's rosters | 7 | [ ] |
-| R1 | ? | 3-date rounds (E2026 R4, 7, 10, 11, 21, 28, 35): only the earliest date is treated as known. Wrong if there is a second swap window | 8 | [ ] |
+| R1 | ? | 3-date rounds (E2026 R4, 7, 10, 11, 21, 28, 35): only the earliest date is treated as known. Wrong if there is a second swap window | 8 | [x] |
 | X1 | Low | `projected_gain` is a per-game delta with no rest-of-season or schedule horizon (`transfers.py:28-30`) | 9 | [ ] |
 | X2 | Low | Double-round fatigue (392 team-games on 2 days' rest) is untested | 9 | [ ] |
 | X3 | Low | The projection cache is keyed on DB-file mtime and could serve stale data under WAL or coarse `/mnt/c` mtime. Not reproduced | 9 | [ ] |
@@ -1085,3 +1085,10 @@ originally written.
   Not done: p_play columns in the tracker tables (snapshots store the expected value only), and the
   "if he plays" PIR is a tooltip rather than a column. Unknown players: 0.5 (a judgment value; not
   measurable from this DB), or 0.8 when the user supplied an override. P7 landed with it.
+- **Phase 8 (done 2026-10-15, R1):** `engine.lineup.swap_after_date` (one window, generalizing
+  `swap_after_day1`, which is now a wrapper), `plan_round` (replays every window in order; `actual_through`
+  says which results are real), `known_through_date`/`results_through` (what `day1_results` is built on).
+  The live `/lineup` and the backtest use `plan_round`. Not changed: `build_lineup`/`choose_active_squad`
+  still evaluate candidates with a single day-1 window (a planning approximation), the tracker's
+  `final_rule_violations` still checks the final lineup against the day-1 lock only (a necessary, not
+  sufficient, check for 3-date rounds), and the hindsight ceiling is unchanged.

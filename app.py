@@ -65,8 +65,9 @@ from engine.lineup import (
     build_lineup,
     choose_active_squad,
     compute_round_score,
-    day1_results,
-    swap_after_day1,
+    known_through_date,
+    plan_round,
+    results_through,
     team_dates_from_schedule,
 )
 from engine.availability import DEFAULT_AVAILABILITY, UNKNOWN_P_PLAY, estimate_p_play, injury_multiplier
@@ -1115,21 +1116,25 @@ def compute_recommendation(
                 # is his real score (0 if he didn't dress - see
                 # engine.lineup.day1_results); day-2 players keep their
                 # projection, since their games haven't happened yet.
-                day1_actual, day1_done_teams = day1_results(
-                    [r for r in load_rows(conn, CURRENT_SEASON) if r.get("round") == round_no],
-                    schedule_rows,
-                    team_dates,
-                )
-                used_day1_actuals = bool(day1_done_teams)
+                round_rows_now = [r for r in load_rows(conn, CURRENT_SEASON) if r.get("round") == round_no]
+                known_date = known_through_date(round_rows_now, schedule_rows, team_dates)
+                actual_now, _done_teams = results_through(round_rows_now, schedule_rows, team_dates, known_date)
+                used_day1_actuals = known_date is not None
 
                 def decision_value(pid: str) -> float:
-                    if pid in day1_actual:
-                        return day1_actual[pid]
-                    if by_id[pid].team in day1_done_teams:
-                        return 0.0
+                    date = team_dates.get(by_id[pid].team)
+                    if known_date is not None and date is not None and date <= known_date:
+                        return actual_now.get(pid, 0.0)  # real score; a no-show is a real 0
                     return projected_value(pid)
 
-                recommended = swap_after_day1(initial, team_dates, decision_value, formation=formation)
+                # Every swap window of the round is replayed in order (a
+                # swap is allowed after each date but the last - 3-date
+                # rounds have two): windows whose games are over use real
+                # results, later ones plan with projections.
+                recommended = plan_round(
+                    initial, team_dates, projected_value, actual_now, formation=formation,
+                    actual_through=known_date or "",
+                )
                 initial_full_ids = {p.player_id for p in initial.starters} | {initial.sixth_man.player_id}
 
                 # Total projected score box: what the round is worth
