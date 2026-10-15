@@ -52,3 +52,40 @@ def test_season_points_totals_win_bonus_and_last_game():
     assert sp.total == 11 + 20  # +10% only on the win
     assert sp.avg == 15.5
     assert sp.last == 20 and sp.last_round == 2
+
+
+from engine.projections import LEGACY_CONFIG, ProjectionConfig  # noqa: E402
+import pytest  # noqa: E402
+
+
+def test_legacy_config_is_linear_ramp_over_last_10():
+    p = build_projections(_rows([10, 20, 30]), as_of_round=99, config=LEGACY_CONFIG)["P1"]
+    assert p.projected_pir == pytest.approx((10 * 1 + 20 * 2 + 30 * 3) / 6)
+    assert p.n_eff == pytest.approx(36 / 14)  # (1+2+3)^2 / (1+4+9)
+
+
+def test_exp_weights_half_life():
+    cfg = ProjectionConfig(weighting="exp", half_life_games=1.0, min_games=1)
+    p = build_projections(_rows([8, 16]), as_of_round=99, config=cfg)["P1"]
+    assert p.projected_pir == pytest.approx((8 * 0.5 + 16 * 1.0) / 1.5)
+
+
+def test_min_games_one_and_shrinkage_toward_position_mean():
+    rows = _rows([30]) + [
+        {**r, "player_id": f"O{i}", "player_name": f"O{i}", "game_code": 100 + i * 10 + j}
+        for i in range(5) for j, r in enumerate(_rows([10, 10, 10, 10]))
+    ]
+    cfg = ProjectionConfig(weighting="exp", min_games=1, shrink_k=2.0)
+    p = build_projections(rows, as_of_round=99, config=cfg)["P1"]
+    pos_mean = (30 + 5 * 4 * 10) / 21
+    assert p.n_eff == pytest.approx(1.0)
+    assert p.projected_pir == pytest.approx((1 * 30 + 2 * pos_mean) / 3)
+    assert "P1" not in build_projections(rows, as_of_round=99)  # legacy min_games=3 still drops him
+
+
+def test_season_age_weight_discounts_older_seasons():
+    old = [{**r, "season_code": "E2024", "game_date": f"2024-10-{i + 1:02d}"} for i, r in enumerate(_rows([30, 30]))]
+    new = [{**r, "season_code": "E2025", "game_code": 10 + i, "game_date": f"2025-10-{i + 1:02d}"} for i, r in enumerate(_rows([10, 10]))]
+    cfg = ProjectionConfig(weighting="exp", half_life_games=1e9, season_age_weight=0.25, min_games=1)
+    p = build_projections(old + new, as_of_round=99, config=cfg)["P1"]
+    assert p.projected_pir == pytest.approx((30 * 0.5 + 10 * 2) / 2.5)

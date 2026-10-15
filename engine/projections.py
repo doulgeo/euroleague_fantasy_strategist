@@ -9,7 +9,7 @@ ever considering something fancier.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 
 from engine.rounds import date_only
@@ -62,6 +62,8 @@ class Projection:
     # player's most recent game (0.0 when there was no earlier projection).
     recent_pir: float | None = None
     projection_change: float = 0.0
+    # Kish effective sample size behind projected_pir (0.0 for placeholders)
+    n_eff: float = 0.0
 
     @property
     def form(self) -> str | None:
@@ -176,15 +178,137 @@ def blend_season_rows(prior_rows: list[dict], current_rows: list[dict]) -> tuple
     return list(prior_rows) + shifted, current_max_round + 1
 
 
+
+@dataclass(frozen=True)
+class ProjectionConfig:
+    """Every knob of the PIR estimator (docs/projection_overhaul_plan.md, Phase 2).
+
+    weighting "ramp": linear 1..n weights over the last `window_games` games
+    (the original estimator). "exp": 0.5 ** (age_in_games / half_life_games),
+    age counted back from the player's most recent game. Either way a game
+    from a season `b` seasons older than the newest one in the history is
+    scaled by season_age_weight ** b.
+
+    shrink_k: pseudo-games of the position mean (x shrink_target_scale) mixed
+    into the weighted mean: (n_eff * mean + k * target) / (n_eff + k), n_eff
+    being the Kish effective sample size. 0 turns shrinkage off.
+    """
+
+    weighting: str = "ramp"
+    half_life_games: float = 10.0
+    window_games: int = ROLLING_WINDOW
+    season_age_weight: float = 1.0
+    shrink_k: float = 0.0
+    shrink_target_scale: float = 1.0
+    min_games: int = MIN_GAMES_FOR_PROJECTION
+    exclude_prior_playoffs: bool = False
+
+
+# Reproduces the pre-2026-10-15 estimator exactly (checked in tests).
+LEGACY_CONFIG = ProjectionConfig()
+DEFAULT_CONFIG = LEGACY_CONFIG
+
+
+def _season_ranks(rows: list[dict]) -> dict[str, int]:
+    """season_code -> how many seasons older than the newest one in `rows`."""
+    seasons = sorted({r["season_code"] for r in rows if r.get("season_code")}, reverse=True)
+    return {s: i for i, s in enumerate(seasons)}
+
+
+def _weights(prows: list[dict], config: ProjectionConfig, ranks: dict[str, int]) -> list[float]:
+    n = len(prows)
+    if config.weighting == "ramp":
+        base = [float(i + 1) for i in range(n)]
+    elif config.weighting == "exp":
+        base = [0.5 ** ((n - 1 - i) / config.half_life_games) for i in range(n)]
+    else:
+        raise ValueError(f"unknown weighting {config.weighting!r}")
+    return [b * config.season_age_weight ** ranks.get(r.get("season_code"), 0) for b, r in zip(base, prows)]
+
+
+def _weighted_mean(values: list[float], weights: list[float]) -> float:
+    return sum(v * w for v, w in zip(values, weights)) / sum(weights)
+
+
+def _kish(weights: list[float]) -> float:
+    return sum(weights) ** 2 / sum(w * w for w in weights)
+
+
+def _weighted_var(values: list[float], weights: list[float]) -> float:
+    n_eff = _kish(weights)
+    if n_eff <= 1.0:
+        return 0.0
+    mean = _weighted_mean(values, weights)
+    var = _weighted_mean([(v - mean) ** 2 for v in values], weights)
+    return var * n_eff / (n_eff - 1)  # unbiased for weighted samples
+
+
+@dataclass
+class _PositionStats:
+    mean: dict[str | None, float]
+    var: dict[str | None, float]
+
+
+def _position_stats(by_player: dict[str, list[dict]], config: ProjectionConfig, ranks: dict[str, int]) -> _PositionStats:
+    """Per-position mean PIR of a game played (season-age weighted) and the
+    average within-player variance - the shrinkage targets."""
+    sums: dict[str | None, list[float]] = {}
+    var_acc: dict[str | None, list[float]] = {}
+    for prows in by_player.values():
+        pos = prows[-1].get("position")
+        for r in prows:
+            w = config.season_age_weight ** ranks.get(r.get("season_code"), 0)
+            acc = sums.setdefault(pos, [0.0, 0.0])
+            acc[0] += w * float(r["pir_official"])
+            acc[1] += w
+        if len(prows) >= 3:
+            vals = [float(r["pir_official"]) for r in prows[-config.window_games:]]
+            var_acc.setdefault(pos, []).append(_weighted_var(vals, [1.0] * len(vals)))
+    mean = {pos: a[0] / a[1] for pos, a in sums.items() if a[1] > 0}
+    total = [sum(a[0] for a in sums.values()), sum(a[1] for a in sums.values())]
+    mean[None] = total[0] / total[1] if total[1] else 0.0
+    var = {pos: sum(v) / len(v) for pos, v in var_acc.items()}
+    var[None] = sum(sum(v) for v in var_acc.values()) / max(1, sum(len(v) for v in var_acc.values()))
+    return _PositionStats(mean, var)
+
+
+def _estimate(prows: list[dict], config: ProjectionConfig, ranks: dict[str, int], pos: _PositionStats):
+    """(projected_pir, minutes_trend, volatility, n_eff, n_games) from one
+    player's date-sorted played rows (oldest first)."""
+    recent = prows[-config.window_games:]
+    pir = [float(r["pir_official"]) for r in recent]
+    w = _weights(recent, config, ranks)
+    mean = _weighted_mean(pir, w)
+    n_eff = _kish(w)
+    position = recent[-1].get("position")
+    target = pos.mean.get(position, pos.mean[None]) * config.shrink_target_scale
+    projected = (n_eff * mean + config.shrink_k * target) / (n_eff + config.shrink_k) if config.shrink_k else mean
+    minutes = _weighted_mean([float(r["minutes_seconds"]) for r in recent], w)
+    if config.weighting == "ramp" and config.season_age_weight == 1.0:
+        vol = stdev(pir)  # the original unweighted sample SD
+    else:
+        var = _weighted_var(pir, w)
+        pvar = pos.var.get(position, pos.var[None])
+        if config.shrink_k:
+            var = (n_eff * var + config.shrink_k * pvar) / (n_eff + config.shrink_k)
+        vol = var ** 0.5
+    return projected, minutes, vol, n_eff, len(recent)
+
+
 def build_projections(
     rows: list[dict],
     as_of_round: int | None = None,
-    rolling_window: int = ROLLING_WINDOW,
+    rolling_window: int | None = None,
     team_win_window: int = TEAM_WIN_WINDOW,
-    min_games: int = MIN_GAMES_FOR_PROJECTION,
+    min_games: int | None = None,
     cutoff_date: str | None = None,
+    config: ProjectionConfig | None = None,
 ) -> dict[str, Projection]:
     """Build one projection per player using only games strictly before as_of_round.
+
+    `rows` is the flat player-game table from engine.data.fetch_season (one
+    season, or several via blend_season_rows). Rounds are assumed comparable
+    as integers within a season.
 
     `cutoff_date` (YYYY-MM-DD, optional) additionally drops every game on or
     after that date. Round numbers alone leak: a postponed game keeps its
@@ -195,10 +319,20 @@ def build_projections(
     rows with no date are dropped when it's set. `as_of_round` may then be
     None.
 
-    `rows` is the flat player-game table from engine.data.fetch_season for a
-    single season. Rounds are assumed comparable as integers within that season
-    (true for the v2 source, which is what this is built against).
+    `config` (ProjectionConfig, default DEFAULT_CONFIG) selects the
+    estimator. The legacy `rolling_window`/`min_games` arguments, when given,
+    override the config's window_games/min_games.
     """
+    config = config or DEFAULT_CONFIG
+    overrides = {}
+    if rolling_window is not None:
+        overrides["window_games"] = rolling_window
+    if min_games is not None:
+        overrides["min_games"] = min_games
+    if overrides:
+        config = replace(config, **overrides)
+    min_games = config.min_games
+
     history_rows = [
         r
         for r in rows
@@ -207,10 +341,16 @@ def build_projections(
         and r.get("played")
         and (cutoff_date is None or (date_only(r.get("game_date")) or "9999") < cutoff_date)
     ]
+    if config.exclude_prior_playoffs and history_rows:
+        history_rows = _drop_prior_playoffs(history_rows)
+    ranks = _season_ranks(history_rows)
 
     by_player: dict[str, list[dict]] = {}
     for r in history_rows:
         by_player.setdefault(r["player_id"], []).append(r)
+    for prows in by_player.values():
+        prows.sort(key=lambda r: (parse_date(r["game_date"]) or datetime.min, r["game_code"]))
+    pos_stats = _position_stats(by_player, config, ranks)
 
     team_games: dict[str, list[dict]] = {}
     for r in history_rows:
@@ -231,24 +371,16 @@ def build_projections(
 
     projections: dict[str, Projection] = {}
 
-    for player_id, prows in by_player.items():
-        prows_sorted = sorted(prows, key=lambda r: (parse_date(r["game_date"]) or datetime.min, r["game_code"]))
-
+    for player_id, prows_sorted in by_player.items():
         if len(prows_sorted) < min_games:
             continue
 
-        recent = prows_sorted[-rolling_window:]
-        pir_values = [float(r["pir_official"]) for r in recent]
-        minutes_values = [float(r["minutes_seconds"]) for r in recent]
-
-        projected_pir = recency_weighted_mean(pir_values)
-        minutes_trend = recency_weighted_mean(minutes_values)
-        volatility = stdev(pir_values)
-
+        projected_pir, minutes_trend, volatility, n_eff, n_games = _estimate(prows_sorted, config, ranks, pos_stats)
+        pir_values = [float(r["pir_official"]) for r in prows_sorted[-config.window_games:]]
         recent_pir = sum(pir_values[-FORM_WINDOW:]) / len(pir_values[-FORM_WINDOW:])
         earlier = prows_sorted[:-1]
         if len(earlier) >= min_games:
-            previous_pir = recency_weighted_mean([float(r["pir_official"]) for r in earlier[-rolling_window:]])
+            previous_pir = _estimate(earlier, config, ranks, pos_stats)[0]
             projection_change = projected_pir - previous_pir
         else:
             projection_change = 0.0
@@ -265,7 +397,7 @@ def build_projections(
             player_name=prows_sorted[-1]["player_name"],
             position=prows_sorted[-1].get("position"),
             team=team,
-            games_sampled=len(recent),
+            games_sampled=n_games,
             projected_pir=projected_pir,
             minutes_trend_seconds=minutes_trend,
             volatility=volatility,
@@ -273,6 +405,20 @@ def build_projections(
             projected_pir_with_bonus=projected_pir + bonus,
             recent_pir=recent_pir,
             projection_change=projection_change,
+            n_eff=n_eff,
         )
 
     return projections
+
+
+def _drop_prior_playoffs(history_rows: list[dict]) -> list[dict]:
+    """Drop playoff-round rows of every season but the newest one in the
+    history (engine.rounds.classify_phase decides what a playoff round is)."""
+    from engine.rounds import classify_phase
+
+    newest = max((r["season_code"] for r in history_rows if r.get("season_code")), default=None)
+    phases: dict[str, dict[int, str]] = {}
+    for s in {r.get("season_code") for r in history_rows}:
+        if s and s != newest:
+            phases[s] = classify_phase([r for r in history_rows if r.get("season_code") == s])
+    return [r for r in history_rows if phases.get(r.get("season_code"), {}).get(r["round"]) != "playoffs"]
