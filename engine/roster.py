@@ -130,9 +130,9 @@ def _weighted_sample_without_replacement(
     chosen: list[Projection] = []
 
     for _ in range(k):
-        min_val = min(p.projected_pir_with_bonus for p in pool)
+        min_val = min(p.expected_value for p in pool)
         # shift so every weight is strictly positive, even with negative projections
-        weights = [p.projected_pir_with_bonus - min_val + 1.0 for p in pool]
+        weights = [p.expected_value - min_val + 1.0 for p in pool]
         pick = rng.choices(pool, weights=weights, k=1)[0]
         chosen.append(pick)
         pool.remove(pick)
@@ -172,7 +172,7 @@ def build_draft_pool(
             continue
         target = max(required, round(pool_size * required / total_slots))
 
-        pirs = [p.projected_pir_with_bonus for p in candidates]
+        pirs = [p.expected_value for p in candidates]
         minutes = [p.minutes_trend_seconds for p in candidates]
         pir_lo, pir_hi = min(pirs), max(pirs)
         min_lo, min_hi = min(minutes), max(minutes)
@@ -182,7 +182,7 @@ def build_draft_pool(
 
         def composite(p: Projection) -> float:
             return (
-                0.5 * norm(p.projected_pir_with_bonus, pir_lo, pir_hi)
+                0.5 * norm(p.expected_value, pir_lo, pir_hi)
                 + 0.5 * norm(p.minutes_trend_seconds, min_lo, min_hi)
             )
 
@@ -196,7 +196,7 @@ def build_draft_pool(
 def sample_roster(pool: dict[str, Projection], rng: random.Random | None = None) -> Roster:
     """Build one plausible 5-5-3 roster from a projection pool.
 
-    Weighted-random by projected_pir_with_bonus within each position bucket,
+    Weighted-random by expected_value within each position bucket,
     so the sample favors decent players without being trivially "top 13 in
     the league" every time. POC-only: real rosters come from the league's
     actual draft/ownership data, not this.
@@ -223,9 +223,9 @@ def sample_active_squad(roster: Roster, rng: random.Random | None = None) -> Act
     excluded: list[Projection] = []
     for position in EXCLUDED_PER_POSITION:
         candidates = roster.by_position(position)
-        max_val = max(p.projected_pir_with_bonus for p in candidates)
+        max_val = max(p.expected_value for p in candidates)
         # shift+invert so lower-projected players are more likely to be excluded
-        weights = [max_val - p.projected_pir_with_bonus + 1.0 for p in candidates]
+        weights = [max_val - p.expected_value + 1.0 for p in candidates]
         excluded.append(rng.choices(candidates, weights=weights, k=1)[0])
 
     active = [p for p in roster.players if p not in excluded]

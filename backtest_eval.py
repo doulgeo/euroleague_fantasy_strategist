@@ -105,7 +105,7 @@ def run_one_trial(
     swap/lineup decision itself come from this same dict.
     """
     rng = random.Random(seed)
-    projected_value = lambda pid: pool[pid].projected_pir_with_bonus  # noqa: E731
+    projected_value = lambda pid: pool[pid].expected_value  # noqa: E731
 
     try:
         roster = sample_roster(pool, rng)

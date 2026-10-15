@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from engine.projections import Projection
 from engine.roster import Roster
 
-MIN_UPGRADE_GAP = 3.0  # projected_pir_with_bonus points before suggesting a swap
+MIN_UPGRADE_GAP = 3.0  # expected_value points before suggesting a swap
 
 
 @dataclass
@@ -27,7 +27,7 @@ class TransferSuggestion:
 
 def projected_gain(drop: Projection, add: Projection) -> float:
     """Projected PIR delta of dropping `drop` for `add` - positive is an upgrade."""
-    return add.projected_pir_with_bonus - drop.projected_pir_with_bonus
+    return add.expected_value - drop.expected_value
 
 
 def suggest_transfers(
@@ -43,7 +43,7 @@ def suggest_transfers(
         if p.player_id not in excluded_ids:
             pool_by_position.setdefault(p.position, []).append(p)
     for candidates in pool_by_position.values():
-        candidates.sort(key=lambda p: p.projected_pir_with_bonus, reverse=True)
+        candidates.sort(key=lambda p: p.expected_value, reverse=True)
 
     suggestions: list[TransferSuggestion] = []
 

@@ -86,7 +86,7 @@
         {% for p in excluded %}
           <tr>
             <td>{{ p.player_name }}{{ pitch_macros.injury_badge(p, injury_status) }}</td><td>{{ p.position }}</td><td>{{ p.team }}</td>
-            <td>{{ "%.1f"|format(p.projected_pir_with_bonus) }}{{ form_macros.ticker(p) }}</td>
+            <td>{{ form_macros.value(p) }}{{ form_macros.ticker(p) }}</td>
             {{ points_macros.cells(points, p.player_id) }}
           </tr>
         {% endfor %}
@@ -124,7 +124,7 @@
             <td>Starter{{ " (C)" if p.player_id == initial.captain.player_id else "" }}</td>
             <td>{{ p.position }}</td><td>{{ p.player_name }}{{ pitch_macros.injury_badge(p, injury_status) }}</td><td>{{ p.team }}</td>
             <td>{{ availability_label(p, team_dates) }}</td>
-            <td>{{ "%.1f"|format(p.projected_pir_with_bonus) }}{{ form_macros.ticker(p) }}</td>
+            <td>{{ form_macros.value(p) }}{{ form_macros.ticker(p) }}</td>
             {{ points_macros.cells(points, p.player_id) }}
           </tr>
         {% endfor %}
@@ -133,7 +133,7 @@
           <td>{{ initial.sixth_man.position }}</td><td>{{ initial.sixth_man.player_name }}{{ pitch_macros.injury_badge(initial.sixth_man, injury_status) }}</td>
           <td>{{ initial.sixth_man.team }}</td>
           <td>{{ availability_label(initial.sixth_man, team_dates) }}</td>
-          <td>{{ "%.1f"|format(initial.sixth_man.projected_pir_with_bonus) }}{{ form_macros.ticker(initial.sixth_man) }}</td>
+          <td>{{ form_macros.value(initial.sixth_man) }}{{ form_macros.ticker(initial.sixth_man) }}</td>
           {{ points_macros.cells(points, initial.sixth_man.player_id) }}
         </tr>
         {% for p in initial.bench %}
@@ -141,7 +141,7 @@
             <td title="Scores at half points automatically - no swap needed to count.">Bench</td>
             <td>{{ p.position }}</td><td>{{ p.player_name }}{{ pitch_macros.injury_badge(p, injury_status) }}</td><td>{{ p.team }}</td>
             <td>{{ availability_label(p, team_dates) }}</td>
-            <td>{{ "%.1f"|format(p.projected_pir_with_bonus) }}{{ form_macros.ticker(p) }}</td>
+            <td>{{ form_macros.value(p) }}{{ form_macros.ticker(p) }}</td>
             {{ points_macros.cells(points, p.player_id) }}
           </tr>
         {% endfor %}
@@ -184,7 +184,7 @@
             <td>Starter{{ " (C)" if p.player_id == recommended.captain.player_id else "" }}{% if p.player_id not in initial_full_ids %} <span class="promoted-badge">PROMOTED</span>{% endif %}</td>
             <td>{{ p.position }}</td><td>{{ p.player_name }}{{ pitch_macros.injury_badge(p, injury_status) }}</td><td>{{ p.team }}</td>
             <td>{{ availability_label(p, team_dates) }}</td>
-            <td>{{ "%.1f"|format(p.projected_pir_with_bonus) }}{{ form_macros.ticker(p) }}</td>
+            <td>{{ form_macros.value(p) }}{{ form_macros.ticker(p) }}</td>
             {{ points_macros.cells(points, p.player_id) }}
           </tr>
         {% endfor %}
@@ -193,7 +193,7 @@
           <td>{{ recommended.sixth_man.position }}</td><td>{{ recommended.sixth_man.player_name }}{{ pitch_macros.injury_badge(recommended.sixth_man, injury_status) }}</td>
           <td>{{ recommended.sixth_man.team }}</td>
           <td>{{ availability_label(recommended.sixth_man, team_dates) }}</td>
-          <td>{{ "%.1f"|format(recommended.sixth_man.projected_pir_with_bonus) }}{{ form_macros.ticker(recommended.sixth_man) }}</td>
+          <td>{{ form_macros.value(recommended.sixth_man) }}{{ form_macros.ticker(recommended.sixth_man) }}</td>
           {{ points_macros.cells(points, recommended.sixth_man.player_id) }}
         </tr>
         {% for p in recommended.bench %}
@@ -201,7 +201,7 @@
             <td title="Scores at half points automatically - no swap needed to count.">Bench{% if p.player_id in initial_full_ids %} <span class="demoted-badge">DEMOTED</span>{% endif %}</td>
             <td>{{ p.position }}</td><td>{{ p.player_name }}{{ pitch_macros.injury_badge(p, injury_status) }}</td><td>{{ p.team }}</td>
             <td>{{ availability_label(p, team_dates) }}</td>
-            <td>{{ "%.1f"|format(p.projected_pir_with_bonus) }}{{ form_macros.ticker(p) }}</td>
+            <td>{{ form_macros.value(p) }}{{ form_macros.ticker(p) }}</td>
             {{ points_macros.cells(points, p.player_id) }}
           </tr>
         {% endfor %}

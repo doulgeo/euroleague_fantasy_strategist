@@ -3245,3 +3245,32 @@ tuned`, 160 trials: mean swap gain +9.37 PIR +-1.74, 11.2% losses); not a
 headline. B2 (multi-season history, `min_round` 1, roster merge) and 5b-d (paired
 realized-points comparison, ML re-ask, new headline) are not done, so the
 CLAUDE.md backtest headline is still the old, stale one.
+
+---
+
+## 2026-10-15: Projection overhaul Phase 3 - availability (p_play, P1) + override changes (P7)
+
+**What**: `engine/availability.py`: p_play = recency-weighted (half-life 2) share of
+the club's last 5 games the player played, over his current-club stint only, with 1 pseudo-game of 0.8;
+times the injury multiplier (Out 0, Doubtful 0.4, Questionable 0.6, Uncertain/Game-time 0.75,
+Expected/Ready 0.95). `Projection.expected_value = projected_pir_with_bonus * p_play` is now the number
+used by the draft board, VORP, transfers, lineup builder (replacing the Out-zeroing hack), roster sampling and
+tracker snapshots, and is the main number in the UI (p_play as a small %, "if he plays" in the tooltip).
+User decisions applied: no auto-substitution, Questionable 0.6, display = expected value first,
+manual overrides win for any player and expire after a round (existing overrides set to expire after
+round 6; the schema gained `expires_after_round`).
+
+**Tuning (E2024 only, Brier on "played")**: always-plays 0.2216, flat rate 0.1725; first grid best
+(window 5, strength 1, half-life 5) 0.1178; second grid (windows 3/5/8, strength 0.5/1/2, half-life 2/3/5)
+best (3, 1, 2) 0.1123, (5, 1, 2) 0.1133. Picked (5, 1, 2) for a less jumpy window.
+
+**Holdout E2025** (`projection_eval.py --seasons E2025 --estimators legacy tuned p_play`, 10,379 targets):
+Brier 0.1201 vs always-plays 0.2436 and flat rate 0.1842. Reliability: predicted 0.26 -> 0.23,
+0.50 -> 0.49, 0.70 -> 0.69, 0.86 -> 0.86, 0.95 -> 0.93. Unconditional bias of tuned x p_play: +0.01
+(was +1.45 without it; plan target +-0.2), unconditional MAE 5.04 (was 5.79).
+
+**Live DB check**: top of the draft board by expected value Montero 20.8 (21.9 if he plays, 95%), Bryant 20.6;
+84 non-gone players below 50% (mostly Out, plus a few long-absent). All pages return 200; 100 tests pass.
+
+**Not measured**: realized-points effect in the backtest (Phase 5 not done), so the plan's
+"no regression in realized points" check for Phase 3 is deferred. The injury multipliers are unvalidated guesses.

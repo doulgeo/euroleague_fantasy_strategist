@@ -4,6 +4,14 @@
    engine.projections.Projection.form). Display only - it never changes a
    projection or a lineup decision. Placeholder projections (NEW/EST
    players, tracker snapshots) have no form data and render nothing. #}
+{# The projected value shown everywhere: expected value (PIR + win bonus, times the
+   chance he plays - engine.availability), with that chance as a small %; the
+   tooltip has the "if he plays" number. #}
+{% macro value(p) -%}
+  {{ "%.1f"|format(p.expected_value) }}
+  {%- if p.p_play < 1.0 %} <span class="muted" title="PIR + win bonus if he plays: {{ '%.1f'|format(p.projected_pir_with_bonus) }}; chance he plays: {{ '%.0f'|format(p.p_play * 100) }}%">{{ '%.0f'|format(p.p_play * 100) }}%</span>{% endif -%}
+{%- endmacro %}
+
 {% macro ticker(p) %}
   {%- if p.recent_pir is not none -%}
     {%- set ch = p.projection_change -%}

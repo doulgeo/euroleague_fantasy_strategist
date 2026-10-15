@@ -49,17 +49,31 @@
     player, using only games strictly before the projection date (so it
     never "cheats" by seeing the future):</p>
     <dl>
-      <dt>Projected value ("Proj+Bonus")</dt>
-      <dd>A <strong>recency-weighted average</strong> of the player's last
-      10 played games (more recent games count more), plus a bonus scaled
-      to their team's win rate over its last 10 games (+10% of the base
-      projection if the team's been winning consistently).</dd>
+      <dt>Projected value (the main number everywhere)</dt>
+      <dd>An <strong>expected value</strong>: what the player scores
+      <em>if he plays</em> times the <strong>chance he plays at all</strong>
+      (shown as a small % beside the number; hover for the "if he plays"
+      figure). A no-show scores 0 in the real game - there's no automatic
+      substitution - so a part-timer is worth less than a starter with the
+      same per-game average. "If he plays" is an exponentially-decayed
+      average of his played games (half-life 10 games; older seasons count
+      a quarter as much each season back), pulled toward the average for
+      his position when the sample is small, plus a bonus for his team's
+      recent win rate (the +10% win bonus).</dd>
+      <dt>Chance he plays</dt>
+      <dd>His share of his current club's last 5 games he played in, weighted
+      toward the latest (absences tend to persist), with games before he
+      joined the club ignored. The injury report then scales it: Out 0,
+      Doubtful 0.4, Questionable 0.6, Uncertain/Game-time 0.75,
+      Expected/Ready 0.95. Players with no games for their club yet get a
+      league-average prior (80%), or 50% if they're brand new with no
+      estimate.</dd>
       <dt>Games sampled ("n")</dt>
-      <dd>How many of the last-10 games actually went into that average.
-      Fewer than 3 games and no projection is built at all - too little
-      signal.</dd>
+      <dd>How many of his recent games (up to 60) went into the average. A
+      single game is enough for a projection, but it's weighted lightly
+      against the position average.</dd>
       <dt>Which season's data</dt>
-      <dd>Last season and the current one are treated as one continuous
+      <dd>Every season synced (E2023 on) is treated as one continuous
       timeline, so early in a new season a projection is mostly last
       season's form, shifting toward this season's game by game - no cliff
       where everyone drops to zero after round 1.</dd>
@@ -110,7 +124,9 @@
       <code>set_manual_projection.py</code>) - typically the result of
       researching the player (recent form/role, other-league stats) rather
       than computing from EuroLeague box scores, since none exist yet.
-      Treat it as an informed guess, not a backtested projection.</dd>
+      Treat it as an informed guess, not a backtested projection. An
+      override can be set for any player, wins over the model, and stops
+      applying once its round has been fully played.</dd>
       <dt><span class="gone-badge">GONE</span> badge</dt>
       <dd>The mirror image of NEW - this player has EuroLeague history but
       isn't part of the current roster source at all (their club may have

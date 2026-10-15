@@ -64,6 +64,14 @@ class Projection:
     projection_change: float = 0.0
     # Kish effective sample size behind projected_pir (0.0 for placeholders)
     n_eff: float = 0.0
+    # Chance he plays at all in a round his club plays (engine.availability).
+    # projected_pir* are conditional on playing; a no-show scores 0 in the
+    # real game, so decisions use expected_value.
+    p_play: float = 1.0
+
+    @property
+    def expected_value(self) -> float:
+        return self.projected_pir_with_bonus * self.p_play
 
     @property
     def form(self) -> str | None:

@@ -21,6 +21,7 @@ import random
 from dataclasses import dataclass, field
 from typing import Callable
 
+from engine.availability import estimate_p_play
 from engine.projections import LEGACY_CONFIG, SEASON_GAME_CODE_OFFSET, TUNED_CONFIG, build_projections
 from engine.rounds import classify_phase, date_only, in_main_window, round_start_dates, round_windows
 
@@ -96,6 +97,7 @@ ESTIMATORS: dict[str, Estimator] = {
     "live": live_estimator,  # whatever DEFAULT_CONFIG currently is
     "legacy": lambda h, c: config_estimator(LEGACY_CONFIG)(h, c),
     "tuned": lambda h, c: config_estimator(TUNED_CONFIG)(h, c),
+    "p_play": lambda h, c: estimate_p_play(h, c),  # a probability, not a PIR: use brier/reliability, not the MAE tables
     "season_mean": season_mean_estimator,
     "last5": last5_estimator,
 }
@@ -322,3 +324,26 @@ def config_estimator(config) -> Estimator:
     def est(history: list[dict], cutoff_date: str) -> dict[str, float]:
         return {pid: p.projected_pir for pid, p in build_projections(history, cutoff_date=cutoff_date, config=config).items()}
     return est
+
+
+def brier(targets: list[Target], name: str) -> float:
+    """Brier score of probability `name` for "played" over targets that have it."""
+    ts = [t for t in targets if t.proj.get(name) is not None]
+    return sum((t.proj[name] - t.played) ** 2 for t in ts) / len(ts)
+
+
+def reliability(targets: list[Target], name: str, bins: tuple[float, ...] = (0.2, 0.4, 0.6, 0.8, 0.9, 1.01)) -> list[tuple[float, float, int]]:
+    """[(mean predicted, actual play rate, n)] per probability bucket."""
+    out, lo = [], 0.0
+    for hi in bins:
+        ts = [t for t in targets if t.proj.get(name) is not None and lo <= t.proj[name] < hi]
+        if ts:
+            out.append((sum(t.proj[name] for t in ts) / len(ts), sum(t.played for t in ts) / len(ts), len(ts)))
+        lo = hi
+    return out
+
+
+def expected_value_bias(targets: list[Target], pir: str, p: str) -> dict[str, float]:
+    """Unconditional error of pir * p against actual (DNPs/absences = 0) over targets with both."""
+    ts = [t for t in targets if t.proj.get(pir) is not None and t.proj.get(p) is not None]
+    return error_metrics([(t.proj[pir] * t.proj[p], t.actual) for t in ts])

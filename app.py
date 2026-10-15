@@ -20,7 +20,7 @@ import subprocess
 import sys
 import sqlite3
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -57,7 +57,7 @@ from engine.db import (
     set_setting,
 )
 from engine.fantasy_pool import resolve_pool_rows
-from engine.injuries import EXCLUDING_STATUSES, resolve_injury_rows
+from engine.injuries import resolve_injury_rows
 from engine.lineup import (
     VALID_FORMATIONS,
     Lineup,
@@ -69,6 +69,7 @@ from engine.lineup import (
     swap_after_day1,
     team_dates_from_schedule,
 )
+from engine.availability import DEFAULT_AVAILABILITY, UNKNOWN_P_PLAY, estimate_p_play, injury_multiplier
 from engine.rounds import in_main_window, round_main_window, round_start_dates
 from engine.projections import (
     Projection,
@@ -322,6 +323,24 @@ def get_pool(
     resolved_injuries, _inj_diag = resolve_injury_rows(injury_rows, roster_rows, historical_players)
     injury_status = {r["player_id"]: r for r in resolved_injuries}
 
+    # p_play: chance he plays at all (club-stint play share, engine.availability),
+    # times the injury-report multiplier. A player with no stint on his current
+    # club: the league prior if he has history or a manual estimate (the user
+    # vouches for the role), UNKNOWN_P_PLAY if truly new. Every consumer reads
+    # expected_value, so this is the one place availability enters.
+    stint_p = estimate_p_play(rows, cutoff_date, current_team={pid: p.team for pid, p in projections.items()})
+    projections = {
+        pid: replace(
+            p,
+            p_play=stint_p.get(
+                pid,
+                DEFAULT_AVAILABILITY.prior_mean if pid in estimated_ids or pid not in new_ids else UNKNOWN_P_PLAY,
+            )
+            * injury_multiplier(injury_status.get(pid, {}).get("status")),
+        )
+        for pid, p in projections.items()
+    }
+
     result = (projections, new_ids, gone_ids, estimated_ids, injury_status)
     _projection_cache[key] = (mtime_ns, result)
     return result
@@ -361,8 +380,8 @@ SORT_OPTIONS = [
 ]
 
 _SORT_KEY_FNS = {
-    "value": lambda p, replacement, pts: p.projected_pir_with_bonus,
-    "vorp": lambda p, replacement, pts: p.projected_pir_with_bonus - replacement[p.position],
+    "value": lambda p, replacement, pts: p.expected_value,
+    "vorp": lambda p, replacement, pts: p.expected_value - replacement[p.position],
     "form": lambda p, replacement, pts: p.projection_change,
     "pts": lambda p, replacement, pts: pts[p.player_id].total if p.player_id in pts else 0.0,
     "avg": lambda p, replacement, pts: pts[p.player_id].avg if p.player_id in pts else 0.0,
@@ -565,7 +584,7 @@ def draft():
             rows_out.append({
                 "rank": i + 1,
                 "player": p,
-                "vorp": p.projected_pir_with_bonus - replacement[position],
+                "vorp": p.expected_value - replacement[position],
                 "owner_id": owner_id,
                 "tier_break_after": is_default_sort and p.player_id in tier_break_ids,
                 "is_new": p.player_id in new_ids,
@@ -672,7 +691,7 @@ def watchlist_page():
             "note": entry["note"],
             "added_at": entry["added_at"],
         })
-    rows.sort(key=lambda r: r["player"].projected_pir_with_bonus, reverse=True)
+    rows.sort(key=lambda r: r["player"].expected_value, reverse=True)
 
     return render_template("watchlist.html", rows=rows)
 
@@ -789,7 +808,7 @@ def manager_roster(manager_id: int):
             continue
         by_position.setdefault(p.position, []).append(p)
     for players in by_position.values():
-        players.sort(key=lambda p: p.projected_pir_with_bonus, reverse=True)
+        players.sort(key=lambda p: p.expected_value, reverse=True)
 
     return render_template(
         "manager_roster.html",
@@ -965,7 +984,7 @@ def transfers():
                         p for pid, p in addable_pool.items()
                         if p.position == selected_drop.position and pid not in roster_ids
                     ),
-                    key=lambda p: p.projected_pir_with_bonus,
+                    key=lambda p: p.expected_value,
                     reverse=True,
                 )
 
@@ -1043,7 +1062,6 @@ def compute_recommendation(
     recommended_total = None
 
     pool, _new_ids, _gone_ids, _estimated_ids, injury_status = get_pool(conn, before_round)
-    out_ids = {pid for pid, inj in injury_status.items() if inj["status"] in EXCLUDING_STATUSES}
     player_ids = ownership.manager_roster_ids(conn, manager_id)
     players = [pool[pid] for pid in player_ids if pid in pool]
     unresolved = len(player_ids) - len(players)
@@ -1081,9 +1099,9 @@ def compute_recommendation(
                     by_id = {p.player_id: p for p in snap_players}
                 else:
                     by_id = pool
-                projected_value = (
-                    lambda pid: 0.0 if pid in out_ids else by_id[pid].projected_pir_with_bonus
-                )  # noqa: E731
+                # expected value already folds in availability and the injury
+                # report (an Out player has p_play 0 - see get_pool)
+                projected_value = lambda pid: by_id[pid].expected_value  # noqa: E731
                 if day1_snapshot is None:
                     active_squad = choose_active_squad(roster, team_dates, projected_value, formation=formation)
                     initial = build_lineup(active_squad, team_dates, projected_value, formation=formation)
@@ -1456,7 +1474,7 @@ def _render_tracker_round(
     score = score_round(round_no, score_lineups, actual, complete, official)
 
     position_order = {"Guard": 0, "Forward": 1, "Center": 2}
-    players = sorted(players, key=lambda p: (position_order.get(p.position, 3), -p.projected_pir_with_bonus))
+    players = sorted(players, key=lambda p: (position_order.get(p.position, 3), -p.expected_value))
     rounds = sorted({r["round"] for r in load_schedule(conn, CURRENT_SEASON) if r.get("round") is not None})
 
     return render_template(

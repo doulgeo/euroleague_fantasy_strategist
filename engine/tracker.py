@@ -119,7 +119,7 @@ def snapshot_rows(players: list[Projection], slots: dict[str, str]) -> list[dict
             "team": p.team,
             "position": p.position,
             "slot": slots[p.player_id],
-            "projected_value": p.projected_pir_with_bonus,
+            "projected_value": p.expected_value,
         }
         for p in players
     ]

@@ -87,7 +87,7 @@
             <td>{{ p.player_name }}{{ pitch_macros.injury_badge(p, injury_status) }}</td>
             <td>{{ p.position }}</td><td>{{ p.team }}</td>
             <td>{{ availability_label(p, team_dates) if team_dates else "-" }}</td>
-            <td>{{ "%.1f"|format(p.projected_pir_with_bonus) }}</td>
+            <td>{{ "%.1f"|format(p.expected_value) }}</td>
             {% for form_id, current in (("day1-form", day1_slots), ("final-form", final_slots)) %}
               <td>
                 <select name="slot_{{ p.player_id }}" form="{{ form_id }}" class="slot-select slot-{{ current.get(p.player_id, '') }}">

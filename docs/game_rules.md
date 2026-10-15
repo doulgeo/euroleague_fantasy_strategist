@@ -147,3 +147,13 @@ and their own experience playing the real game. The corrected mechanic:
   to manually log opponents' rosters/transfers/trades themselves and
   explicitly asked for a UI to make that easy, rather than auto-tracking it.
   That UI has not been built yet.
+
+## Confirmed 2026-10-15 (answers to the projection-overhaul open questions)
+
+- **No auto-substitution.** A starter or sixth man who doesn't play scores 0;
+  nobody from the bench fills in. So decisions use expected value =
+  PIR-if-he-plays x chance he plays.
+- **Postponed games don't count.** A game played outside its round's normal
+  window is not scored in that round.
+- **Rounds spanning 3 dates allow a swap after each date**, not only after
+  day 1 (engine support: see docs/projection_overhaul_plan.md, Phase 8).

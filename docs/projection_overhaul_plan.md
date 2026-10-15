@@ -1,6 +1,6 @@
 # Projection overhaul plan
 
-**Status:** Phases 0, 1 and 2 (except P7, P8) implemented 2026-10-15; see the "Implementation notes" section at the end for deviations. Phases 3, 6, 7, 8 are blocked on the open questions; Phase 4 and 5b-d are not started.
+**Status:** Phases 0, 1 and 2 (except P7, P8) implemented 2026-10-15; see the "Implementation notes" section at the end for deviations. The open questions are answered (see "Answers"); Phase 3 is implemented (Phase 3 note below); Phases 4, 5b-d, 6, 7, 8, 9 are not started.
 
 **Source:** a three-agent review of the PIR projection mechanism, run
 2026-10-15. The agents were a master statistician, a backtest analyst, and a
@@ -26,13 +26,13 @@ Severity is the reviewers' rating.
 
 | ID | Sev | Finding (short) | Phase | Done |
 |---|---|---|---|---|
-| P1 | High | Projections assume the player plays. ~21.5% of projected player-rounds score 0, giving about +1.0 PIR per game of overshoot | 3 | [ ] |
+| P1 | High | Projections assume the player plays. ~21.5% of projected player-rounds score 0, giving about +1.0 PIR per game of overshoot | 3 | [x] |
 | P2 | High | Over-dispersed: calibration slope 0.76, top decile +2.55 PIR. No shrinkage | 2 | [x] |
 | P3 | High | Estimator mid-pack: the season-to-date mean beats it. A 10-game linear ramp window is too short | 2 | [x] |
 | P4 | High | The 3-game minimum zeroes players. 19% of E2026 R1–5 played-games were projected 0; those players actually averaged 7.05 | 2 | [x] |
 | P5 | Med | Known gap: players with only E2023/E2024 history, or 1–2 games in the window, get 0.0 with no flag. 28 players at round 6 | 2 | [x] |
 | P6 | Low | Manual overrides get no win bonus (`rosters.py:106`), so they run about 5% low vs everyone else | 2 | [x] |
-| P7 | Low | A manual override can't lift a *known* player who has only 1–2 games | 2 | [ ] |
+| P7 | Low | A manual override can't lift a *known* player who has only 1–2 games | 2 | [x] |
 | P8 | Low–Med | Team-changers: projection R² −0.04, slope 0.47 (noisier, though not biased on average) | 2 | [ ] |
 | P9 | Low | The early-season blend window includes last season's playoff games | 2 | [x] |
 | L1 | High | Postponed games leak future data. The cutoff is by round number, not date (E2025 game 134: round 14, played 2026-03-17). Affects the backtest and, latently, the live app | 1 | [x] |
@@ -89,6 +89,23 @@ These must be answered before the phase that depends on them.
    secondary, or the other way round?
 
 ---
+
+### Answers (2026-10-15)
+
+1. **No-shows:** NOT substituted - the slot scores 0. (Phase 3 and 6 use expected value.)
+2. **3-date rounds:** a swap is allowed after each date. (Phase 8 is a real multi-window swap.)
+3. **Postponed games:** don't count. (Matches the current exclusion.)
+4. **Injury multipliers:** the plan's defaults, except Questionable = 0.6 (plan: Out 0, Doubtful 0.4,
+   Questionable/Uncertain/Game-time 0.75, Expected/Ready 0.95).
+5. **Overrides:** win over the model for any player, and expire after a round.
+6. **Variance/captain toggle:** not now; added to the roadmap (below).
+7. **Display:** expected value is the main number, with p_play as a small % and the
+   "if he plays" figure in the tooltip.
+
+### Roadmap additions
+
+- **Risk-aware captain (from Q6):** an aggressive/balanced/safe toggle (score = mean + lambda x SD, lambda = 0
+  by default) once Phase 6's outcome model exists; ship only if the backtest shows variance-aware picks pay.
 
 ## Guiding principles
 
@@ -1059,3 +1076,12 @@ originally written.
   acceptance criterion passed (see the testing log).
 - **Not started:** Phase 3 (blocked: questions 1, 4, 7), Phase 4, Phase 5a
   parity items B1/B2 and 5b-d, Phases 6-9.
+- **Phase 3 (done 2026-10-15):** `engine/availability.py` (p_play: recency-weighted share of
+  the club's last 5 games over the current stint, shrunk toward 0.8; tuned on E2024 by Brier, confirmed on E2025;
+  a 5-game window with half-life 2 beat the plan's longer windows because absences persist),
+  `Projection.p_play`/`expected_value`, the injury multipliers, and every consumer switched to
+  `expected_value` (draft board, VORP, transfers, lineup, roster sampling, tracker snapshots).
+  The `out_ids` zeroing in `compute_recommendation` is gone: an Out player has p_play 0 in `get_pool`.
+  Not done: p_play columns in the tracker tables (snapshots store the expected value only), and the
+  "if he plays" PIR is a tooltip rather than a column. Unknown players: 0.5 (a judgment value; not
+  measurable from this DB), or 0.8 when the user supplied an override. P7 landed with it.
