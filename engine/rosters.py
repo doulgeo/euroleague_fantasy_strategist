@@ -44,7 +44,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from engine.projections import Projection
+from engine.projections import WIN_BONUS_FRACTION, Projection
 
 
 def merge_roster(
@@ -79,6 +79,10 @@ def merge_roster(
     estimated_player_ids: set[str] = set()
     roster_ids = {r["player_id"] for r in roster_rows}
     manual_projections = manual_projections or {}
+    # trailing win rate per club, from the pool's own projections (taken
+    # before any team correction below), so a manual override can get the
+    # same expected +10% win bonus everyone else's projection carries
+    team_win_rate = {p.team: p.team_win_rate for p in pool.values() if p.team_win_rate is not None}
 
     for r in roster_rows:
         pid = r["player_id"]
@@ -102,8 +106,10 @@ def merge_roster(
                 projected_pir=pir,
                 minutes_trend_seconds=0.0,
                 volatility=0.0,
-                team_win_rate=None,
-                projected_pir_with_bonus=pir,
+                team_win_rate=team_win_rate.get(r["team"]) if manual else None,
+                projected_pir_with_bonus=(
+                    pir * (1 + WIN_BONUS_FRACTION * team_win_rate.get(r["team"], 0.0)) if manual else pir
+                ),
             )
 
         if pid not in known_player_ids:
