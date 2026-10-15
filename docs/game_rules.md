@@ -32,9 +32,10 @@ Before every round ("turn"), from your 13-player roster you choose an
 players score zero and **cannot be swapped in at all** that round, no matter
 what. (This is distinct from being benched — see below.)
 
-The exclusion must still leave you able to field a valid starting formation
-(at minimum: 2 Guards, 1 Forward, 1 Center among the active 10) — you can't,
-say, exclude all 3 of your Centers.
+The 3 excluded players must be **exactly one Guard, one Forward and one
+Center** (confirmed by the user 2026-10-15), so the active 10 is always
+4 Guards / 4 Forwards / 2 Centers. That's 5 × 5 × 3 = 75 legal exclusions
+per round.
 
 ## Scoring tiers within the active 10
 

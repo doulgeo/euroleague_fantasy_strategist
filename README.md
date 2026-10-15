@@ -38,7 +38,8 @@ for personal use among friends — never monetized or redistributed.
   dedicated Watchlist page; watched players are flagged with a ★ badge
   wherever they appear, including in the transfer compare tool's Add list.
 - **Lineup builder** — for a chosen manager and round (including a round
-  that hasn't been played yet), picks which 3 of 13 to exclude, the day-1
+  that hasn't been played yet), picks which 3 of 13 to exclude (always one Guard, one Forward and
+  one Center, per the game's rules), the day-1
   starting lineup and captain, and the day-2 swap plan - auto-optimizing
   the starting formation (or force one manually) to maximize total
   projected score, shown in a totals box alongside the recommendation.

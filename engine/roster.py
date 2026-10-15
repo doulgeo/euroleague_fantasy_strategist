@@ -12,6 +12,7 @@ round.
 
 from __future__ import annotations
 
+import itertools
 import random
 from dataclasses import dataclass
 
@@ -29,6 +30,28 @@ EXCLUDED_COUNT = 3
 # valid starting formation (see engine.lineup.VALID_FORMATIONS: the minimum
 # across all three valid formations is 2 Guards, 1 Forward, 1 Center).
 MIN_ACTIVE_COUNTS = {"Guard": 2, "Forward": 1, "Center": 1}
+
+# The 3 excluded players must be exactly one of each position (confirmed by
+# the user 2026-10-15), so the active 10 is always 4G/4F/2C. That leaves
+# 5 x 5 x 3 = 75 legal exclusions per round, not C(13,3) = 286.
+EXCLUDED_PER_POSITION = {"Guard": 1, "Forward": 1, "Center": 1}
+
+
+def exclusion_violation(excluded: list[Projection]) -> str | None:
+    """None if `excluded` is one Guard + one Forward + one Center, else a
+    user-readable reason."""
+    counts = {pos: sum(1 for p in excluded if p.position == pos) for pos in EXCLUDED_PER_POSITION}
+    if counts == EXCLUDED_PER_POSITION and len(excluded) == EXCLUDED_COUNT:
+        return None
+    got = ", ".join(f"{n} {pos}" for pos, n in counts.items())
+    return f"Excluded players must be exactly 1 Guard, 1 Forward and 1 Center (got {got})"
+
+
+def legal_exclusions(players: list[Projection]):
+    """Every legal 3-player exclusion from `players` (one per position), as
+    tuples. 75 for a standard 5G/5F/3C roster."""
+    by_pos = [[p for p in players if p.position == pos] for pos in EXCLUDED_PER_POSITION]
+    return itertools.product(*by_pos)
 
 
 @dataclass
@@ -78,6 +101,9 @@ class ActiveSquad:
             raise ValueError(f"Active squad must have exactly {ACTIVE_SQUAD_SIZE} players, got {len(self.active)}")
         if len(self.excluded) != EXCLUDED_COUNT:
             raise ValueError(f"Must exclude exactly {EXCLUDED_COUNT} players, got {len(self.excluded)}")
+        violation = exclusion_violation(self.excluded)
+        if violation:
+            raise ValueError(violation)
 
         counts: dict[str, int] = {}
         for p in self.active:
@@ -185,30 +211,22 @@ def sample_roster(pool: dict[str, Projection], rng: random.Random | None = None)
     return Roster(players=players)
 
 
-def sample_active_squad(roster: Roster, rng: random.Random | None = None, max_attempts: int = 50) -> ActiveSquad:
-    """POC-only: pick a valid random exclusion of 3 from the 13-player roster.
+def sample_active_squad(roster: Roster, rng: random.Random | None = None) -> ActiveSquad:
+    """POC-only: pick a valid random exclusion of 3 from the 13-player roster -
+    one per position (see EXCLUDED_PER_POSITION).
 
     Weighted toward excluding lower-projected players (a real manager
-    wouldn't randomly benc their stars), retrying if the random draw would
-    leave too few of some position to field any valid formation.
+    wouldn't randomly bench their stars).
     """
     rng = rng or random.Random()
 
-    for _ in range(max_attempts):
-        pool = list(roster.players)
-        excluded: list[Projection] = []
-        for _ in range(EXCLUDED_COUNT):
-            max_val = max(p.projected_pir_with_bonus for p in pool)
-            # shift+invert so lower-projected players are more likely to be excluded
-            weights = [max_val - p.projected_pir_with_bonus + 1.0 for p in pool]
-            pick = rng.choices(pool, weights=weights, k=1)[0]
-            excluded.append(pick)
-            pool.remove(pick)
+    excluded: list[Projection] = []
+    for position in EXCLUDED_PER_POSITION:
+        candidates = roster.by_position(position)
+        max_val = max(p.projected_pir_with_bonus for p in candidates)
+        # shift+invert so lower-projected players are more likely to be excluded
+        weights = [max_val - p.projected_pir_with_bonus + 1.0 for p in candidates]
+        excluded.append(rng.choices(candidates, weights=weights, k=1)[0])
 
-        active = [p for p in roster.players if p not in excluded]
-        try:
-            return ActiveSquad(active=active, excluded=excluded)
-        except ValueError:
-            continue
-
-    raise RuntimeError(f"Could not find a valid active-squad exclusion after {max_attempts} attempts")
+    active = [p for p in roster.players if p not in excluded]
+    return ActiveSquad(active=active, excluded=excluded)

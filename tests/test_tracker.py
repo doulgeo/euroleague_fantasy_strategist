@@ -60,6 +60,8 @@ def test_valid_slots_build_lineup():
         ({"g3": "starter"}, "Wrong slot counts"),  # 5 starters + captain, 3 bench
         # swap a Center starter for a Forward: 2-3-0 isn't a formation
         ({"c0": "bench", "f2": "starter"}, "must be one of"),
+        # excluded must be one Guard + one Forward + one Center
+        ({"f4": "bench", "g3": "excluded"}, "exactly 1 Guard, 1 Forward and 1 Center"),
     ],
 )
 def test_slot_validation(changes, message):

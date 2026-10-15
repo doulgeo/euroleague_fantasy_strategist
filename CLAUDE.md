@@ -53,7 +53,9 @@ Full context for a fresh session, in order of what to read:
   best-possible ceiling. As of 2026-09-13, `engine/lineup.py` also has real
   logic (`choose_active_squad`) for the one per-round decision that used to
   be random even in the "recommendation": which 3 of the 13 roster players
-  to exclude. Brute-forces all 286 exclusion combos and scores each by
+  to exclude. Brute-forces every legal exclusion (75 since 2026-10-15,
+  when the user confirmed the excluded 3 must be one Guard, one Forward
+  and one Center - it was all 286 combos before) and scores each by
   projected value after the same swap logic used for the real
   recommendation, rather than a greedy cut, so it accounts for a benched
   player's day-2 swap option value. **Current validated headline (regular
@@ -397,7 +399,8 @@ Full context for a fresh session, in order of what to read:
   - my score, and the no-swap score (the day-1 lineup, never swapped);
   - the tool's suggestion, snapshotted when the user saves (`tool_day1` /
     `tool_final`);
-  - the exact hindsight-best lineup, brute-forced over 286 exclusions × 3
+  - the exact hindsight-best lineup, brute-forced over 75 legal
+    (1G/1F/1C) exclusions × 3
     formations. This is exact because any lineup could have been locked in
     on day 1;
   - an optional official in-game total, with its difference from our score.
@@ -436,6 +439,16 @@ Full context for a fresh session, in order of what to read:
   The final re-solve is now exact (formation × legal captain, scoring
   starters + sixth + captain), checked against a brute force of every legal
   final lineup (`tests/test_lineup.py`).
+- **Exclusion rule: one per position**, 2026-10-15 (user-confirmed game
+  rule): the 3 excluded players must be exactly 1 Guard, 1 Forward, 1
+  Center, so the active 10 is always 4G/4F/2C. Enforced in
+  `ActiveSquad.__post_init__`, `choose_active_squad` and the tracker's
+  `best_possible_lineup` (both now iterate `engine.roster.legal_exclusions`,
+  75 combos), `sample_active_squad`, and the tracker's save validation.
+  Re-scoring snapshots saved *before* the rule skips the check
+  (`check_exclusion=False`), so round 1's old tool suggestion (which
+  excluded 2 Forwards) still scores. Also makes the backtest headline
+  above stale once more.
 - **Pages can be screenshotted for real**: headless Chrome from the Windows
   install works from WSL. Run
   `"/mnt/c/Program Files/Google/Chrome/Application/chrome.exe" --headless=new

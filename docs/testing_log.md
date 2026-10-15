@@ -2989,3 +2989,40 @@ before the test, and to delete the three test transaction rows
 snapshot. The only lasting trace is that SQLite's AUTOINCREMENT counter
 has moved on, so the next real transaction id will be 1155 rather than
 1152 (harmless). The rerun patched `app.get_connection` itself.
+
+## 2026-10-15 — Exclusion rule: one Guard, one Forward, one Center
+
+**Rule** (confirmed by the user): the 3 players excluded each round must be
+exactly one per position, so the active 10 is always 4G/4F/2C. Before this,
+the engine allowed any 3 of the 286 combinations that still left a valid
+formation. Now it allows only the 75 one-per-position ones.
+
+**Where it's enforced**:
+- `ActiveSquad.__post_init__` now rejects any other exclusion.
+- `choose_active_squad` and the tracker's `best_possible_lineup` now loop
+  over `engine.roster.legal_exclusions`.
+- `sample_active_squad` now picks one per position (still weighted toward
+  low projections). The retry loop is gone.
+- The tracker's save validation (`lineup_from_slots`) also rejects any
+  other exclusion.
+
+**Legacy snapshots**: the saved round-1 `tool_final` suggestion excluded
+2 Forwards + 1 Center. Re-scoring a saved snapshot therefore passes
+`check_exclusion=False`, so old rounds still score. Only new saves are
+strict.
+
+**Tested**:
+- All 76 tests pass, including two new ones:
+  - when the 3 lowest players are all Guards, `choose_active_squad` still
+    excludes 1G/1F/1C, and `ActiveSquad` rejects a 2-Guard exclusion;
+  - the tracker's slot validation rejects a 2-Guard exclusion.
+- The existing brute-force check of `best_possible_lineup` still matches.
+  It goes through `lineup_from_slots`, so it applies the new rule too.
+- Real DB, Flask test client (GET only):
+  - `/lineup` for managers 46, 47 and 50 each excluded exactly 1 Guard,
+    1 Forward and 1 Center;
+  - `/tracker/1` still renders the legacy tool score (104.8) and my score
+    (120.25, matches official).
+
+**Not rerun**: `backtest_eval.py`. The headline in CLAUDE.md was already
+stale, and this rule changes it again.

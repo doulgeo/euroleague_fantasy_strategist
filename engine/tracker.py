@@ -13,13 +13,12 @@ whole history automatically.
 "Best possible" here is exact, not the backtest's heuristic ceiling: any
 valid final lineup is achievable in the real game simply by locking it in
 on day 1 and never swapping, so the hindsight optimum is just the best
-static lineup given everyone's real scores - brute-forced over all 286
-exclusion combos x 3 formations (see best_possible_lineup).
+static lineup given everyone's real scores - brute-forced over all 75
+legal (1G/1F/1C) exclusions x 3 formations (see best_possible_lineup).
 """
 
 from __future__ import annotations
 
-import itertools
 from dataclasses import dataclass, field
 
 from engine.lineup import (
@@ -31,7 +30,7 @@ from engine.lineup import (
     compute_round_score,
 )
 from engine.projections import Projection, actual_fantasy_score
-from engine.roster import EXCLUDED_COUNT
+from engine.roster import EXCLUDED_COUNT, exclusion_violation, legal_exclusions
 
 SLOTS = ("captain", "starter", "sixth", "bench", "excluded")
 SLOT_LABELS = {
@@ -55,11 +54,15 @@ def formation_str(formation: tuple[int, int, int]) -> str:
     return "-".join(str(n) for n in formation)
 
 
-def lineup_from_slots(players: list[Projection], slots: dict[str, str]) -> tuple[Lineup, list[Projection]]:
+def lineup_from_slots(
+    players: list[Projection], slots: dict[str, str], check_exclusion: bool = True
+) -> tuple[Lineup, list[Projection]]:
     """(lineup, excluded) from a slot assignment for every roster player.
     Raises ValueError with a user-readable message on any rule violation:
     exactly 1 captain + 4 other starters forming a valid formation, 1 sixth
-    man, 4 bench, EXCLUDED_COUNT excluded (see docs/game_rules.md)."""
+    man, 4 bench, EXCLUDED_COUNT excluded - one per position (see
+    docs/game_rules.md). `check_exclusion=False` skips that last check, for
+    re-scoring snapshots saved before the rule was added (2026-10-15)."""
     missing = [p.player_name for p in players if slots.get(p.player_id) not in SLOTS]
     if missing:
         raise ValueError(f"No slot chosen for: {', '.join(missing)}")
@@ -74,6 +77,10 @@ def lineup_from_slots(players: list[Projection], slots: dict[str, str]) -> tuple
     ]
     if wrong:
         raise ValueError("Wrong slot counts - " + "; ".join(wrong))
+
+    violation = exclusion_violation(by_slot["excluded"]) if check_exclusion else None
+    if violation:
+        raise ValueError(violation)
 
     starters = by_slot["captain"] + by_slot["starter"]
     shape = tuple(sum(1 for p in starters if p.position == pos) for pos in POSITIONS)
@@ -208,7 +215,7 @@ def best_possible_lineup(
     value = lambda p: actual.get(p.player_id, 0.0)  # noqa: E731
     best: tuple[float, Lineup, list[Projection]] | None = None
 
-    for excluded in itertools.combinations(players, EXCLUDED_COUNT):
+    for excluded in legal_exclusions(players):
         excluded_ids = {p.player_id for p in excluded}
         active = [p for p in players if p.player_id not in excluded_ids]
         for formation in VALID_FORMATIONS:
@@ -283,7 +290,7 @@ def _score_snapshot(snapshot: dict | None, actual: dict[str, float]) -> tuple[fl
         return None, []
     players, slots = players_from_snapshot(snapshot)
     try:
-        lineup, _excluded = lineup_from_slots(players, slots)
+        lineup, _excluded = lineup_from_slots(players, slots, check_exclusion=False)
     except ValueError:
         return None, []
     lines = [

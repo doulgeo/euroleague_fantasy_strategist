@@ -1204,7 +1204,7 @@ def _snapshot_lineup(snapshot: dict | None) -> Lineup | None:
         return None
     players, slots = players_from_snapshot(snapshot)
     try:
-        return lineup_from_slots(players, slots)[0]
+        return lineup_from_slots(players, slots, check_exclusion=False)[0]
     except ValueError:
         return None
 

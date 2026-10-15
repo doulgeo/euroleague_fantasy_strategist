@@ -5,8 +5,9 @@ Confirmed rules (this supersedes an earlier, simpler starter/bench-only
 model that was wrong on several points):
 
 - Each round you pick an ActiveSquad of 10 from your 13-player roster,
-  leaving exactly 3 excluded - those 3 score zero and can never be swapped
-  in that round (see engine.roster.ActiveSquad).
+  leaving exactly 3 excluded - one Guard, one Forward, one Center - those 3
+  score zero and can never be swapped in that round (see
+  engine.roster.ActiveSquad).
 - Within the active 10, there's a three-tier scoring hierarchy:
     - 5 starters, full points, one of them captain (1.5x, corrected
       2026-09-22 - was previously 2x).
@@ -67,12 +68,11 @@ works for a round that hasn't been played yet, which is what the live
 
 from __future__ import annotations
 
-import itertools
 from dataclasses import dataclass
 from typing import Callable
 
 from engine.projections import Projection
-from engine.roster import ActiveSquad, Roster
+from engine.roster import ActiveSquad, Roster, legal_exclusions
 
 VALID_FORMATIONS: list[tuple[int, int, int]] = [(2, 2, 1), (2, 1, 2), (3, 1, 1)]  # (Guard, Forward, Center)
 BENCH_SCORE_MULTIPLIER = 0.5
@@ -385,7 +385,8 @@ def choose_active_squad(
     assumed was already made for them (engine.roster.sample_active_squad is
     a random stand-in, POC/backtest-only, not real selection logic).
 
-    Brute-forces every combination of 3 exclusions (C(13,3) = 286 - cheap)
+    Brute-forces every legal exclusion - exactly one Guard, one Forward and
+    one Center (5 x 5 x 3 = 75 combos, see engine.roster.legal_exclusions) -
     rather than a greedy "cut the 3 lowest-projected players" shortcut,
     because a bench spot has option value a straight exclusion doesn't: a
     benched player can still be swapped into a full-scoring slot after day
@@ -403,7 +404,7 @@ def choose_active_squad(
     best_squad: ActiveSquad | None = None
     best_score: float | None = None
 
-    for excluded in itertools.combinations(roster.players, 3):
+    for excluded in legal_exclusions(roster.players):
         excluded_ids = {p.player_id for p in excluded}
         active = [p for p in roster.players if p.player_id not in excluded_ids]
 
@@ -425,7 +426,7 @@ def choose_active_squad(
             best_squad = candidate
 
     if best_squad is None:
-        raise RuntimeError("No feasible 3-player exclusion found across this roster - check position counts")
+        raise RuntimeError("No feasible 1G/1F/1C exclusion found across this roster - check position counts")
 
     return best_squad
 

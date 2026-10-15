@@ -152,13 +152,15 @@ Two distinct concepts, easy to conflate:
   validated in `__post_init__`). Changes rarely (only via rare trades).
 - **`ActiveSquad`**: which 10 of those 13 are "in" for a given round, with
   the other 3 explicitly tracked as `excluded` (score zero, can't be
-  swapped in). Validated to retain at least 2 Guards/1 Forward/1 Center
-  active — the minimum needed to field *any* valid starting formation.
+  swapped in). Validated so the excluded 3 are exactly one Guard, one
+  Forward and one Center (game rule, confirmed 2026-10-15), which always
+  leaves 4G/4F/2C active. (Before that the only check was keeping at least
+  2 Guards/1 Forward/1 Center active, the minimum for any formation.)
 
 `sample_roster` and `sample_active_squad` are both explicitly POC-only.
 `sample_active_squad` weights *toward* excluding lower-projected players
-(a real manager wouldn't randomly bench their stars) and retries on an
-invalid draw. **Real rosters and real exclusion choices** will eventually
+(a real manager wouldn't randomly bench their stars), picking one per
+position. **Real rosters and real exclusion choices** will eventually
 come from actual 12-manager draft/ownership data and actual manager
 decisions — neither exists yet (see CLAUDE.md).
 

@@ -1,6 +1,7 @@
 """swap_after_day1 rule tests: the captain rule (captaincy can only move to a
 starter who hasn't played yet), day-1 bench players never promoted, and the
-final re-solve being the true optimum among every legal final lineup."""
+final re-solve being the true optimum among every legal final lineup. Plus
+the exclusion rule: the 3 excluded players are one per position."""
 
 from __future__ import annotations
 
@@ -9,8 +10,9 @@ import random
 
 import pytest
 
-from engine.lineup import VALID_FORMATIONS, Lineup, compute_round_score, swap_after_day1
+from engine.lineup import VALID_FORMATIONS, Lineup, choose_active_squad, compute_round_score, swap_after_day1
 from engine.projections import Projection
+from engine.roster import ActiveSquad, Roster
 
 TEAM_DATES = {"D1": "2026-10-01", "D2": "2026-10-02"}
 
@@ -72,3 +74,19 @@ def test_final_resolve_is_the_legal_optimum(seed):
     values = {p.player_id: rng.uniform(-5, 35) for p in [*lineup.starters, lineup.sixth_man, *lineup.bench]}
     final = swap_after_day1(lineup, TEAM_DATES, lambda pid: values[pid])
     assert compute_round_score(final, values) == pytest.approx(_legal_optimum(lineup, values))
+
+
+def test_exclusion_is_one_per_position():
+    # the 3 worst players are all Guards - the rule still forces 1G/1F/1C out
+    roster = Roster(
+        players=[_p(f"g{i}", "Guard", "D1") for i in range(5)]
+        + [_p(f"f{i}", "Forward", "D1") for i in range(5)]
+        + [_p(f"c{i}", "Center", "D1") for i in range(3)]
+    )
+    values = {p.player_id: 20.0 for p in roster.players} | {"g2": 1.0, "g3": 0.0, "g4": -1.0, "f1": 5.0, "c2": 6.0}
+    squad = choose_active_squad(roster, {"D1": "2026-10-01"}, values.get)
+    assert sorted(p.player_id for p in squad.excluded) == ["c2", "f1", "g4"]
+
+    guards = roster.by_position("Guard")
+    with pytest.raises(ValueError, match="exactly 1 Guard, 1 Forward and 1 Center"):
+        ActiveSquad(active=[p for p in roster.players if p not in guards[2:]], excluded=guards[2:])
