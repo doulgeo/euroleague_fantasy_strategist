@@ -3073,3 +3073,39 @@ synced and the T1 scores are known.
   the real save route: `/lineup` then showed that saved lineup and its
   captain, and the "you saved" note. `/tracker/5` rendered.
 - Real DB md5 unchanged.
+
+## 2026-10-15 — Three-agent review of the PIR projection mechanism
+
+**What**: Three agents reviewed the projection pipeline, read-only, each on
+a copy of `euroleague.db`. No repo code changed.
+- A statistician reviewed the method.
+- A backtest analyst ran a walk-forward accuracy audit on E2024, E2025 and
+  E2026 R1–5 through the live blended path. Its reimplementation matched
+  `build_projections` on all 4,398 targets.
+- A code auditor looked for leakage and correctness bugs. Tests: 78 passed.
+
+**Result**:
+- The estimator is mid-pack. The season-to-date mean beats it: MAE 5.758
+  vs 5.835.
+- Projections are over-dispersed: calibration slope 0.76, top decile
+  +2.55 PIR.
+- Players who don't play are ignored. Counting them as 0, projections run
+  about +1.0 PIR per game too high.
+- The 3-game minimum zeroes 19% of E2026 R1–5 played games, and those
+  players actually averaged 7.05.
+- The win-rate proxy has a Brier score of 0.265, worse than a coin flip.
+- Postponed games leak future data, because the cutoff is by round, not
+  date.
+- The backtest differs from the live app. It values day-1 no-shows at
+  their projection, uses no blend and starts at R6. Its swap-gain metric
+  cannot see projection quality, which casts doubt on the earlier ML
+  rejection.
+- A tuned estimator was measured on the E2025 holdout. Settings:
+  exponential decay with a 10-game half-life, 60-game window, prior
+  season ×0.25, shrinkage k=2, minimum 1 game. Result: MAE −0.149
+  [−0.206, −0.099] and slope 0.98.
+- Correction to the 2026-09-26 blend entry's implied validity: the
+  validated backtest headline also includes a small postponed-game leak.
+
+Full findings and numbers, and the phased fix plan, are in
+`docs/projection_overhaul_plan.md`. Nothing is implemented yet.
