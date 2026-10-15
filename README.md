@@ -119,6 +119,14 @@ A standalone pre-draft cheat sheet (no server needed) is also available:
 .venv/bin/python3 draft_board.py --season E2025 --top-n 20
 ```
 
+To measure projection quality (not just lineup gain), and to retune the
+estimator:
+
+```bash
+.venv/bin/python3 projection_eval.py --seasons E2025 --estimators legacy tuned --segments
+.venv/bin/python3 tune_projection.py --season E2024   # tune on one season, evaluate on another
+```
+
 ## Project layout
 
 ```
@@ -130,6 +138,8 @@ sync_rosters.py      Refreshes current club rosters (run before a draft / after 
 sync_fantasy_pool.py Refreshes the real Fantasy draft pool from a Google Sheet (run whenever the sheet changes)
 sync_injuries.py     Refreshes the basketnews.com injury report (run whenever you want current availability)
 seed_league.py  One-time setup of the 12 managers
+projection_eval.py   Projection-accuracy harness (MAE, calibration, ranking, paired bootstrap)
+tune_projection.py   Tunes engine.projections.ProjectionConfig on one season
 set_manual_projection.py  Set/clear/list manual projection estimates for players with no box-score history
 docs/           Fuller technical notes, game rules, and a validation log
 ```

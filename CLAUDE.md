@@ -561,13 +561,14 @@ over the network), never needs to be committed.
 
 ## Natural next steps (not started, pick one)
 
-- **Projection overhaul (planned 2026-10-15, top priority)**: a
-  three-agent review found that the projections are miscalibrated. They
-  ignore availability, are over-dispersed and use a 3-game cutoff. It also
-  found a postponed-game leak and a backtest that doesn't match the live
-  path. The full phased plan, issue registry, open questions for the user,
-  and the review's numbers are in `docs/projection_overhaul_plan.md`. Work
-  it phase by phase and tick its registry.
+- **Projection overhaul (in progress, started 2026-10-15)**: Phases 0
+  (accuracy harness `projection_eval.py`), 1 (date-based cutoffs,
+  `engine/rounds.py`) and 2 (tuned `ProjectionConfig` estimator, now the
+  default; live pool uses all seasons) are done. P7/P8 of Phase 2 and Phases
+  3-9 remain; Phases 3, 6, 7 and 8 wait on the user's answers to the open
+  questions in `docs/projection_overhaul_plan.md` (see its "Implementation
+  notes" for what differs from the plan). The backtest headline above is
+  still the old one: `backtest_eval.py` defaults to `--config legacy`.
 
 - Actually run the real 12-manager draft through `app.py`/`seed_league.py`
   (replacing the current empty/test-cleared tables) and start logging real
