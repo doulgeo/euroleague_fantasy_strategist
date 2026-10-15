@@ -561,6 +561,14 @@ over the network), never needs to be committed.
 
 ## Natural next steps (not started, pick one)
 
+- **Projection overhaul (planned 2026-10-15, top priority)**: a
+  three-agent review found that the projections are miscalibrated. They
+  ignore availability, are over-dispersed and use a 3-game cutoff. It also
+  found a postponed-game leak and a backtest that doesn't match the live
+  path. The full phased plan, issue registry, open questions for the user,
+  and the review's numbers are in `docs/projection_overhaul_plan.md`. Work
+  it phase by phase and tick its registry.
+
 - Actually run the real 12-manager draft through `app.py`/`seed_league.py`
   (replacing the current empty/test-cleared tables) and start logging real
   trades as they happen — the tool is ready for this now.
