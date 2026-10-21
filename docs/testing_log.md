@@ -3392,3 +3392,60 @@ rejection. Initial lint flagged a premature unused type import; removed it.
 Commands: the read-only inspections above; script creation; targeted lint;
 `win_prob_eval.py` twice (initial/report correction); targeted pytest.
 Model is infrastructure only at this commit, not yet used by recommendations.
+
+### Phase 4 step 3: experimental round values and PIR home effect
+
+Added experimental helpers (not enabled in application defaults yet): neutral
+probabilities, post-merge neutral repricing, schedule conversion without
+outcomes, model-availability guard, per-round projection copies and shared
+`round_values`. Same-date results are hidden at round start; unknown teams
+use 50% form/zero margin; unscheduled/out-of-window games have zero value.
+Cutoffs during/before the frozen model's training period retain the old bonus.
+
+Added `phase4_eval.py`: read-only DB; blended historical projections and
+historical availability; fixed baseline rosters reused by both arms; round
+bootstrap for paired error/realized points. This is a focused Phase 4 acceptance
+experiment, not completion of B2 or the full Phase 5 method comparison.
+The baseline uses the tuned estimator and existing bonus. Target coverage is
+played regular-season rows with a projection whose last pre-cutoff club
+matches the target club (no future transfer identity enters the pool).
+
+Commands: inspected draft CLI, templates, roster sampler, round replay and
+harness interfaces; `phase4_eval.py --trials-per-round 0` to fit on E2024 and
+measure holdout bonus-inclusive conditional error before the costlier paired
+lineup run. E2024 residual means: home +0.496969 (3156 targets), away -0.184212
+(3143); fitted symmetric PIR adjustment +/-0.3405906328577615, fixed thereafter.
+E2025 conditional bonus MAE: 6.011558 -> 5.992098; difference -0.019459,
+round-bootstrap 95% CI [-0.030820, -0.008100], 7753 targets/37 rounds.
+E2026: 5.892060 -> 5.889448, difference -0.002612 [-0.017413, +0.008909],
+1221 targets/6 rounds. These are bonus-inclusive conditional metrics and differ
+from older raw-PIR harness numbers. Both satisfy the neutral/better error gate.
+Started `phase4_eval.py --trials-per-round 10` with the frozen adjustment;
+results pending. Draft CLI inspection also found a pre-existing three-value
+unpack of merge_roster's four-value result; fix this when wiring current-team
+bonuses so the documented standalone command remains usable.
+
+### Phase 4 experimental acceptance results and attribution check
+
+`phase4_eval.py --trials-per-round 10` completed: 370 paired E2025 trials
+(37 regular-season rounds), identical baseline-sampled rosters/seeds for both
+arms. Mean realized points 94.579459 -> 96.052297; gain +1.472838,
+round-bootstrap 95% CI [+1.009274, +1.963652]. E2026: 60 trials/6 rounds,
+84.402500 -> 84.293333, -0.109167 [-1.680000, +0.958771]; no demonstrated
+regression but limited precision, explicitly reported to the user.
+
+Recognized that the combined improvement includes zeroing unscheduled teams,
+so added a third, schedule-only arm to isolate home/away and win probabilities.
+Started the same fixed 10-trial-per-round run with all three arms; this is an
+attribution check, not retuning. Added/ran context tests: 13 passed in 9.53s;
+Ruff passed. Covered bonus/availability once only, immutable neutral inputs,
+round-start cutoff for later dates, complementary probabilities, unknown
+teams, postponed/deduplicated schedule, manual estimates after a transfer,
+training-date fallback and legacy behavior. Added typing and a shared
+post-merge team-probability helper. Runtime defaults remain unchanged pending
+completion of the attribution check and integration validation.
+
+Context helper refactor revalidated: targeted Ruff passed and
+`pytest -q tests/test_win_prob.py` passed (13 tests, 8.38s). No application
+or DB data mutated. Committing the experimental context/evaluation helpers
+separately from the upcoming production integration, per the working agreement.

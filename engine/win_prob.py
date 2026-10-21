@@ -9,6 +9,10 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 from math import exp
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from engine.projections import Projection
 
 from engine.rounds import date_only
 
@@ -122,3 +126,112 @@ def fit_win_model(games: list[Game], training_seasons: tuple[str, ...], include_
     return WinModel(float(fitted.intercept_[0]), float(fitted.coef_[0][0]),
                     float(fitted.coef_[0][1]) if include_margin else 0.0,
                     max(g.date for g in train))
+
+
+def schedule_from_games(games: list[Game]) -> list[dict]:
+    """Historical schedule shape without outcomes (for backtest/evaluation)."""
+    return [{"season_code": g.season, "game_code": g.code, "round": g.round,
+             "game_date": g.date, "local_team_code": g.home, "road_team_code": g.away}
+            for g in games]
+
+
+def model_available(rows: list[dict], cutoff_date: str | None, model: WinModel) -> bool:
+    """Frozen coefficients are never available during their training period."""
+    if not model.trained_through:
+        return True
+    if cutoff_date is not None:
+        return cutoff_date > model.trained_through
+    # No explicit cutoff is a live pool over all history. Empty/older
+    # datasets must not acquire a model fitted using their future results.
+    return max((date_only(r.get("game_date")) or "" for r in rows), default="") > model.trained_through
+
+
+def neutral_probabilities(rows: list[dict], cutoff_date: str | None = None,
+                          model: WinModel = DEFAULT_WIN_MODEL) -> dict[str, float]:
+    """Home/away-neutral chance against an average (50%, zero-margin) club."""
+    form = team_form(games_from_rows(rows), cutoff_date)
+    return {team: (model.home_probability(w - 0.5, m)
+                   + 1 - model.home_probability(0.5 - w, -m)) / 2
+            for team, (w, m) in form.items()}
+
+
+def apply_neutral_context(pool: dict[str, Projection], rows: list[dict], cutoff_date: str | None = None,
+                          model: WinModel = DEFAULT_WIN_MODEL) -> dict[str, Projection]:
+    """Recompute after roster/override merge, so the *current* team wins.
+
+    The compatibility field team_win_rate now carries the model's neutral
+    probability for contextual projections. Older cutoffs retain legacy.
+    """
+    if not model_available(rows, cutoff_date, model):
+        return dict(pool)
+    return apply_team_probabilities(pool, neutral_probabilities(rows, cutoff_date, model))
+
+
+def apply_team_probabilities(pool: dict[str, Projection], probabilities: dict[str, float]) -> dict[str, Projection]:
+    """Reprice conditional PIR after overrides/team changes without scaling p_play."""
+    from dataclasses import replace
+
+    return {pid: replace(p, team_win_rate=probabilities.get(p.team, 0.5),
+                         projected_pir_with_bonus=p.projected_pir * (1 + WIN_BONUS * probabilities.get(p.team, 0.5)))
+            for pid, p in pool.items()}
+
+
+# Filled from the E2024-only residual fit in phase4_eval.py before enabling
+# the default. Kept explicit for reproducibility and experiments.
+HOME_PIR_ADJUSTMENT = 0.3405906328577615  # E2024 residual fit, phase4_eval.py (2026-10-21)
+
+
+def round_projections(pool: dict[str, Projection], schedule_rows: list[dict], round_no: int, history: list[dict],
+                      cutoff_date: str | None = None, model: WinModel = DEFAULT_WIN_MODEL,
+                      home_pir: float = HOME_PIR_ADJUSTMENT, enabled: bool = True) -> dict[str, Projection]:
+    """Copies with schedule-specific conditional PIR/bonus and unchanged p_play.
+
+    Excludes postponed games using the same round window as lineup dates.
+    All probabilities use the round START, even for games on later dates.
+    A missing scheduled game is zero; no historical result is consulted to
+    decide whether a future game is eligible. Input projections stay neutral.
+    """
+    from dataclasses import replace
+
+    from engine.rounds import in_main_window, round_start_dates, round_windows
+
+    scheduled = [r for r in schedule_rows if r.get("round") == round_no]
+    cutoff = cutoff_date or round_start_dates(scheduled).get(round_no)
+    windows = round_windows(scheduled)
+    context = {}
+    use_model = enabled and model_available(history, cutoff, model)
+    form = team_form(games_from_rows(history), cutoff) if use_model else {}
+    seen = set()
+    for r in scheduled:
+        if not date_only(r.get("game_date")) or not in_main_window(r.get("game_date"), windows.get(round_no)):
+            continue
+        key = (r.get("season_code"), r.get("game_code"))
+        if key in seen:
+            continue
+        seen.add(key)
+        home, away = r.get("local_team_code"), r.get("road_team_code")
+        if not home or not away:
+            continue
+        h, a = form.get(home, (0.5, 0.0)), form.get(away, (0.5, 0.0))
+        probability = model.home_probability(h[0] - a[0], h[1] - a[1]) if use_model else None
+        context.setdefault(home, []).append((probability, home_pir if use_model else 0.0))
+        context.setdefault(away, []).append((1 - probability if use_model else None, -home_pir if use_model else 0.0))
+    out = {}
+    for pid, p in pool.items():
+        games = context.get(p.team, [])
+        if not games:
+            out[pid] = replace(p, projected_pir_with_bonus=0.0)
+            continue
+        if not use_model:
+            out[pid] = replace(p, projected_pir_with_bonus=p.projected_pir_with_bonus * len(games))
+            continue
+        conditional = sum(p.projected_pir + adjustment for _, adjustment in games)
+        bonus_inclusive = sum((p.projected_pir + adjustment) * (1 + WIN_BONUS * prob) for prob, adjustment in games)
+        out[pid] = replace(p, projected_pir=conditional, projected_pir_with_bonus=bonus_inclusive,
+                           team_win_rate=sum(prob for prob, _ in games) / len(games))
+    return out
+
+
+def round_values(pool: dict[str, Projection], schedule_rows: list[dict], round_no: int, history: list[dict], **kwargs) -> dict[str, float]:
+    """Shared per-round decision values; availability and win bonus apply once."""
+    return {pid: p.expected_value for pid, p in round_projections(pool, schedule_rows, round_no, history, **kwargs).items()}

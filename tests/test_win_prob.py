@@ -52,3 +52,103 @@ def test_fit_rejects_no_outcomes():
 
     with pytest.raises(ValueError, match="both home wins and losses"):
         fit_win_model([], ("E2024",))
+
+
+def _projection(pid="P", team="A", pir=10.0, p_play=0.8):
+    from engine.projections import Projection
+
+    return Projection(pid, pid, "Guard", team, 10, pir, 1200, 2, 0.9, pir * 1.09, p_play=p_play)
+
+
+def _schedule(date="2025-01-02", code=2, home="A", away="B", rnd=2):
+    return {"season_code": "E2024", "game_code": code, "round": rnd, "game_date": date,
+            "local_team_code": home, "road_team_code": away}
+
+
+def test_round_values_apply_availability_and_bonus_once_without_mutating_pool():
+    from engine.win_prob import round_projections, round_values
+
+    pool = {"P": _projection(), "B": _projection("B", "B"), "Z": _projection("Z", "Z")}
+    model = WinModel(0, 0)  # 50% each side
+    schedule = [_schedule()]
+    actual = round_projections(pool, schedule, 2, [], model=model, home_pir=0.4)
+    assert actual["P"].expected_value == pytest.approx(10.4 * 1.05 * 0.8)
+    assert actual["B"].expected_value == pytest.approx(9.6 * 1.05 * 0.8)
+    assert actual["Z"].expected_value == 0.0
+    assert pool["P"].projected_pir == 10.0 and pool["P"].team_win_rate == 0.9
+    assert actual["P"].p_play == pool["P"].p_play
+    assert round_values(pool, schedule, 2, [], model=model, home_pir=0.4)["P"] == actual["P"].expected_value
+
+
+def test_round_context_uses_one_round_start_cutoff_for_all_dates():
+    from engine.win_prob import round_projections
+
+    model = WinModel(0.4, 2)
+    first = _game("2025-01-01", 1)
+    later = _game("2025-01-02", 2, home="C", away="D")
+    history = []
+    for g in (first, later):
+        history.extend([
+            {"season_code": "E2024", "game_code": g.code, "round": 1, "game_date": g.date,
+             "team": g.home, "player_id": g.home, "home_away": "home", "team_win": True, "points": 80},
+            {"season_code": "E2024", "game_code": g.code, "round": 1, "game_date": g.date,
+             "team": g.away, "player_id": g.away, "home_away": "away", "team_win": False, "points": 70},
+        ])
+    pool = {"P": _projection(team="C")}
+    schedule = [_schedule(), _schedule("2025-01-03", 3, "C", "D")]
+    before = round_projections(pool, schedule, 2, history[:2], model=model)
+    after = round_projections(pool, schedule, 2, history, model=model)
+    assert before == after  # same-day game never becomes a feature for later dates
+
+
+def test_home_and_away_probabilities_complement_and_unknown_matchup_uses_home_prior():
+    from engine.win_prob import round_projections
+
+    model = WinModel(0.6, 2)
+    pool = {"H": _projection("H", "A"), "V": _projection("V", "B")}
+    adjusted = round_projections(pool, [_schedule()], 2, [], model=model)
+    assert adjusted["H"].team_win_rate + adjusted["V"].team_win_rate == pytest.approx(1.0)
+    assert adjusted["H"].team_win_rate == pytest.approx(model.home_probability(0))
+
+
+def test_postponed_games_do_not_count_and_duplicate_schedule_rows_do_not_double_bonus():
+    from engine.win_prob import round_values
+
+    schedule = [_schedule(), _schedule(), _schedule("2025-01-03", 3, "C", "D"),
+                _schedule("2025-03-01", 4, "E", "F")]
+    pool = {"A": _projection("A", "A"), "E": _projection("E", "E")}
+    values = round_values(pool, schedule, 2, [], model=WinModel(0, 0), home_pir=0)
+    assert values["A"] == pytest.approx(10 * 1.05 * 0.8)
+    assert values["E"] == 0.0
+
+
+def test_current_team_neutral_probability_overrides_stale_bonus_even_for_manual_estimate():
+    from engine.rosters import merge_roster
+    from engine.win_prob import apply_neutral_context
+
+    pool = {"P": _projection(team="OLD")}
+    merged, _, _, estimated = merge_roster(pool, [
+        {"player_id": "P", "player_name": "P", "team": "NEW", "position": "Guard"},
+    ], {"P"}, {"P": {"projected_pir": 20}})
+    result = apply_neutral_context(merged, [], model=WinModel(0.6, 2))
+    assert result["P"].team == "NEW" and estimated == {"P"}
+    assert result["P"].projected_pir_with_bonus == pytest.approx(21)
+    assert result["P"].team_win_rate == pytest.approx(0.5)
+    assert result["P"].p_play == 0.8
+
+
+def test_context_before_training_end_falls_back_to_legacy():
+    from engine.win_prob import apply_neutral_context, round_projections
+
+    pool = {"P": _projection()}
+    model = WinModel(0.6, 2, trained_through="2025-05-25")
+    assert apply_neutral_context(pool, [], "2025-01-02", model) == pool
+    old = round_projections(pool, [_schedule()], 2, [], model=model, home_pir=1)
+    assert old["P"] == pool["P"]
+
+
+def test_legacy_explicitly_keeps_existing_bonus_for_scheduled_players():
+    from engine.win_prob import round_projections
+
+    pool = {"P": _projection()}
+    assert round_projections(pool, [_schedule()], 2, [], enabled=False)["P"] == pool["P"]
