@@ -3327,3 +3327,68 @@ Validation: `ruff check .` passed under the checked-in configuration;
 `git diff --check` passed; `.venv/bin/python3 -m pytest -q` completed with
 **104 passed in 76.30s**. The lint baseline does not claim that every optional
 Ruff rule passes.
+
+---
+
+## 2026-10-21: Phase 4 plan and initial inspection
+
+User requested that all work be recorded here and authorized continuing Phase 4
+after presenting the exact plan. Presented the following sequence before edits:
+(1) capture the trailing-win-rate baseline; (2) fit a leakage-safe home/form
+logistic win model on E2023-E2024, optionally comparing point differential on
+training data only; (3) fit the PIR home/away effect on E2024 and share
+schedule-specific expected values across consumers; (4) recompute neutral win
+bonuses after current-roster team assignment, preserving legacy comparisons;
+(5) test cutoffs, symmetry, fallbacks, transfers and scoring, and evaluate
+bonus-inclusive error plus paired realized lineup points on identical rosters;
+(6) enable only supported changes. Gates: E2025 Brier <0.236, neutral/better
+bonus-inclusive error, no demonstrated realized-points regression. E2025 is the
+holdout; E2026 is an additional check. Full Phase 5 parity/headline work remains
+separate; do not silently mark it complete.
+
+Initial read-only commands: git status; inspected `engine/projections.py`,
+`engine/rosters.py`, Phase 4 design, `backtest_eval.py`, live
+`compute_recommendation`, and projection/availability tests. Working tree was
+clean. Current projections use a date-ordered last-10 team win rate; the live
+pool merges current rosters and then availability; the backtest reads expected
+value but does not construct the live availability pipeline. Next inspect the
+stored game fields and harness before choosing shared interfaces.
+
+### Phase 4 step 1-2: win-probability model
+
+Inspected normalized DB fields, round-window helpers, availability, harness
+interfaces, roster tests and lineup replay. Read the real DB via SQLite
+`mode=ro` (no sync or application data writes): E2023 331 games, E2024 330,
+E2025 402, E2026 60; schedule exists for E2025/E2026. Built `engine/win_prob.py`
+(complete-game deduplication, last-20 date-safe form across seasons, offline
+logistic fitting, frozen coefficients) and `win_prob_eval.py` (reproducible
+training/validation/holdout report). No network data sources were needed.
+
+Feature selection was specified before evaluation: fit E2023, choose extra
+point differential only if E2024 validation Brier improves by >0.002, then
+refit E2023/E2024. E2024: form-only 0.223708, form+margin 0.217903; selected
+margin. Frozen logit(home win) = 0.6179601270 + 0.0728028302 * form difference
++ 0.9529646343 * mean point-differential difference / 10. Training ends
+2025-05-25; runtime integration must not use those coefficients for earlier
+historical cutoffs. No E2025/E2026 outcomes entered fitting/selection.
+
+`win_prob_eval.py` results (all played games, including playoffs):
+
+| season | n games | trailing-team Brier | home-only Brier | model Brier |
+|---|---:|---:|---:|---:|
+| E2025 | 402 | 0.265698 | 0.231301 | 0.222764 |
+| E2026 | 60 | 0.266704 | 0.258698 | 0.243352 |
+
+Trailing baseline averages both teams' independent last-10 win shares;
+model predictions are complementary between opponents. Flat Brier is 0.25.
+E2025 passes <0.236; E2026 is a small-sample caveat (worse than flat, better
+than trailing/home-only). Original model script reported trailing home only;
+corrected it to both teams before recording the table above.
+
+Validation: `pytest -q tests/test_win_prob.py`: 6 passed in 8.69s; targeted
+Ruff passed. Tests cover date cutoff, cross-season last-20 order, unknown
+teams, probability bounds, complete-game/player deduplication and empty-fit
+rejection. Initial lint flagged a premature unused type import; removed it.
+Commands: the read-only inspections above; script creation; targeted lint;
+`win_prob_eval.py` twice (initial/report correction); targeted pytest.
+Model is infrastructure only at this commit, not yet used by recommendations.
