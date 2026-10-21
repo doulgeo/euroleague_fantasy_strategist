@@ -562,13 +562,18 @@ over the network), never needs to be committed.
 ## Natural next steps (not started, pick one)
 
 - **Projection overhaul (in progress, started 2026-10-15)**: Phases 0
-  (accuracy harness `projection_eval.py`), 1 (date-based cutoffs,
-  `engine/rounds.py`) and 2 (tuned `ProjectionConfig` estimator, now the
-  default; live pool uses all seasons) are done. P7/P8 of Phase 2 and Phases
-  3-9 remain; Phases 3, 6, 7 and 8 wait on the user's answers to the open
-  questions in `docs/projection_overhaul_plan.md` (see its "Implementation
-  notes" for what differs from the plan). The backtest headline above is
-  still the old one: `backtest_eval.py` defaults to `--config legacy`.
+  (accuracy harness), 1 (date-based cutoffs), 2 (tuned estimator, except P8
+  team-changer shrinkage), 3 (availability and general, expiring manual
+  overrides, including P7), and Phase 8's sequential swap execution are
+  implemented. All seven user questions are answered. Phase 5a is partial
+  (B1/B4/B5 done; B2 live-path parity remains). Next: complete that parity
+  work for validation and tackle Phase 4 (win probability and game
+  context), then Phases 5b-d, 6, 7 and 9. Initial formation/exclusion search
+  still simulates one swap window; tracker validation checks against day 1
+  only. See **Current backlog** in `docs/projection_overhaul_plan.md` for
+  the reconciled list and pending acceptance checks. The headline above
+  remains stale; `backtest_eval.py` defaults to `--config legacy` and
+  single-season history.
 
 - Actually run the real 12-manager draft through `app.py`/`seed_league.py`
   (replacing the current empty/test-cleared tables) and start logging real
@@ -586,25 +591,19 @@ over the network), never needs to be committed.
   status") rather than an automated heuristic — use it: when a NEW player
   shows up, ask a Claude Code session to research them (web search on
   recent form/role/other-league stats), then run `set_manual_projection.py`
-  with the agreed number. The separate multi-season-fallback gap (below)
-  is still open.
+  with the agreed number. Overrides now work for any player and expire
+  after a round; they are no longer limited to brand-new players.
 - The lineup builder itself is still live-recomputed only. What the user
   actually picks is now persisted separately, by the points tracker
   (`/tracker`, 2026-09-26), for the user's own team only.
 - The team-strength tiebreaker question the "Opponent-strength adjustment"
   entry above leaves open is now actually testable, since `/lineup` exists
   — worth trying if opponent-aware lineup decisions come up again.
-- **Known gap, found but not fixed 2026-09-14**: `known_player_ids` (the
-  NEW-badge check) looks across ALL locally-synced seasons (E2023-E2025),
-  but `build_projections` (the actual value) only uses the prior + current
-  season (blended since 2026-09-26, `app.py::_load_pool_rows`), so history
-  from E2023/E2024 alone never counts. A player with history
-  in an *earlier* season but not the one currently used for projections
-  (found via real examples: `ZIZIC, ANTE`, `DEJULIUS, DAVID`, both on
-  Besiktas's real E2026 roster) is correctly not flagged NEW, but still
-  gets an unhelpful flat 0.0 with nothing distinguishing that from
-  "genuinely brand new." A third case, distinct from NEW and GONE — no
-  design decided yet on how (or whether) to surface it.
+- **Multi-season-fallback gap resolved 2026-10-15 (P5):** the live pool
+  now blends every synced season, and the tuned estimator accepts one
+  prior played game. Earlier-season-only history is no longer ignored.
+  Players with DNP-only history can still lack an estimate; general manual
+  overrides are available for those cases.
 
 ## Where things were left off (2026-09-14 session)
 

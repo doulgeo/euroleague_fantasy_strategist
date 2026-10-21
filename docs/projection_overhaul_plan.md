@@ -1,6 +1,33 @@
 # Projection overhaul plan
 
-**Status:** Phases 0, 1 and 2 (except P7, P8) implemented 2026-10-15; see the "Implementation notes" section at the end for deviations. The open questions are answered (see "Answers"); Phase 3 is implemented (Phase 3 note below); Phases 4, 5b-d, 6, 7, 8, 9 are not started.
+**Status (reconciled 2026-10-21):** Phases 0, 1, 2 (except P8), and 3
+are implemented. Phase 5a is partly implemented (B1/B4/B5 done; B2 open).
+Phase 8's sequential swap execution is implemented, with planning and
+tracker-validation follow-ups below. Phases 4, 5b-d, 6, 7 and 9 remain
+open. All seven user questions are answered. The implementation notes and
+current backlog below supersede older pending/blocker statements in this
+document; the original design and historical findings are preserved.
+
+## Current backlog (2026-10-21)
+
+| Phase | Remaining work | Status / dependency |
+|---|---|---|
+| 2, P8 | Extra shrinkage for team-changers; measure remaining segment bias | Open; other Phase 2 items, including P7, are implemented |
+| 5a, B2 | Multi-season backtest history, early rounds, parity with live availability/expected-value decisions | Open; complete before relying on realized-points acceptance checks |
+| 4, W1/W2/W3/X4 | Win probability, home/away context, new-team bonus, optional win/PIR correlation | Next major modeling phase; use backtest parity work to validate |
+| 5b-d, B3 | Paired realized-points comparisons, renewed ML evaluation, full headline rerun | Open; compare final behavior after Phase 4; existing headline remains stale |
+| 6, U1 | Uncertainty-aware exclusion, lineup and captain decisions | Open; availability is implemented and the no-show question is answered |
+| 7, T1 | Historical injury/roster snapshots; frozen availability/status in tracker snapshots | Open; Phase 3 dependency satisfied |
+| 8 follow-ups | Evaluate initial formation/exclusions across every window; validate tracker intermediate windows; review multi-date hindsight ceiling | Sequential execution is done (R1); initial search simulates one window and tracker checks against day 1 only |
+| 3 display follow-up | Show p_play in tracker tables | Open; snapshots retain expected value only; detailed snapshot work belongs to T1 |
+| 9, X1/X2/X3 | Transfer horizon, fatigue investigation, conditional cache robustness work | Deferred until Phase 5 enables measurement; X3 remains unreproduced |
+| 10 | Keep docs, issue registry and validation log current | Continuous |
+
+Phase 3's realized-points non-regression check is deferred until backtest
+parity/comparison work is complete. Injury multipliers remain user-approved
+assumptions, not fitted historical estimates. The optional risk-aware
+captain toggle remains deferred until an outcome model and backtest
+evidence support it.
 
 **Source:** a three-agent review of the PIR projection mechanism, run
 2026-10-15. The agents were a master statistician, a backtest analyst, and a
@@ -22,7 +49,9 @@ useful parts into the repo.
 ## Issue registry
 
 Every finding from the review, with the phase that addresses it.
-Severity is the reviewers' rating.
+Severity and finding descriptions are the reviewers' historical assessment;
+checkboxes track implementation, not every acceptance check. R1's completed
+execution still has the follow-ups in the current backlog.
 
 | ID | Sev | Finding (short) | Phase | Done |
 |---|---|---|---|---|
@@ -1050,6 +1079,9 @@ backtest swap-gain metric cancels projection quality; CIs weren't paired.
 
 Deviations and findings while implementing, so the plan text above stays as
 originally written.
+These notes are chronological: later entries supersede earlier statements
+that questions or phases are blocked. See the current backlog above for
+the reconciled status.
 
 - **Phase 0:** `engine/proj_eval.py` + `projection_eval.py`; `classify_phase`
   moved to `engine/rounds.py`. Baseline on E2024+E2025 after the leak fix:

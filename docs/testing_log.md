@@ -3292,3 +3292,19 @@ player who had already played and only re-captains to a player from a later date
 roster: E2026 round 4 (3 dates, 10-07/08/09) and round 6 render without error. Existing behaviour for 2-date rounds is
 unchanged (all prior swap tests still pass). Not done: the tracker still validates a saved final against the day-1
 lock only, and the backtest headline has not been rerun.
+
+---
+
+## 2026-10-21: Reconcile the active backlog
+
+Reviewed the issue registry, chronological implementation notes, latest validation
+entries, and current code in `app.py`, `engine/lineup.py`, `engine/tracker.py`
+and `backtest_eval.py`. Added a current backlog to the projection plan and
+corrected `CLAUDE.md`'s next steps: P7, availability, multi-season live history
+and sequential swaps are implemented; all seven user questions are answered.
+Preserved the original design/history and explicitly retained pending acceptance
+checks, B2 parity, P8, tracker snapshots, and multi-window planning/validation.
+The backtest already reads `expected_value`, but does not construct the live
+availability pipeline; that parity work remains open. No model rerun or changed
+headline is claimed. Validation: `git diff --check` passed; documentation-only
+change, no application tests needed for this commit.
