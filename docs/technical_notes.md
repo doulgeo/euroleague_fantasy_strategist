@@ -109,19 +109,33 @@ round, not just an already-played one — see "Season schedule" below.
 
 ### Projections (`engine/projections.py`)
 
-Deliberately simple and transparent — no ML. Per player, using only games
-**strictly before** the cutoff round (leakage safety is load-bearing: this is
-what makes the POC's backtest meaningful rather than circular):
-- Recency-weighted rolling mean PIR over the last 10 played games (linear
-  ramp weights 1..n, not exponential — simple and legible over tuned).
-- Same weighting for a minutes trend.
-- Volatility = sample stdev of recent PIR (floor/ceiling context, not
-  currently consumed by lineup logic but there for future captain-risk
-  reasoning).
-- Team win-rate over the team's last 10 games, as a stand-in win-probability
-  feeding the +10% win bonus: `projected_pir_with_bonus = projected_pir +
-  team_win_rate * 0.10 * projected_pir`.
-- Players with fewer than 3 prior games are excluded (too little signal).
+**Current default (2026-10-21):** `CONTEXT_CONFIG` retains the tuned,
+transparent PIR estimator (exponential half-life 10, last 60 games, older
+seasons weighted 0.25 per season back, one pseudo-game of positional
+shrinkage, minimum one played game). Availability is the separate p_play
+model; decisions use conditional PIR with expected win bonus times p_play.
+History is cut strictly before the target round's start date, including
+postponed games, and all synced prior seasons are available.
+
+The win bonus now uses a fixed logistic model (`engine/win_prob.py`) fit on
+E2023/E2024, with home advantage and differences in last-20 win share and
+mean point differential. Draft/transfer values average home and away against
+an average club. Roster merging reprices with the current club after manual
+PIR overrides. The lineup path uses the scheduled opponent, a symmetric
+home/away PIR adjustment of +/-0.340591 (E2024 fit), and a game-specific win
+probability. Unscheduled/postponed players have zero round value; genuinely
+unranked placeholders stay zero. Bonus and availability each apply once.
+
+`win_prob_eval.py` reproduces fitting and holdout Brier scores;
+`phase4_eval.py` reproduces the focused paired acceptance experiment. The
+latter includes historical availability and identical baseline-sampled
+rosters, but does not close the older backtest's Phase 5 parity backlog.
+No new full backtest headline is claimed. The optional win/PIR covariance
+refinement was deferred. `LEGACY_CONFIG` and `TUNED_CONFIG` retain the old
+trailing last-10 bonus for reproducibility; cutoffs during/before the frozen
+win model's training period (through 2025-05-25) also retain that behavior.
+See the latest testing-log entries and Phase 4 implementation notes for
+metrics, caveats and validation.
 
 Unaffected by the roster/active-squad rules correction below — this module
 is position/roster-agnostic.

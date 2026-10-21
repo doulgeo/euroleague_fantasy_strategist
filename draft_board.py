@@ -43,9 +43,10 @@ import argparse
 import csv
 
 from engine.db import get_connection, known_player_ids, load_roster, load_rows
-from engine.projections import Projection, build_projections, stdev
+from engine.projections import DEFAULT_CONFIG, Projection, build_projections, stdev
 from engine.roster import REQUIRED_COUNTS
 from engine.rosters import merge_roster
+from engine.win_prob import model_available, neutral_probabilities
 
 LEAGUE_SIZE = 12
 
@@ -185,7 +186,13 @@ def main() -> None:
     new_ids: frozenset[str] = frozenset()
     if roster_rows:
         seen = known_player_ids(conn)
-        projections, new_ids_set, gone_ids_set = merge_roster(projections, roster_rows, seen)
+        probabilities = (
+            neutral_probabilities(rows)
+            if DEFAULT_CONFIG.use_game_context and model_available(rows, None) else None
+        )
+        projections, new_ids_set, gone_ids_set, _estimated_ids = merge_roster(
+            projections, roster_rows, seen, team_win_probabilities=probabilities,
+        )
         new_ids = frozenset(new_ids_set)
         gone_count = len(gone_ids_set)
         projections = {pid: p for pid, p in projections.items() if pid not in gone_ids_set}

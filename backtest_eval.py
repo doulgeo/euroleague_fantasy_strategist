@@ -47,8 +47,9 @@ from engine.lineup import _game_dates, build_lineup, choose_active_squad, comput
 from engine.ml_features import build_feature_table
 from engine.ml_projections import build_ensemble_projections, build_ml_projections, train_model
 from engine.rounds import classify_phase, in_main_window, round_main_window, round_start_dates  # noqa: F401 (classify_phase re-exported for team_strength_backtest)
-from engine.projections import LEGACY_CONFIG, ROLLING_WINDOW, TUNED_CONFIG, actual_fantasy_score, build_projections
+from engine.projections import CONTEXT_CONFIG, LEGACY_CONFIG, ROLLING_WINDOW, TUNED_CONFIG, actual_fantasy_score, build_projections
 from engine.roster import DRAFT_POOL_SIZE, build_draft_pool, sample_roster
+from engine.win_prob import games_from_rows, round_values, schedule_from_games
 
 Z_95 = 1.96
 
@@ -96,16 +97,21 @@ def run_one_trial(
     rows: list[dict],
     team_dates: dict[str, str],
     seed: int,
+    decision_values: dict[str, float] | None = None,
 ) -> Trial | None:
     """`pool` is the sampling universe for this trial's random roster draw -
     either the full leakage-safe projections dict (old behavior, uniform
     random league-wide sample) or a draft-pool subset of it (see
     engine.roster.build_draft_pool) restricting the draw to plausible,
     manager-drafted players. Either way, projected values used for the
-    swap/lineup decision itself come from this same dict.
+    swap/lineup decision itself come from this same dict unless the caller
+    supplies schedule-specific `decision_values` (Phase 4). Roster sampling
+    always uses the neutral pool, independently of that decision map.
     """
     rng = random.Random(seed)
-    projected_value = lambda pid: pool[pid].expected_value  # noqa: E731
+
+    def projected_value(pid: str) -> float:
+        return decision_values[pid] if decision_values is not None else pool[pid].expected_value
 
     try:
         roster = sample_roster(pool, rng)
@@ -179,6 +185,7 @@ def evaluate_season(
     phase_of_round = classify_phase(rows)
     summary = SeasonSummary(season=season)
     round_starts = round_start_dates(rows)
+    schedule = schedule_from_games(games_from_rows(rows)) if config.use_game_context else []
 
     for round_no in rounds_present:
         if round_no < min_round:
@@ -207,10 +214,14 @@ def evaluate_season(
             continue
 
         pool = build_draft_pool(projections, pool_size=pool_size) if pool_size > 0 else projections
+        decision_values = (
+            round_values(pool, schedule, round_no, rows, cutoff_date=round_starts.get(round_no))
+            if config.use_game_context else None
+        )
 
         got_any = False
         for t in range(trials_per_round):
-            trial = run_one_trial(season, round_no, pool, rows, team_dates, base_seed + t)
+            trial = run_one_trial(season, round_no, pool, rows, team_dates, base_seed + t, decision_values)
             if trial is not None:
                 summary.trials.append(trial)
                 got_any = True
@@ -474,9 +485,10 @@ def main() -> None:
              "(regular season only, same exclusion as the main run)",
     )
     parser.add_argument(
-        "--config", choices=["legacy", "tuned"], default="legacy",
+        "--config", choices=["legacy", "tuned", "context"], default="legacy",
         help="engine.projections.ProjectionConfig for the heuristic projections (default legacy, so old "
-             "headlines stay reproducible; tuned = the Phase-2 estimator). Single-season history here.",
+             "headlines stay reproducible; tuned = Phase 2; context = Phase 4 game values). "
+             "Single-season history here; live availability/blending parity is still pending.",
     )
     parser.add_argument(
         "--pool-size", type=int, default=DRAFT_POOL_SIZE,
@@ -519,7 +531,7 @@ def main() -> None:
             summary = evaluate_season(
                 conn, season, args.min_round, args.trials_per_round, args.seed,
                 include_playoffs=args.include_playoffs, pool_size=args.pool_size,
-                config=TUNED_CONFIG if args.config == "tuned" else LEGACY_CONFIG,
+                config={"legacy": LEGACY_CONFIG, "tuned": TUNED_CONFIG, "context": CONTEXT_CONFIG}[args.config],
             )
             print_summary(summary)
             all_summaries.append(summary)

@@ -2,9 +2,9 @@
 Heuristic per-player fantasy projections.
 
 Deliberately simple and transparent: recency-weighted rolling PIR, a minutes
-trend, a volatility measure, and a team win-rate stand-in for the +10% win
-bonus. No ML - the point is to have a readable baseline to validate before
-ever considering something fancier.
+trend and a volatility measure. The default win bonus uses the frozen
+Phase 4 game model; explicit older configs retain the trailing win rate.
+The PIR estimator remains transparent and separate from win probability.
 """
 
 from __future__ import annotations
@@ -53,7 +53,7 @@ class Projection:
     projected_pir: float
     minutes_trend_seconds: float
     volatility: float
-    team_win_rate: float | None
+    team_win_rate: float | None  # contextual path: neutral/game win probability; legacy: trailing share
     projected_pir_with_bonus: float
     # Form ticker inputs - defaulted so placeholder Projections (new
     # players, tracker snapshots) show no form rather than needing them.
@@ -210,6 +210,7 @@ class ProjectionConfig:
     shrink_target_scale: float = 1.0
     min_games: int = MIN_GAMES_FOR_PROJECTION
     exclude_prior_playoffs: bool = False
+    use_game_context: bool = False  # Phase 4; old configs retain the trailing-rate bonus
 
 
 # Reproduces the pre-2026-10-15 estimator exactly (checked in tests).
@@ -222,7 +223,8 @@ TUNED_CONFIG = ProjectionConfig(
     weighting="exp", half_life_games=10, window_games=60, season_age_weight=0.25,
     shrink_k=1.0, shrink_target_scale=1.0, min_games=1,
 )
-DEFAULT_CONFIG = TUNED_CONFIG  # switched from LEGACY_CONFIG 2026-10-15 (docs/testing_log.md, Phase 2)
+CONTEXT_CONFIG = replace(TUNED_CONFIG, use_game_context=True)
+DEFAULT_CONFIG = CONTEXT_CONFIG  # Phase 4 gates passed 2026-10-21; see docs/testing_log.md
 
 
 def _season_ranks(rows: list[dict]) -> dict[str, int]:
@@ -442,6 +444,10 @@ def build_projections(
             n_eff=n_eff,
         )
 
+    if config.use_game_context:
+        from engine.win_prob import apply_neutral_context
+
+        return apply_neutral_context(projections, history_rows, cutoff_date)
     return projections
 
 

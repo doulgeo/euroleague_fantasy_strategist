@@ -45,7 +45,7 @@
     </table>
 
     <h2>How projections are calculated</h2>
-    <p>Deliberately simple and auditable - no machine learning. For each
+    <p>The PIR estimate is a transparent weighted average; the win bonus uses a fixed statistical model. For each
     player, using only games strictly before the projection date (so it
     never "cheats" by seeing the future):</p>
     <dl>
@@ -59,7 +59,16 @@
       average of his played games (half-life 10 games; older seasons count
       a quarter as much each season back), pulled toward the average for
       his position when the sample is small, plus a bonus for his team's
-      recent win rate (the +10% win bonus).</dd>
+      win probability (the +10% win bonus). Draft and transfer values use an
+      average opponent with home and away balanced. Lineup values use the
+      scheduled opponent and a small home/away PIR adjustment (+0.34 at home,
+      -0.34 away). A player with no eligible game that round is worth zero.</dd>
+      <dt>Win probability</dt>
+      <dd>A fixed model uses home advantage and each team's last 20 games
+      (win share and point differential), using only results before the
+      round starts. Transferred players use their current team's bonus.
+      The coefficients were fit on E2023-E2024 and checked on E2025;
+      older historical rounds retain the previous trailing-win-rate bonus.</dd>
       <dt>Chance he plays</dt>
       <dd>His share of his current club's last 5 games he played in, weighted
       toward the latest (absences tend to persist), with games before he

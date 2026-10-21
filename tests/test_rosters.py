@@ -42,3 +42,22 @@ def test_override_expires_once_its_round_is_played():
     set_manual_projection(conn, "PN", "PN", 10.0)
     assert set(active_manual_projections(conn, "E2026")) == {"P4", "PN"}
     assert set(active_manual_projections(conn, "E2026", before_round=4)) == {"P4", "PN"}
+
+
+def test_team_probabilities_apply_after_transfer_and_manual_override():
+    pool = {"A": _proj("A", "OLD", 0.9)}
+    roster = [{"player_id": "A", "player_name": "A", "team": "NEW", "position": "Guard"}]
+    merged, _, _, est = merge_roster(pool, roster, {"A"}, {"A": {"projected_pir": 20}},
+                                    team_win_probabilities={"OLD": 0.9, "NEW": 0.2})
+    assert merged["A"].team_win_rate == 0.2
+    assert merged["A"].projected_pir_with_bonus == pytest.approx(20.4)
+    assert merged["A"].team == "NEW" and est == {"A"}
+    assert pool["A"].team == "OLD"
+
+
+def test_unknown_destination_team_uses_neutral_bonus():
+    merged, _, _, _ = merge_roster({"A": _proj("A", "OLD", 0.9)}, [
+        {"player_id": "A", "player_name": "A", "team": "NEW", "position": "Guard"},
+    ], {"A"}, team_win_probabilities={"OLD": 0.9})
+    assert merged["A"].team_win_rate == 0.5
+    assert merged["A"].projected_pir_with_bonus == pytest.approx(10.5)

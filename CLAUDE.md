@@ -19,8 +19,9 @@ configured: `user.name=doulgeo`, `user.email=doulgerisgeo@gmail.com`.
 **Working agreement with the user**: commit every finalized/significant
 change as its own commit, right away — don't batch multiple finished
 changes into one commit or wait for a natural stopping point. Keep
-`docs/testing_log.md` updated with validation activity (what was tested,
-how, result) as a running log separate from git history — append, don't
+`docs/testing_log.md` updated with all work (plans, inspections, commands,
+changes, validation results and decisions; user-confirmed 2026-10-21) as a
+running log separate from git history — append, don't
 rewrite past entries (only correct them if a past entry turns out to be
 wrong, and say so explicitly rather than silently editing). Also keep
 `README.md` (the public-facing repo overview — what the tool does, quick
@@ -534,6 +535,20 @@ Full context for a fresh session, in order of what to read:
   by the user ("let's see what data we get first") — still open, see
   `docs/technical_notes.md` → "Open questions / paused decisions".
 
+- **Phase 4 game context (2026-10-21):** `CONTEXT_CONFIG` is the default;
+  `LEGACY_CONFIG` and `TUNED_CONFIG` remain reproducible. The fixed logistic
+  win model uses home advantage, last-20 form and point differential, fit on
+  E2023/E2024, held out on E2025. Draft/transfers use neutral matchup values;
+  lineup uses scheduled opponents and +/-0.340591 home/away PIR, fitted on
+  E2024. Post-merge bonuses use the current team. E2025 Brier 0.222764,
+  bonus MAE -0.019459; combined paired lineup gain +1.472838, mostly from
+  zeroing unscheduled players (context alone +0.195811, CI includes zero).
+  E2026 is weaker/small-sample; no demonstrated lineup regression. See
+  `win_prob_eval.py`, `phase4_eval.py` and the testing log. No updated full
+  headline; B2/Phase 5 still open. Frozen model is not used for cutoffs
+  during/before its training period (through 2025-05-25). Optional X4 is
+  deferred; the separate experimental `proj/` features stay unintegrated.
+
 ## Quick start
 
 ```bash
@@ -567,8 +582,9 @@ over the network), never needs to be committed.
   overrides, including P7), and Phase 8's sequential swap execution are
   implemented. All seven user questions are answered. Phase 5a is partial
   (B1/B4/B5 done; B2 live-path parity remains). Next: complete that parity
-  work for validation and tackle Phase 4 (win probability and game
-  context), then Phases 5b-d, 6, 7 and 9. Initial formation/exclusion search
+  work for validation; Phase 4 W1/W2/W3 is now implemented (2026-10-21),
+  with optional X4 deferred. Phases 5b-d, 6, 7 and 9 remain. Initial
+  formation/exclusion search
   still simulates one swap window; tracker validation checks against day 1
   only. See **Current backlog** in `docs/projection_overhaul_plan.md` for
   the reconciled list and pending acceptance checks. The headline above

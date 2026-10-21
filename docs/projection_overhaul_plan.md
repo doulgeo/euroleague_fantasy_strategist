@@ -3,7 +3,8 @@
 **Status (reconciled 2026-10-21):** Phases 0, 1, 2 (except P8), and 3
 are implemented. Phase 5a is partly implemented (B1/B4/B5 done; B2 open).
 Phase 8's sequential swap execution is implemented, with planning and
-tracker-validation follow-ups below. Phases 4, 5b-d, 6, 7 and 9 remain
+tracker-validation follow-ups below. Phase 4 W1/W2/W3 is implemented and
+validated (2026-10-21); optional X4 is deferred. Phases 5b-d, 6, 7 and 9 remain
 open. All seven user questions are answered. The implementation notes and
 current backlog below supersede older pending/blocker statements in this
 document; the original design and historical findings are preserved.
@@ -14,7 +15,7 @@ document; the original design and historical findings are preserved.
 |---|---|---|
 | 2, P8 | Extra shrinkage for team-changers; measure remaining segment bias | Open; other Phase 2 items, including P7, are implemented |
 | 5a, B2 | Multi-season backtest history, early rounds, parity with live availability/expected-value decisions | Open; complete before relying on realized-points acceptance checks |
-| 4, W1/W2/W3/X4 | Win probability, home/away context, new-team bonus, optional win/PIR correlation | Next major modeling phase; use backtest parity work to validate |
+| 4, X4 (optional) | Win/PIR covariance refinement | Deferred under the skip-unless-free rule; W1/W2/W3 implemented and validated |
 | 5b-d, B3 | Paired realized-points comparisons, renewed ML evaluation, full headline rerun | Open; compare final behavior after Phase 4; existing headline remains stale |
 | 6, U1 | Uncertainty-aware exclusion, lineup and captain decisions | Open; availability is implemented and the no-show question is answered |
 | 7, T1 | Historical injury/roster snapshots; frozen availability/status in tracker snapshots | Open; Phase 3 dependency satisfied |
@@ -67,9 +68,9 @@ execution still has the follow-ups in the current backlog.
 | L1 | High | Postponed games leak future data. The cutoff is by round number, not date (E2025 game 134: round 14, played 2026-03-17). Affects the backtest and, latently, the live app | 1 | [x] |
 | L2 | Low | Team win-rate window orders by `game_code`, not date (`projections.py:192`) | 1 | [x] |
 | L3 | Low | Rescheduled games distort day-1/day-2 team assignment (`lineup.py:98-136`); E2025 R34 and R14 are examples | 1 | [x] |
-| W1 | Med | Win-probability stand-in (team last-10 win rate) has Brier 0.265, worse than a flat 0.5 (0.250). Home/away alone gets 0.236; logistic on home + form gets 0.219 | 4 | [ ] |
-| W2 | Low | Home/away PIR effect (+0.38 / −0.34) is ignored | 4 | [ ] |
-| W3 | Low | A transferred player keeps the old team's win rate and bonus (`rosters.py:88-89`). 68 players at R1 | 4 | [ ] |
+| W1 | Med | Win-probability stand-in (team last-10 win rate) has Brier 0.265, worse than a flat 0.5 (0.250). Home/away alone gets 0.236; logistic on home + form gets 0.219 | 4 | [x] |
+| W2 | Low | Home/away PIR effect (+0.38 / −0.34) is ignored | 4 | [x] |
+| W3 | Low | A transferred player keeps the old team's win rate and bonus (`rosters.py:88-89`). 68 players at R1 | 4 | [x] |
 | B1 | Med | Backtest values day-1 no-shows at their projection; live values them at 0 (`backtest_eval.py:127-129` vs `app.py:1086-1091`) | 5 | [x] |
 | B2 | Med | Backtest never runs the live path: single season, `min_round=6`, no blend, no early rounds | 5 | [ ] |
 | B3 | Med | Backtest metric (swap gain over no-swap with the *same* projections) can't see projection quality. The ML rejection may be unsound (Ridge R² 0.238 vs heuristic 0.181) | 5 | [ ] |
@@ -1124,3 +1125,37 @@ the reconciled status.
   still evaluate candidates with a single day-1 window (a planning approximation), the tracker's
   `final_rule_violations` still checks the final lineup against the day-1 lock only (a necessary, not
   sufficient, check for 3-date rounds), and the hindsight ceiling is unchanged.
+
+
+## Phase 4 implementation notes (2026-10-21)
+
+- W1/W2/W3 implemented; `CONTEXT_CONFIG` is now the default. Explicit
+  `LEGACY_CONFIG` and `TUNED_CONFIG` preserve the old bonus. The fixed win
+  coefficients are available only after their training period ends
+  (2025-05-25); older cutoffs retain the old calculation.
+- `engine/win_prob.py` reconstructs complete games and date-safe last-20
+  form. `win_prob_eval.py` selects the point-differential feature on E2024
+  (fit E2023), then freezes coefficients fit on E2023/E2024. E2025 Brier
+  0.222764 vs trailing-team 0.265698 and home-only 0.231301. E2026's 60
+  games give 0.243352: better than flat 0.25, but above the E2025 gate of
+  0.236.
+- `phase4_eval.py` fits the symmetric home PIR effect on E2024 residuals:
+  +/-0.340591. It measures conditional bonus-inclusive MAE and paired
+  realized points with historical availability, blended history, and the
+  same roster samples/seeds. E2025 MAE 6.011558 -> 5.992098, paired delta
+  -0.019459 [-0.030820, -0.008100]. All intervals here are 95%, over rounds.
+- E2025 combined lineup gain +1.472838 [+1.009274, +1.963652] (370 trials,
+  37 rounds) mostly comes from zeroing unscheduled players. Context versus
+  schedule-only adds +0.195811 [-0.087615, +0.469206]; its lineup gain is
+  uncertain. E2026 combined -0.109167 [-1.680000, +0.958771] (60 trials);
+  no demonstrated regression. No holdout tuning or revised headline.
+- Draft/transfers use a neutral opponent and average home/away probability.
+  Roster merge reprices after team assignment and manual overrides. Lineup
+  and `backtest_eval.py --config context` share round context; availability
+  and the win bonus each apply once. Unranked placeholders stay zero.
+- X4 skipped: optional covariance complexity was not necessary to pass the
+  gates. B2 and the broader Phase 5 comparison/headline are still open.
+  The focused evaluator is not a replacement for that work. Historical
+  roster/injury snapshots (T1), multi-window initial search and tracker
+  validation remain separate limitations. See testing_log.md for commands,
+  intermediate results, tests and integration checks.

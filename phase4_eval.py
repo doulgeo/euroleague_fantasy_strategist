@@ -22,7 +22,7 @@ from engine.proj_eval import blended_history
 from engine.projections import TUNED_CONFIG, actual_fantasy_score, build_projections
 from engine.roster import sample_roster
 from engine.rounds import classify_phase, in_main_window, round_start_dates, round_windows
-from engine.win_prob import games_from_rows, round_projections, schedule_from_games
+from engine.win_prob import apply_neutral_context, games_from_rows, round_projections, schedule_from_games
 
 
 def history_pool(by_season, season, cutoff):
@@ -70,12 +70,13 @@ def evaluate(by_season, season, home_effect, trials):
     schedule = schedule_from_games(games)
     phase, starts, windows = classify_phase(rows), round_start_dates(rows), round_windows(rows)
     error_groups, point_groups, context_point_groups = [], [], []
-    totals = {"played_targets": 0, "baseline_absolute_error": 0.0, "context_absolute_error": 0.0,
+    totals = {"played_targets": 0, "baseline_absolute_error": 0.0, "context_absolute_error": 0.0, "neutral_absolute_error": 0.0,
               "trials": 0, "baseline_points": 0.0, "context_points": 0.0}
     for rnd, cutoff in sorted(starts.items()):
         if phase.get(rnd) != "regular":
             continue
         history, pool = history_pool(by_season, season, cutoff)
+        neutral = apply_neutral_context(pool, history, cutoff)
         contextual = round_projections(pool, schedule, rnd, history, cutoff_date=cutoff, home_pir=home_effect)
         schedule_only = round_projections(pool, schedule, rnd, history, cutoff_date=cutoff, enabled=False)
         errors = []
@@ -93,6 +94,7 @@ def evaluate(by_season, season, home_effect, trials):
             totals["played_targets"] += 1
             totals["baseline_absolute_error"] += base_err
             totals["context_absolute_error"] += new_err
+            totals["neutral_absolute_error"] += abs(neutral[pid].projected_pir_with_bonus - actual)
             errors.append(new_err - base_err)
         if errors:
             error_groups.append((sum(errors), len(errors)))
@@ -124,6 +126,7 @@ def evaluate(by_season, season, home_effect, trials):
     return {"season": season, "rounds": len(error_groups), "played_targets": n,
             "baseline_bonus_mae": totals["baseline_absolute_error"] / n,
             "context_bonus_mae": totals["context_absolute_error"] / n,
+            "neutral_bonus_mae": totals["neutral_absolute_error"] / n,
             "dMAE_round_bootstrap": bootstrap(error_groups), "paired_trials": t,
             "baseline_mean_points": totals["baseline_points"] / t if t else None,
             "context_mean_points": totals["context_points"] / t if t else None,

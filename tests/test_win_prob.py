@@ -99,6 +99,8 @@ def test_round_context_uses_one_round_start_cutoff_for_all_dates():
     before = round_projections(pool, schedule, 2, history[:2], model=model)
     after = round_projections(pool, schedule, 2, history, model=model)
     assert before == after  # same-day game never becomes a feature for later dates
+    late_cutoff = round_projections(pool, schedule, 2, history, model=model, cutoff_date="2025-01-04")
+    assert before == late_cutoff  # caller cannot advance the round-start freeze
 
 
 def test_home_and_away_probabilities_complement_and_unknown_matchup_uses_home_prior():
@@ -152,3 +154,33 @@ def test_legacy_explicitly_keeps_existing_bonus_for_scheduled_players():
 
     pool = {"P": _projection()}
     assert round_projections(pool, [_schedule()], 2, [], enabled=False)["P"] == pool["P"]
+
+
+def test_unranked_placeholder_stays_zero_and_out_player_stays_zero():
+    from dataclasses import replace
+    from engine.win_prob import round_values
+
+    pool = {"N": replace(_projection("N", pir=0), games_sampled=0),
+            "O": _projection("O", p_play=0), "M": _projection("M", pir=0)}
+    values = round_values(pool, [_schedule()], 2, [], model=WinModel(0, 0), home_pir=0.4)
+    assert values["N"] == values["O"] == 0
+    assert values["M"] > 0  # real zero-valued estimate still gets location context
+
+
+def test_neutral_probability_uses_current_club_strength_without_home_advantage():
+    from engine.win_prob import neutral_probabilities
+
+    h = {"season_code": "E2024", "game_code": 1, "round": 1, "game_date": "2025-01-01",
+         "team": "A", "player_id": "A", "home_away": "home", "team_win": True, "points": 80}
+    a = {**h, "team": "B", "player_id": "B", "home_away": "away", "team_win": False, "points": 70}
+    probabilities = neutral_probabilities([h, a], "2025-01-02", WinModel(0.6, 2))
+    assert probabilities["A"] > 0.5 > probabilities["B"]
+    assert probabilities["A"] + probabilities["B"] == pytest.approx(1)
+
+
+def test_fit_is_unchanged_by_future_holdout_outcomes():
+    from engine.win_prob import fit_win_model
+
+    train = [_game("2024-01-01", 1), _game("2024-01-02", 2, won=False)]
+    future = [_game("2025-01-01", 1, season="E2025", won=False)]
+    assert fit_win_model(train, ("E2024",)) == fit_win_model(train + future, ("E2024",))

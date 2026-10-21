@@ -73,6 +73,7 @@ from engine.lineup import (
 from engine.availability import DEFAULT_AVAILABILITY, UNKNOWN_P_PLAY, estimate_p_play, injury_multiplier
 from engine.rounds import in_main_window, round_main_window, round_start_dates
 from engine.projections import (
+    DEFAULT_CONFIG,
     Projection,
     SeasonPoints,
     blend_seasons,
@@ -82,6 +83,7 @@ from engine.projections import (
 from engine.roster import REQUIRED_COUNTS, ActiveSquad, Roster
 from engine.dev_draft import randomize_draft
 from engine.rosters import merge_roster
+from engine.win_prob import model_available, neutral_probabilities, round_projections
 from engine.tracker import (
     SLOT_LABELS,
     SLOT_MULTIPLIERS,
@@ -293,10 +295,10 @@ def get_pool(
 
     injury_status: player_id -> {status, team, round_text, comment,
     severity} from the basketnews injury report (engine.injuries), synced
-    via sync_injuries.py. Best-effort/informational (see that module's
-    docstring) - callers that care about availability (draft board, manager
-    roster, lineup builder) use it for a badge; the lineup builder also
-    zeroes an "Out" player's decision value (see the /lineup route)."""
+    via sync_injuries.py. The status supplies a badge and scales p_play;
+    all consumers read expected_value, so an Out player has zero value.
+    Phase 4 reprices neutral win bonuses after current-team assignment;
+    compute_recommendation supplies schedule-specific values separately."""
     key = (PRIOR_SEASON, CURRENT_SEASON, before_round)
     mtime_ns = DB_PATH.stat().st_mtime_ns
 
@@ -311,13 +313,21 @@ def get_pool(
     seen = known_player_ids(conn)
     manual = active_manual_projections(conn, CURRENT_SEASON, before_round)
     historical_players = all_known_players(conn)
+    team_probabilities = (
+        neutral_probabilities(rows, cutoff_date)
+        if DEFAULT_CONFIG.use_game_context and model_available(rows, cutoff_date) else None
+    )
 
     fantasy_pool_rows = load_fantasy_pool(conn)
     if fantasy_pool_rows:
         resolved_rows, _diag = resolve_pool_rows(fantasy_pool_rows, roster_rows, historical_players)
-        projections, new_ids, gone_ids, estimated_ids = merge_roster(projections, resolved_rows, seen, manual)
+        projections, new_ids, gone_ids, estimated_ids = merge_roster(
+            projections, resolved_rows, seen, manual, team_win_probabilities=team_probabilities,
+        )
     else:
-        projections, new_ids, gone_ids, estimated_ids = merge_roster(projections, roster_rows, seen, manual)
+        projections, new_ids, gone_ids, estimated_ids = merge_roster(
+            projections, roster_rows, seen, manual, team_win_probabilities=team_probabilities,
+        )
 
     injury_rows = load_injuries(conn)
     resolved_injuries, _inj_diag = resolve_injury_rows(injury_rows, roster_rows, historical_players)
@@ -1062,6 +1072,10 @@ def compute_recommendation(
     recommended_total = None
 
     pool, _new_ids, _gone_ids, _estimated_ids, injury_status = get_pool(conn, before_round)
+    schedule_rows = load_schedule(conn, CURRENT_SEASON, round_no=round_no)
+    if DEFAULT_CONFIG.use_game_context:
+        history, _as_of_round, cutoff_date = _load_pool_rows(conn, before_round or round_no)
+        pool = round_projections(pool, schedule_rows, round_no, history, cutoff_date=cutoff_date)
     player_ids = ownership.manager_roster_ids(conn, manager_id)
     players = [pool[pid] for pid in player_ids if pid in pool]
     unresolved = len(player_ids) - len(players)
@@ -1072,7 +1086,6 @@ def compute_recommendation(
         roster_error = f"{e} (drafted so far: {len(player_ids)}/13, {unresolved} not found in current pool)"
 
     if roster is not None:
-        schedule_rows = load_schedule(conn, CURRENT_SEASON, round_no=round_no)
         team_dates = team_dates_from_schedule(schedule_rows, round_no)
 
         if not team_dates:
@@ -1082,13 +1095,9 @@ def compute_recommendation(
                 f"has no games - try a different round."
             )
         else:
-            # An "Out" player (basketnews injury report - see
-            # engine.injuries) is zeroed here rather than hard-excluded:
-            # they genuinely can't outscore anyone, so choose_active_squad's
-            # brute-force search naturally benches/excludes them on its
-            # own merit - including gracefully handling more "Out"
-            # players than there are exclusion slots (they'd just fill
-            # the least-bad bench spots at a real 0, correctly modeled).
+            # Availability already makes Out players worth zero. They remain
+            # legal roster members so the search can handle more absences
+            # than there are exclusion slots.
             try:
                 if day1_snapshot is not None:
                     # the lineup actually locked in: pool objects where we have

@@ -10,9 +10,12 @@ for personal use among friends — never monetized or redistributed.
 
 ## What it does
 
-- **Projections** — a transparent, hand-auditable heuristic (no ML) that
-  projects each player's next-game fantasy score (PIR) from recency-weighted
-  recent form plus a team win-rate bonus. A **form ticker** next to every
+- **Projections** — a transparent PIR estimator using recency-weighted
+  form, small-sample shrinkage and availability. A fixed logistic model
+  estimates the +10% win bonus from team form and point differential.
+  Draft/transfer values use a neutral matchup; lineup values use the actual
+  scheduled opponent and home/away context. Transferred players use their
+  current team's bonus. A **form ticker** next to every
   projection shows how it moved after the player's last game (▲/▼) and
   flags players scoring well above/below it over their last 3 (HOT/COLD).
 - **Season points** — every player's real fantasy points so far this season
@@ -119,13 +122,22 @@ A standalone pre-draft cheat sheet (no server needed) is also available:
 .venv/bin/python3 draft_board.py --season E2025 --top-n 20
 ```
 
-To measure projection quality (not just lineup gain), and to retune the
-estimator:
+To measure projection quality and retune the estimator:
 
 ```bash
 .venv/bin/python3 projection_eval.py --seasons E2025 --estimators legacy tuned --segments
 .venv/bin/python3 tune_projection.py --season E2024   # tune on one season, evaluate on another
+.venv/bin/python3 win_prob_eval.py                    # reproduce Phase 4 win-model fitting/evaluation
+.venv/bin/python3 phase4_eval.py --trials-per-round 10 # paired Phase 4 acceptance checks
+.venv/bin/python3 backtest_eval.py --seasons E2025 --config context # game context; legacy remains default
 ```
+
+The Phase 4 evaluator uses blended history and historical availability on
+identical sampled rosters. The older backtest still uses single-season
+history and lacks full live availability parity; its default remains
+`legacy` for reproducibility. `tuned` retains the Phase 2 estimator and old
+win bonus; `context` uses Phase 4. The frozen win model falls back to the old
+bonus for historical cutoffs through its training end date, 2025-05-25.
 
 ## Project layout
 

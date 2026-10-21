@@ -135,7 +135,7 @@ def schedule_from_games(games: list[Game]) -> list[dict]:
             for g in games]
 
 
-def model_available(rows: list[dict], cutoff_date: str | None, model: WinModel) -> bool:
+def model_available(rows: list[dict], cutoff_date: str | None, model: WinModel = DEFAULT_WIN_MODEL) -> bool:
     """Frozen coefficients are never available during their training period."""
     if not model.trained_through:
         return True
@@ -176,8 +176,7 @@ def apply_team_probabilities(pool: dict[str, Projection], probabilities: dict[st
             for pid, p in pool.items()}
 
 
-# Filled from the E2024-only residual fit in phase4_eval.py before enabling
-# the default. Kept explicit for reproducibility and experiments.
+# E2024-only residual fit in phase4_eval.py. Explicit for reproducibility.
 HOME_PIR_ADJUSTMENT = 0.3405906328577615  # E2024 residual fit, phase4_eval.py (2026-10-21)
 
 
@@ -196,7 +195,11 @@ def round_projections(pool: dict[str, Projection], schedule_rows: list[dict], ro
     from engine.rounds import in_main_window, round_start_dates, round_windows
 
     scheduled = [r for r in schedule_rows if r.get("round") == round_no]
-    cutoff = cutoff_date or round_start_dates(scheduled).get(round_no)
+    round_start = round_start_dates(scheduled).get(round_no)
+    # Even a caller supplying a later date cannot expose earlier results
+    # from this round. An earlier cutoff can deliberately freeze more history.
+    cutoffs = [d for d in (cutoff_date, round_start) if d is not None]
+    cutoff = min(cutoffs) if cutoffs else None
     windows = round_windows(scheduled)
     context = {}
     use_model = enabled and model_available(history, cutoff, model)
@@ -225,8 +228,12 @@ def round_projections(pool: dict[str, Projection], schedule_rows: list[dict], ro
         if not use_model:
             out[pid] = replace(p, projected_pir_with_bonus=p.projected_pir_with_bonus * len(games))
             continue
-        conditional = sum(p.projected_pir + adjustment for _, adjustment in games)
-        bonus_inclusive = sum((p.projected_pir + adjustment) * (1 + WIN_BONUS * prob) for prob, adjustment in games)
+        # A genuinely unranked placeholder has no PIR estimate to adjust.
+        # A modeled zero (with history) still gets the fitted location effect.
+        estimated = p.games_sampled > 0 or p.projected_pir != 0.0
+        conditional = sum(p.projected_pir + (adjustment if estimated else 0.0) for _, adjustment in games)
+        bonus_inclusive = sum((p.projected_pir + (adjustment if estimated else 0.0)) * (1 + WIN_BONUS * prob)
+                              for prob, adjustment in games)
         out[pid] = replace(p, projected_pir=conditional, projected_pir_with_bonus=bonus_inclusive,
                            team_win_rate=sum(prob for prob, _ in games) / len(games))
     return out

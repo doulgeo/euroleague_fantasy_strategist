@@ -52,8 +52,13 @@ def merge_roster(
     roster_rows: list[dict],
     known_player_ids: set[str],
     manual_projections: dict[str, dict] | None = None,
+    team_win_probabilities: dict[str, float] | None = None,
 ) -> tuple[dict[str, Projection], set[str], set[str], set[str]]:
     """Returns (merged_pool, new_player_ids, gone_player_ids, estimated_player_ids).
+
+    team_win_probabilities, when supplied by the Phase 4 path, reprices
+    every player after team assignment and manual overrides. Omit it to
+    preserve the legacy bonus behavior.
 
     new_player_ids = roster players absent from known_player_ids - i.e. no
     box-score history anywhere in the local DB (see engine.db.known_player_ids
@@ -127,5 +132,12 @@ def merge_roster(
             new_player_ids.add(pid)
 
     gone_player_ids = {pid for pid in pool if pid not in roster_ids}
+
+    if team_win_probabilities is not None:
+        from engine.win_prob import apply_team_probabilities
+
+        # Apply after BOTH team corrections and manual PIR overrides. An
+        # unseen new club gets a neutral 50%, never the old club's bonus.
+        merged = apply_team_probabilities(merged, team_win_probabilities)
 
     return merged, new_player_ids, gone_player_ids, estimated_player_ids

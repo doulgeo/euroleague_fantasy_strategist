@@ -3381,8 +3381,8 @@ historical cutoffs. No E2025/E2026 outcomes entered fitting/selection.
 
 Trailing baseline averages both teams' independent last-10 win shares;
 model predictions are complementary between opponents. Flat Brier is 0.25.
-E2025 passes <0.236; E2026 is a small-sample caveat (worse than flat, better
-than trailing/home-only). Original model script reported trailing home only;
+E2025 passes <0.236; E2026 is a small-sample caveat (better than flat and
+trailing/home-only, but above 0.236). [Comparison corrected below.] Original model script reported trailing home only;
 corrected it to both teams before recording the table above.
 
 Validation: `pytest -q tests/test_win_prob.py`: 6 passed in 8.69s; targeted
@@ -3449,3 +3449,84 @@ Context helper refactor revalidated: targeted Ruff passed and
 `pytest -q tests/test_win_prob.py` passed (13 tests, 8.38s). No application
 or DB data mutated. Committing the experimental context/evaluation helpers
 separately from the upcoming production integration, per the working agreement.
+
+### Phase 4 attribution result and integration decision
+
+Three-arm attribution run (same command/seeds, 10 trials per round): contextual
+minus schedule-only realized points on E2025 is +0.195811, 95% round-bootstrap
+CI [-0.087615, +0.469206]. E2026: -0.028333 [-0.218333, +0.157500]. Most of
+the combined E2025 +1.472838 gain is the schedule-zero correction; do not
+attribute it all to the win model. Reported this explicitly before switching
+the default. No retuning on either evaluation season.
+
+Added neutral-board bonus error to `phase4_eval.py` and ran with zero trials:
+E2025 neutral bonus MAE 6.008408 vs baseline 6.011558; E2026 5.892116 vs
+5.892060 (effectively unchanged, +0.000056). Round-context metrics unchanged.
+Acceptance decision: E2025 Brier and error gates pass; realized-points checks
+show no demonstrated regression (combined gain significant; model-specific
+lineup gain small/uncertain). Enable Phase 4 context, retain explicit legacy
+and tuned configurations, and report E2026's weaker small-sample results.
+Optional X4 covariance refinement is deferred under the plan's skip-unless-free
+rule; no empirical estimate or shipped improvement is claimed for it.
+
+Integration edits underway: added `CONTEXT_CONFIG` (now the default), retained
+old configs; neutral bonus in build_projections; post-merge team probabilities
+in merge_roster and live get_pool; round projections in compute_recommendation;
+shared round_values for backtest --config context with a separate decision map
+so roster sampling remains neutral; draft CLI current-team bonus and four-value
+unpack fix. Backtest defaults remain legacy/single-season; Phase 5 B2 remains
+open. Frozen model is unavailable for historical cutoffs <=2025-05-25.
+Unranked zero placeholders stay zero after the home adjustment, and Out players
+stay zero through p_play. Started full pytest and lint after adding live/backtest
+integration tests, transfer tests, training/holdout isolation, and placeholder
+coverage. Lint passed; full-suite result pending.
+
+
+### Phase 4 documentation and full-suite validation
+
+Full integration suite: `.venv/bin/python3 -m pytest -q` completed with
+125 passed in 60.55s. Repository Ruff and `git diff --check` passed.
+Updated README commands and default behavior, technical projection notes,
+CLAUDE working agreement (log all work, as requested), Phase 4 status/issue
+checkboxes/backlog and implementation deviations, in-app help and projection
+tooltips. W1/W2/W3 are implemented; X4 remains explicitly deferred. The
+experimental `proj/` package, P8, B2, full headline and T1 are unchanged.
+No numerical refit or model behavior change accompanied the documentation.
+
+Correction to the earlier step 1-2 entry: it mistakenly described E2026
+Brier 0.243352 as worse than flat 0.25; lower Brier is better, so it is
+BETTER than flat. Corrected that sentence explicitly and the same wording
+in the new implementation note. E2026 still misses the E2025 gate of 0.236
+and is less precise (60 games). All recorded numerical results are unchanged.
+Next: smoke-test actual routes and CLI on a database copy; no writes to the
+user's real league/ownership/tracker data.
+
+### Phase 4 smoke checks and final review
+
+Created `/tmp/euroleague-phase4-smoke.py`; SQLite read-only backup of the real
+DB to a disposable temporary directory, patched app/draft connections and
+cache metadata to that copy. GET /, /draft, /watchlist, /managers, /transfers,
+/lineup, /tracker, /how-it-works, a manager roster, an upcoming lineup and
+three-date round-4 lineup all returned 200 (11 checks). Standalone draft CLI
+(E2025, top-n 1) completed and merged E2026 rosters. `evaluate_season` E2026 R6,
+one trial each with legacy/tuned/context, all completed. No writes to real
+league/ownership/tracker data. The disposable copy was cleaned up by
+TemporaryDirectory; the reproducible smoke script remains in /tmp.
+
+Reviewed full integration diff and context helpers. Strengthened round-values
+cutoff to clamp even an explicitly later caller cutoff to round start; extended
+the existing leakage test to cover that case. Clarified compatibility field,
+roster-helper and backtest docstrings; corrected stale live availability
+comments. These are final review changes, so run the affected tests and lint
+again; no model coefficients, feature selection or evaluation targets changed.
+Commits so far: 6dd64b5 (win model), 18f325b (experimental values/evaluator).
+Protected .git required command approval for those local commits; no push or
+external publication was requested or performed.
+
+Final-review checks completed: `ruff check .` and `git diff --check` pass;
+`pytest -q tests/test_win_prob.py tests/test_game_context_integration.py
+ tests/test_rosters.py tests/test_projections.py` passes (34 tests, 9.48s).
+Full suite previously passed 125 tests; the final behavioral change was only
+the cutoff clamp covered by the targeted rerun. Phase 4 W1/W2/W3 is complete
+and ready to commit; optional X4, B2 and the full Phase 5 comparison/headline
+remain in the backlog. No deployment, push or real-data reset performed.
