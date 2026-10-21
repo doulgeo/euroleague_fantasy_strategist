@@ -59,7 +59,6 @@ def test_removing_a_player_raises_position_group_teammates_minutes():
     §6."""
     # index: 0=Guard, 1=Center, 2=Center, 3=Guard
     raw = np.array([15.0, 15.0, 10.0, 10.0])
-    pos_groups = np.array(["G", "C", "C", "G"])
     cap = 32.0
     total = 30.0
 

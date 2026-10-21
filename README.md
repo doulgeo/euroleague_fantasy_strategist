@@ -144,6 +144,18 @@ set_manual_projection.py  Set/clear/list manual projection estimates for players
 docs/           Fuller technical notes, game rules, and a validation log
 ```
 
+## Development checks
+
+Run Python lint and tests from the repository root:
+
+```bash
+.venv/bin/python3 -m pip install ruff==0.17.1
+.venv/bin/python3 -m ruff check .
+.venv/bin/python3 -m pytest -q
+```
+
+`ruff.toml` enables core Python error checks (`E4`, `E7`, `E9`, `F`).
+
 ## Status
 
 Actively developed. See `docs/testing_log.md` for a running record of what's

@@ -121,7 +121,9 @@ def _normalize_name(s: str) -> str:
 
 
 def _synthetic_id(team: str, surname_norm: str, first_norm: str) -> str:
-    slug = lambda s: s.lower().replace(" ", "-")
+    def slug(s: str) -> str:
+        return s.lower().replace(" ", "-")
+
     return f"sheet:{team.lower()}:{slug(surname_norm)}:{slug(first_norm)}"
 
 

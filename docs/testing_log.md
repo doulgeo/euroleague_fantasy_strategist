@@ -3308,3 +3308,22 @@ The backtest already reads `expected_value`, but does not construct the live
 availability pipeline; that parity work remains open. No model rerun or changed
 headline is claimed. Validation: `git diff --check` passed; documentation-only
 change, no application tests needed for this commit.
+
+---
+
+## 2026-10-21: Establish and run Python lint
+
+No repository lint configuration or installed linter was present. Ran Ruff
+0.17.1 from an isolated temporary installation under `/tmp`. The initial
+unconfigured scan reported 62 findings across correctness and broader rules.
+Established an explicit repository baseline in `ruff.toml`: E4/E7/E9/F (core
+Python error checks); broader style/modernization rules are outside this
+baseline. The baseline initially found five issues. Removed unused imports
+and variables, including an unused position-cap computation, and replaced a
+lambda assignment with an equivalent typed local function. Documented the
+pinned lint command and test command in README. No model or scoring changes.
+
+Validation: `ruff check .` passed under the checked-in configuration;
+`git diff --check` passed; `.venv/bin/python3 -m pytest -q` completed with
+**104 passed in 76.30s**. The lint baseline does not claim that every optional
+Ruff rule passes.

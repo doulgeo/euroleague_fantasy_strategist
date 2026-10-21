@@ -32,7 +32,6 @@ def test_active_override_beats_the_model_for_a_known_player():
 
 
 def test_override_expires_once_its_round_is_played():
-    import sqlite3
     from engine.db import active_manual_projections, get_connection, set_manual_projection
 
     conn = get_connection(":memory:")

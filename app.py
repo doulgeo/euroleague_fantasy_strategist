@@ -75,7 +75,6 @@ from engine.rounds import in_main_window, round_main_window, round_start_dates
 from engine.projections import (
     Projection,
     SeasonPoints,
-    actual_fantasy_score,
     blend_seasons,
     build_projections,
     season_points,

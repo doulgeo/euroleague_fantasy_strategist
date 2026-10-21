@@ -32,7 +32,6 @@ def run(ridge_feature_cols: list[str] | None = None) -> tuple[pd.DataFrame, pd.D
     stints = build_all_stint_tables(games, seasons)
     bio = build_player_bio(cache_path=Path(cfg["cache_dir"]) / "player_bio.parquet", fetch_live=True)
     coach_by_season = {s: season_primary_coach(games, s) for s in seasons}
-    caps = position_group_cap(stints, seasons[:-1], cfg["minutes"]["allocation"]["cap_percentile"])
 
     all_summaries = []
     all_details = []
