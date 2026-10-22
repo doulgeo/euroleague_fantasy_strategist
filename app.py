@@ -1045,6 +1045,8 @@ class LineupRecommendation:
     recommended_total: float | None = None
     injury_status: dict[str, dict] = field(default_factory=dict)
     pool: dict[str, Projection] = field(default_factory=dict)
+    decision_scores: dict[str, float] = field(default_factory=dict)
+    actual_score_ids: set[str] = field(default_factory=set)
 
 
 def compute_recommendation(
@@ -1070,6 +1072,8 @@ def compute_recommendation(
     initial_full_ids: set[str] = set()
     no_swap_total = None
     recommended_total = None
+    decision_scores: dict[str, float] = {}
+    actual_score_ids: set[str] = set()
 
     pool, _new_ids, _gone_ids, _estimated_ids, injury_status = get_pool(conn, before_round)
     schedule_rows = load_schedule(conn, CURRENT_SEASON, round_no=round_no)
@@ -1152,6 +1156,11 @@ def compute_recommendation(
                 # right now" values used for the swap decision above.
                 active_players = [*initial.starters, initial.sixth_man, *initial.bench]
                 score_value = {p.player_id: decision_value(p.player_id) for p in active_players}
+                decision_scores = score_value
+                actual_score_ids = {
+                    p.player_id for p in active_players
+                    if known_date is not None and team_dates.get(p.team, "9999") <= known_date
+                }
                 no_swap_total = compute_round_score(initial, score_value)
                 recommended_total = compute_round_score(recommended, score_value)
             except (RuntimeError, ValueError) as e:
@@ -1173,6 +1182,8 @@ def compute_recommendation(
         recommended_total=recommended_total,
         injury_status=injury_status,
         pool=pool,
+        decision_scores=decision_scores,
+        actual_score_ids=actual_score_ids,
     )
 
 
@@ -1235,6 +1246,8 @@ def lineup():
         recommended_total=rec.recommended_total,
         injury_status=rec.injury_status,
         points=get_season_points(conn),
+        decision_scores=rec.decision_scores,
+        actual_score_ids=rec.actual_score_ids,
     )
 
 

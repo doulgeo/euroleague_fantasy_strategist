@@ -48,7 +48,8 @@ for personal use among friends — never monetized or redistributed.
   projected score, shown in a totals box alongside the recommendation.
   Sync after day 1's games and the swap plan re-plans from their real
   scores; for your own team it starts from the day-1 lineup you saved in
-  the Points Tracker.
+  the Points Tracker. The swap table labels actual and projected scores separately
+  and shows each player's contribution after the captain or bench multiplier.
   Each lineup also renders as a court "pitch view" (starters by position,
   a checkmarked bench with the 6th man tagged) above the detail table.
 - **Points tracker** — record the lineup you actually played each round

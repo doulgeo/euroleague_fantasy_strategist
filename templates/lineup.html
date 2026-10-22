@@ -98,6 +98,9 @@
     <p><strong>This is the day-1 lineup you saved in the
       <a href="{{ url_for('tracker_round', round_no=selected_round) }}">Points Tracker</a></strong>,
       not the tool's own pick - so the swap plan below starts from what you actually locked in.</p>
+    {% else %}
+    <p>No saved day-1 lineup for this round. The swap plan starts from the tool's suggested lineup;
+      save your actual starters, captain and exclusions in the Points Tracker to plan from your own choices.</p>
     {% endif %}
     <p>The "golden rule": each full-scoring slot (5 starters + 6th man)
       prefers a player whose team plays on this round's earliest date over
@@ -169,12 +172,20 @@
       {% endif %}
     </p>
     {{ pitch_macros.pitch(recommended, initial_full_ids) }}
+    <p>Score + bonus shows the actual fantasy score for completed dates and the projection for later games.
+      Slot score applies captain &times;1.5, starters/6th man &times;1, or bench &times;0.5; these add up to the recommended total.</p>
+    {% macro swap_score(p, multiplier) -%}
+      <td>{{ "%.1f"|format(decision_scores[p.player_id]) }}
+        <span class="muted">{{ 'Actual' if p.player_id in actual_score_ids else 'Projected' }}</span></td>
+      <td>{{ "%.2f"|format(decision_scores[p.player_id] * multiplier) }}</td>
+    {%- endmacro %}
     <table>
       <thead>
         <tr>
           <th>Slot</th><th>Position</th><th>Player</th><th>Team</th>
           <th title="day1 = plays on this round's earliest date; later = plays a subsequent date this round; not playing = no game this round.">Availability</th>
-          <th title="Projected PIR for this player's next game.">Proj+Bonus</th>
+          <th title="Actual PIR plus the team-win bonus for completed dates; expected fantasy score for later games. Before slot multipliers.">Score + bonus</th>
+          <th title="Score after this lineup's captain, starter, sixth-man or bench multiplier.">Slot score</th>
           {{ points_macros.headers() }}
         </tr>
       </thead>
@@ -184,7 +195,7 @@
             <td>Starter{{ " (C)" if p.player_id == recommended.captain.player_id else "" }}{% if p.player_id not in initial_full_ids %} <span class="promoted-badge">PROMOTED</span>{% endif %}</td>
             <td>{{ p.position }}</td><td>{{ p.player_name }}{{ pitch_macros.injury_badge(p, injury_status) }}</td><td>{{ p.team }}</td>
             <td>{{ availability_label(p, team_dates) }}</td>
-            <td>{{ form_macros.value(p) }}{{ form_macros.ticker(p) }}</td>
+            {{ swap_score(p, 1.5 if p.player_id == recommended.captain.player_id else 1.0) }}
             {{ points_macros.cells(points, p.player_id) }}
           </tr>
         {% endfor %}
@@ -193,7 +204,7 @@
           <td>{{ recommended.sixth_man.position }}</td><td>{{ recommended.sixth_man.player_name }}{{ pitch_macros.injury_badge(recommended.sixth_man, injury_status) }}</td>
           <td>{{ recommended.sixth_man.team }}</td>
           <td>{{ availability_label(recommended.sixth_man, team_dates) }}</td>
-          <td>{{ form_macros.value(recommended.sixth_man) }}{{ form_macros.ticker(recommended.sixth_man) }}</td>
+          {{ swap_score(recommended.sixth_man, 1.0) }}
           {{ points_macros.cells(points, recommended.sixth_man.player_id) }}
         </tr>
         {% for p in recommended.bench %}
@@ -201,7 +212,7 @@
             <td title="Scores at half points automatically - no swap needed to count.">Bench{% if p.player_id in initial_full_ids %} <span class="demoted-badge">DEMOTED</span>{% endif %}</td>
             <td>{{ p.position }}</td><td>{{ p.player_name }}{{ pitch_macros.injury_badge(p, injury_status) }}</td><td>{{ p.team }}</td>
             <td>{{ availability_label(p, team_dates) }}</td>
-            <td>{{ form_macros.value(p) }}{{ form_macros.ticker(p) }}</td>
+            {{ swap_score(p, 0.5) }}
             {{ points_macros.cells(points, p.player_id) }}
           </tr>
         {% endfor %}

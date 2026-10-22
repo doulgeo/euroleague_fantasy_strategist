@@ -3530,3 +3530,42 @@ Full suite previously passed 125 tests; the final behavioral change was only
 the cutoff clamp covered by the targeted rerun. Phase 4 W1/W2/W3 is complete
 and ready to commit; optional X4, B2 and the full Phase 5 comparison/headline
 remain in the backlog. No deployment, push or real-data reset performed.
+
+
+## 2026-10-22 — Swap-plan actual scores displayed consistently
+
+Investigated the reported round-7 Bryant captain projection after HTA–VIR.
+Read CLAUDE.md, game rules, technical notes and recent testing entries;
+traced compute_recommendation, known_through_date/results_through,
+plan_round, tracker snapshots and lineup/pitch/form templates. Git began
+clean. Read-only SQLite inspection confirmed the 2026-10-21 game is synced:
+Bryant PIR 13, team win, actual fantasy value 14.3. The existing decision
+and total calculation already use that value once the date is complete;
+the swap table incorrectly displayed Projection.expected_value (~21.82).
+Real round-7 suggested and recommended captains are both Bryant. There is
+no saved my_day1 for round 7 (only round-1 final snapshots), so the current
+page starts from the tool suggestion rather than a recorded real lock.
+No league, tracker or box-score data were changed.
+
+Exposed the exact decision-score map and actual-score player IDs on
+LineupRecommendation and passed them to /lineup. Swap rows now display
+Actual/Projected score + bonus and each slot's contribution after the
+captain/full/bench multiplier. Kept pre-round projections in the initial
+lineup table. Added an explicit notice when no saved day-1 lineup is used.
+README documents the score labels and slot contributions. No solver or
+scoring-rule change was necessary.
+
+Added two live-page regression cases: a saved captain's low/high actual
+result changes captain retention, finished-team DNP scores zero, unsynced
+later dates retain projections despite a final-date result being present,
+totals use the same map, and HTML labels/multipliers match those values.
+Initial fixture lacked unique schedule game_code keys, collapsing dates;
+corrected fixture keys and placed the future result on the final date.
+Validation: pytest tests/test_game_context_integration.py tests/test_lineup.py
+54 passed (11.61s); preceding existing context tests 3 passed. Read-only
+real-DB GET /lineup?manager_id=46&round=7 returned 200 and rendered Bryant
+14.3 Actual, 21.45 captain contribution. git diff --check passed.
+Ruff could not run: neither executable nor Python module is installed in
+this environment (checked .venv/bin/ruff, ruff, python -m ruff). No extra
+dependency installation needed for this fix. Finalized change ready for
+local commit per the repository working agreement; no push requested.

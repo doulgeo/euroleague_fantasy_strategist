@@ -74,3 +74,62 @@ def test_context_config_changes_bonus_only_and_older_config_stays_reproducible()
     for pid, p in contextual.items():
         assert replace(p, team_win_rate=tuned[pid].team_win_rate,
                        projected_pir_with_bonus=tuned[pid].projected_pir_with_bonus) == tuned[pid]
+
+
+@pytest.mark.parametrize("captain_pir, keeps_captain", [(13, False), (40, True)])
+def test_live_swap_uses_actual_captain_score_and_renders_it(monkeypatch, captain_pir, keeps_captain):
+    import re
+    import app
+    from engine.lineup import compute_round_score
+    from engine.tracker import snapshot_rows
+
+    pool = _pool()
+    pool = {pid: replace(p, team="A" if pid in {"Guard0", "Guard1"} else "B",
+                         p_play=1.0, projected_pir_with_bonus=20.0) for pid, p in pool.items()}
+    pool["Forward0"] = replace(pool["Forward0"], team="C")
+    schedule = [
+        {"round": 1, "game_date": "2026-10-01", "local_team_code": "A", "road_team_code": "X", "played": 1},
+        {"round": 1, "game_date": "2026-10-02", "local_team_code": "B", "road_team_code": "Y", "played": 0},
+        {"round": 1, "game_date": "2026-10-03", "local_team_code": "C", "road_team_code": "Z", "played": 0},
+    ]
+    for code, game in enumerate(schedule, 1):
+        game["game_code"] = code
+    slots = {"Guard0": "captain", "Guard1": "starter", "Forward0": "starter",
+             "Forward1": "starter", "Center0": "starter", "Guard2": "sixth",
+             "Guard3": "bench", "Forward2": "bench", "Forward3": "bench", "Center1": "bench",
+             "Guard4": "excluded", "Forward4": "excluded", "Center2": "excluded"}
+    snapshot = {"players": snapshot_rows(list(pool.values()), slots)}
+    rows = [{"round": 1, "game_date": "2026-10-01", "player_id": "Guard0",
+             "team": "A", "pir_official": captain_pir, "team_win": True},
+            # Future synced results must not leak into this swap window.
+            {"round": 1, "game_date": "2026-10-03", "player_id": "Forward0",
+             "team": "C", "pir_official": 100, "team_win": True}]
+    monkeypatch.setattr(app, "DEFAULT_CONFIG", TUNED_CONFIG)
+    monkeypatch.setattr(app, "get_pool", lambda *args: (pool, set(), set(), set(), {}))
+    monkeypatch.setattr(app, "load_schedule", lambda *args, **kwargs: schedule)
+    monkeypatch.setattr(app, "load_rows", lambda *args, **kwargs: rows)
+    monkeypatch.setattr(app.ownership, "manager_roster_ids", lambda *args: list(pool))
+    rec = app.compute_recommendation(None, 1, 1, before_round=1, day1_snapshot=snapshot)
+    assert rec.schedule_error is None and rec.day1_from_tracker
+    assert rec.used_day1_actuals
+    assert rec.decision_scores["Guard0"] == pytest.approx(captain_pir * 1.1)
+    assert rec.decision_scores["Guard1"] == 0.0  # finished team, no box-score row: DNP
+    assert rec.decision_scores["Forward0"] == 20.0
+    assert rec.actual_score_ids == {"Guard0", "Guard1"}
+    assert (rec.recommended.captain.player_id == "Guard0") == keeps_captain
+    assert rec.recommended_total == pytest.approx(compute_round_score(rec.recommended, rec.decision_scores))
+
+    monkeypatch.setattr(app, "get_db", lambda: None)
+    monkeypatch.setattr(app.ownership, "list_managers", lambda conn: [{"manager_id": 1, "name": "Test"}])
+    monkeypatch.setattr(app, "next_unplayed_round", lambda *args: 1)
+    monkeypatch.setattr(app, "_my_manager_id", lambda conn: 1)
+    monkeypatch.setattr(app, "_lineups_by_round", lambda *args: {1: {"my_day1": snapshot}})
+    monkeypatch.setattr(app, "get_season_points", lambda conn: {})
+    response = app.app.test_client().get("/lineup?manager_id=1&round=1")
+    assert response.status_code == 200
+    html = response.get_data(as_text=True).split("Day 2: swap plan", 1)[1]
+    row = next(row for row in re.findall(r"<tr[^>]*>(.*?)</tr>", html, re.S) if "Guard0" in row)
+    assert f"{captain_pir * 1.1:.1f}" in row and "Actual" in row
+    assert "Projected" not in row and "20.0" not in row
+    multiplier = 1.5 if keeps_captain else (0.5 if "Guard0" in {p.player_id for p in rec.recommended.bench} else 1.0)
+    assert f"{captain_pir * 1.1 * multiplier:.2f}" in row
