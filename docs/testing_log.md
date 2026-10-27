@@ -3569,3 +3569,28 @@ Ruff could not run: neither executable nor Python module is installed in
 this environment (checked .venv/bin/ruff, ruff, python -m ruff). No extra
 dependency installation needed for this fix. Finalized change ready for
 local commit per the repository working agreement; no push requested.
+
+## 2026-10-27 — Document current PIR projection features and weights
+
+User requested a review of the current PIR model, README documentation and
+a push. Started on main with a clean worktree. Read project context, game
+rules and projection technical notes; traced engine/projections.py,
+engine/availability.py, engine/win_prob.py, roster/manual-estimate handling,
+app.py's get_pool and round-context integration, and the experimental ML
+entry points. Confirmed the live default is CONTEXT_CONFIG, not Ridge/GBM.
+
+Added a README section covering the 60-played-game estimator, 10-game
+half-life, season-rank discount, Kish effective sample size, positional
+shrinkage formula, frozen logistic coefficients and feature units, neutral
+versus scheduled context, home/away PIR adjustment, win bonus, availability
+formula and injury multipliers. Also documented date cutoffs, historical
+model fallback, new/manual players, and fields that do not affect the PIR
+point estimate (minutes, volatility and form indicators). No model behavior
+or stored data changed.
+
+Validation: `.venv/bin/python3 -m pytest -q tests/test_projections.py
+tests/test_availability.py tests/test_win_prob.py
+tests/test_game_context_integration.py` passed: 36 tests in 18.48s.
+Reviewed README against runtime constants/formulas; `git diff --check`
+passed. Documentation and this log are being committed together and pushed
+to origin/main as requested.

@@ -92,6 +92,119 @@ See the in-app **How this works** page (linked in the nav once the app is
 running) for the full mechanics — scoring model, projection method, what
 every column/badge means, and how to keep the data fresh.
 
+## PIR projection: features and weights
+
+The live app uses `DEFAULT_CONFIG = CONTEXT_CONFIG` in
+[`engine/projections.py`](engine/projections.py), with separate win-probability
+and availability models. The following are the current defaults; experimental
+Ridge/GBM models in `engine/ml_projections.py` are not used by the live app.
+
+**1. Base PIR, conditional on playing.** The inputs are official historical
+PIR, game order, season and position. The app blends all synced seasons;
+each player's estimate uses their last **60 played games**, with a minimum
+of **one**. DNPs are excluded here and handled by availability below.
+For round-specific predictions, history ends strictly before the round's
+start date, so late-played postponed games cannot leak into the estimate.
+Prior-season playoff games are included by default.
+
+| Input | Weight / effect |
+|---|---|
+| Historical PIR | Exponential recency weight: `0.5 ** (age_in_played_games / 10)`. Latest game has weight 1; 10 games back 0.5; 20 games back 0.25. These are relative weights, normalized when averaging. |
+| Season age | Multiply each game's recency weight by `0.25 ** season_rank`: newest season in the eligible history 1, next older season 0.25, next 0.0625. Ranks use seasons present in that history. |
+| Position | Shrink toward the Guard/Forward/Center mean with **one pseudo-game** (`shrink_k = 1`, target scale 1). The target uses all eligible played rows for that position, weighted by season age, without the player's 60-game cap or recency decay. |
+
+```text
+w_i = 0.5 ** (age_i / 10) * 0.25 ** season_rank_i
+weighted_PIR = sum(w_i * PIR_i) / sum(w_i)
+n_eff = sum(w_i) ** 2 / sum(w_i ** 2)
+base_PIR = (n_eff * weighted_PIR + position_mean) / (n_eff + 1)
+```
+
+The player's history therefore gets `n_eff / (n_eff + 1)` of the estimate,
+and the positional mean gets `1 / (n_eff + 1)`. With one played game that
+is 50% / 50%; with effective sample size 10 it is about 91% / 9%.
+These weights depend on the available history rather than fixed feature
+percentages. Season discounting changes the relative mix of games; it does
+not multiply the resulting PIR by 0.25.
+
+**2. Matchup and expected win bonus.**
+[`engine/win_prob.py`](engine/win_prob.py) uses each team's last **20 complete
+games**, equally weighted across season boundaries, to calculate win share
+and average point differential. The frozen logistic model is:
+
+```text
+z = 0.617960127
+    + 0.072802830 * (home_win_share - away_win_share)
+    + 0.952964634 * (home_mean_margin - away_mean_margin) / 10
+P(home win) = 1 / (1 + exp(-z))
+P(away win) = 1 - P(home win)
+```
+
+Win shares are fractions from 0 to 1; margins are points scored minus points
+allowed. The intercept represents home advantage. Unknown teams default to
+0.5 win share and zero margin. Coefficients were fitted on E2023/E2024.
+
+Draft/transfer values use base PIR and a neutral win probability: average the
+current club's home and away probabilities against an average club (0.5 win
+share, zero margin). Lineup values use the scheduled opponent and add
+**+0.340590633 PIR at home / -0.340590633 away** to base PIR, an adjustment
+fitted on E2024 residuals. Opponent form affects the win probability; there
+is no opponent-defense multiplier on base PIR. Transferred players use
+their current club for bonus/context calculations.
+
+```text
+PIR_with_bonus = contextual_PIR * (1 + 0.10 * P(team win))
+```
+
+Thus a 70% win probability adds 7% to conditional PIR. Historical cutoffs
+through **2025-05-25** retain the old last-10-team-games win-share bonus
+and omit the home/away PIR adjustment, to avoid using coefficients fitted
+on future outcomes.
+
+**3. Availability and injury status.**
+[`engine/availability.py`](engine/availability.py) estimates whether the
+player will play at all, separately from how much PIR they produce if they
+play. It uses the current club's last **5 games** within the player's
+current stint, with exponential half-life **2 club games** and **one
+pseudo-game at an 80% prior**:
+
+```text
+v_i = 0.5 ** (age_in_club_games_i / 2)
+p_history = (sum(v_i * played_i) + 0.8) / (sum(v_i) + 1)
+p_play = p_history * injury_multiplier
+expected_value = PIR_with_bonus * p_play
+```
+
+`played_i` is 1 if the player played and 0 otherwise. Club games before the
+player's stint do not count against them. With no current-club history,
+the app uses 0.8 for an established player or a manual estimate, and 0.5
+for a genuinely new, unestimated player.
+
+| Injury status | Multiplier on probability of playing |
+|---|---:|
+| Out | 0 |
+| Doubtful | 0.40 |
+| Questionable | 0.60 |
+| Uncertain / Game-time | 0.75 |
+| Expected / Ready | 0.95 |
+| No recognized status | 1.00 |
+
+These injury multipliers are judgment values, not fitted coefficients.
+Draft ranking, transfers and lineup decisions use `expected_value`, so the
+win bonus and availability each apply once. A team without an eligible
+scheduled game has zero round value; postponed games outside the round's
+normal window are excluded. Captain (1.5x) and bench (0.5x) multipliers are
+applied later by lineup scoring.
+
+**Other displayed fields and exceptions.** Minutes trend is a weighted
+historical average, not an input to base PIR; there is no minutes-times-PIR-
+per-minute model in the live path. Volatility, last-3-game HOT/COLD form,
+and the projection-change arrow do not adjust the PIR point estimate.
+Box-score components (points, rebounds, assists, etc.) enter through
+official PIR rather than separately weighted predictive features. A player
+with no usable history remains at zero unless given a manual PIR estimate;
+that estimate receives the same bonus and availability treatment.
+
 ## Quick start
 
 ```bash
